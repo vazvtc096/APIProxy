@@ -1,4 +1,4 @@
-﻿import sqlite3
+import sqlite3
 import os
 import bcrypt
 import uuid
@@ -16,8 +16,12 @@ db_path = getattr(configs, 'DB_PATH', None) or os.path.join(os.path.dirname(__fi
 def smart_init():
     from . import db as _db
     conn = _db.get_conn()
+    # PostgreSQL：DDL 初始化切 autocommit，使单条语句失败不污染整事务
+    # （对齐 sqlite3 行为；psycopg2 默认事务中止后后续全部 InFailedSqlTransaction）
+    if _db.is_postgres():
+        conn.set_autocommit(True)
     cur = conn.cursor()
-    
+
     print("智能初始化数据库...\n")
     
     # 1. 检查 users 表
@@ -36,7 +40,7 @@ def smart_init():
                 is_admin INTEGER DEFAULT 0,
                 is_banned INTEGER DEFAULT 0,
                 ban_reason TEXT,
-                ban_expire_at TIMESTAMP,
+                ban_expire_at REAL,
                 email TEXT UNIQUE,
                 last_device_type TEXT,
                 last_device_os TEXT,
@@ -62,7 +66,7 @@ def smart_init():
             'is_admin': 'INTEGER DEFAULT 0',
             'is_banned': 'INTEGER DEFAULT 0',
             'ban_reason': 'TEXT',
-            'ban_expire_at': 'TIMESTAMP',
+            'ban_expire_at': 'REAL',
             'email': 'TEXT',
             'last_login_ip': 'TEXT',
             'last_login_time': 'TIMESTAMP',
@@ -216,7 +220,7 @@ def smart_init():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 ip TEXT UNIQUE,
                 reason TEXT,
-                ban_expire_at TIMESTAMP,
+                ban_expire_at REAL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -554,22 +558,24 @@ def smart_init():
     try:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_ipblack_expire ON ip_blacklist(ban_expire_at)")
     except: pass
-    try:
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_ipwhite_ip ON ip_whitelist(ip)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_device_fp ON device_ban(fingerprint)")
-    except: pass
-
     # 6.8 device_ban 表（设备指纹封禁，由 R3 批量请求规则写入）
+    # 必须先建表再建 idx_device_fp 索引，否则索引创建失败会让 PG 事务中止
     cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='device_ban'")
     if not cur.fetchone():
         print("创建 device_ban 表...")
-        cur.execute("""\n            CREATE TABLE device_ban (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                fingerprint TEXT UNIQUE,\n                reason TEXT,\n                ban_expire_at TIMESTAMP,\n                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n            )\n        """)
+        cur.execute("""\n            CREATE TABLE device_ban (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                fingerprint TEXT UNIQUE,\n                reason TEXT,\n                ban_expire_at REAL,\n                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n            )\n        """)
 
     # 6.9 config_kv 表（通用键值配置，持久化可自定义封禁规则等）
     cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='config_kv'")
     if not cur.fetchone():
         print("创建 config_kv 表...")
         cur.execute("""\n            CREATE TABLE config_kv (\n                key TEXT PRIMARY KEY,\n                value TEXT\n            )\n        """)
+    try:
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_ipwhite_ip ON ip_whitelist(ip)")
+    except: pass
+    try:
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_device_fp ON device_ban(fingerprint)")
+    except: pass
     try:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_oauth_client_id ON oauth_clients(client_id)")
     except: pass
@@ -943,16 +949,17 @@ def smart_init():
     cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='pricing_schedules'")
     if not cur.fetchone():
         print("创建 pricing_schedules 表...")
+        # start/end 是 PG 保留字，须用双引号标识符（SQLite 同样支持）
         cur.execute("""
             CREATE TABLE pricing_schedules (
                 id      INTEGER PRIMARY KEY AUTOINCREMENT,
                 model   TEXT NOT NULL,
-                start   TEXT NOT NULL,
-                end     TEXT NOT NULL,
+                "start" TEXT NOT NULL,
+                "end"   TEXT NOT NULL,
                 input   REAL NOT NULL,
                 output  REAL NOT NULL,
                 enabled INTEGER DEFAULT 1,
-                UNIQUE(model, start, end)
+                UNIQUE(model, "start", "end")
             )
         """)
     # 首次迁移：若表为空，从 configs.PRICING['models'] 的 schedules 种入
@@ -972,7 +979,7 @@ def smart_init():
                     if not isinstance(_s, dict):
                         continue
                     cur.execute(
-                        "INSERT OR IGNORE INTO pricing_schedules (model, start, end, input, output, enabled) VALUES (?, ?, ?, ?, ?, 1)",
+                        'INSERT OR IGNORE INTO pricing_schedules (model, "start", "end", input, output, enabled) VALUES (?, ?, ?, ?, ?, 1)',
                         (_m, str(_s.get('start', '')), str(_s.get('end', '')),
                          float(_s.get('input', 0)), float(_s.get('output', 0)))
                     )

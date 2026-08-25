@@ -114,7 +114,7 @@ def reload_pricing_from_db():
         try:
             cur = conn.cursor()
             cur.execute(
-                "SELECT model, start, end, input, output, enabled FROM pricing_schedules"
+                'SELECT model, "start", "end", input, output, enabled FROM pricing_schedules'
             )
             rows = cur.fetchall()
         finally:

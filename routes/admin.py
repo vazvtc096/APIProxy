@@ -1226,7 +1226,7 @@ async def api_admin_list_schedules():
     if err:
         return err
     rows = await async_db_query(
-        "SELECT id, model, start, end, input, output, enabled FROM pricing_schedules ORDER BY model ASC, start ASC"
+        'SELECT id, model, "start", "end", input, output, enabled FROM pricing_schedules ORDER BY model ASC, "start" ASC'
     )
     return jsonify({'schedules': [
         {'id': r['id'], 'model': r['model'], 'start': r['start'], 'end': r['end'],
@@ -1255,7 +1255,7 @@ async def api_admin_create_schedule():
     except (TypeError, ValueError):
         return jsonify({'error': 'input/output must be numbers'}), 400
     await async_db_query(
-        "INSERT OR IGNORE INTO pricing_schedules (model, start, end, input, output, enabled) VALUES (?, ?, ?, ?, ?, 1)",
+        'INSERT OR IGNORE INTO pricing_schedules (model, "start", "end", input, output, enabled) VALUES (?, ?, ?, ?, ?, 1)',
         (model, start, end, inp, out),
     )
     await asyncio.to_thread(pricing.reload_pricing_from_db)
@@ -1283,7 +1283,7 @@ async def api_admin_update_schedule(sid):
         return jsonify({'error': 'input/output must be numbers'}), 400
     enabled = 1 if data.get('enabled', True) else 0
     await async_db_query(
-        "UPDATE pricing_schedules SET model=?, start=?, end=?, input=?, output=?, enabled=? WHERE id=?",
+        'UPDATE pricing_schedules SET model=?, "start"=?, "end"=?, input=?, output=?, enabled=? WHERE id=?',
         (model, start, end, inp, out, enabled, sid),
     )
     await asyncio.to_thread(pricing.reload_pricing_from_db)

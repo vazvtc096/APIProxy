@@ -22,13 +22,24 @@ if _PROJECT_ROOT not in sys.path:
 from sqlalchemy import engine_from_config, pool
 from alembic import context
 
-from APIProxy.configs import DB_PATH
+from APIProxy.configs import DB_PATH, DB_TYPE, DATABASE_URL
 
 config = context.config
 
-# 从 configs.DB_PATH（支持 DB_PATH 环境变量覆盖）构造 SQLAlchemy URL
-_sqlite_path = str(DB_PATH).replace("\\", "/")
-config.set_main_option("sqlalchemy.url", f"sqlite:///{_sqlite_path}")
+# Alembic 迁移目标跟随应用 DB_TYPE（sqlite | postgres），避免 DB_TYPE=postgres 时
+# Alembic 仍硬编码 SQLite URL 导致两后端 alembic_version/schema 不同步（8/23 迁移根因）。
+if DB_TYPE in ("postgres", "postgresql") and DATABASE_URL:
+    # SQLAlchemy 2.0 显式指定 psycopg2 驱动，避免默认驱动歧义
+    if DATABASE_URL.startswith("postgresql://"):
+        _alembic_url = "postgresql+psycopg2://" + DATABASE_URL[len("postgresql://"):]
+    elif DATABASE_URL.startswith("postgres://"):
+        _alembic_url = "postgresql+psycopg2://" + DATABASE_URL[len("postgres://"):]
+    else:
+        _alembic_url = DATABASE_URL
+else:
+    _sqlite_path = str(DB_PATH).replace("\\", "/")
+    _alembic_url = f"sqlite:///{_sqlite_path}"
+config.set_main_option("sqlalchemy.url", _alembic_url)
 
 # 无 SQLAlchemy 模型（项目用原生 sqlite3），autogenerate 不可用，迁移为手工 SQL
 target_metadata = None

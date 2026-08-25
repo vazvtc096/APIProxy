@@ -46,34 +46,39 @@ def _init_db():
     - user_password: 改为哈希存储（pbkdf2:sha256）
     """
     conn = _get_conn()
-    with conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                uid TEXT UNIQUE,
-                user_name TEXT NOT NULL UNIQUE,
-                user_password TEXT,
-                apikeys TEXT,
-                balence REAL DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        # 兼容旧数据库：如果没有 uid 列则添加
+    from . import db as _db
+    # DDL 初始化切 autocommit（对齐 smart_init：单语句失败不污染整事务；
+    # PG 上 ALTER 已存在列抛 DuplicateColumn，autocommit 使其不中止后续语句）
+    if _db.is_postgres():
+        conn.set_autocommit(True)
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            uid TEXT UNIQUE,
+            user_name TEXT NOT NULL UNIQUE,
+            user_password TEXT,
+            apikeys TEXT,
+            balence REAL DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    # 兼容旧数据库：若列不存在则补建（smart_init 已建则跳过）
+    # catch Exception：SQLite 抛 OperationalError，PG 抛 DuplicateColumn，均需吞掉
+    for _col, _defn in (
+        ("uid", "TEXT"),
+        ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ("allow_overdraft", "INTEGER DEFAULT 0"),
+    ):
         try:
-            conn.execute("ALTER TABLE users ADD COLUMN uid TEXT")
-            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_uid ON users(uid)")
-        except sqlite3.OperationalError:
+            cur.execute(f"ALTER TABLE users ADD COLUMN {_col} {_defn}")
+        except Exception:
             pass  # 列已存在
-        # 兼容旧数据库：如果没有 created_at 列则添加
-        try:
-            conn.execute("ALTER TABLE users ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
-        except sqlite3.OperationalError:
-            pass
-        # 兼容旧数据库：如果没有 allow_overdraft 列则添加
-        try:
-            conn.execute("ALTER TABLE users ADD COLUMN allow_overdraft INTEGER DEFAULT 0")
-        except sqlite3.OperationalError:
-            pass
+    try:
+        cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_uid ON users(uid)")
+    except Exception:
+        pass
+    conn.close()
 
 
 _init_db()

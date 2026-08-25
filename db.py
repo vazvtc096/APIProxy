@@ -255,6 +255,17 @@ class _PgConnection:
     def rollback(self):
         return self._conn.rollback()
 
+    def set_autocommit(self, value: bool):
+        """切换 autocommit 模式（仅 PostgreSQL 有意义；SQLite 连接忽略）。
+
+        DDL 初始化（smart_init）等场景需要单语句失败不污染整事务，对齐
+        sqlite3 的宽松行为（psycopg2 默认任一错误都会中止事务，导致后续
+        except: pass 后的语句全部 InFailedSqlTransaction）。
+        """
+        ac = getattr(self._conn, "autocommit", None)
+        if ac is not None:
+            self._conn.autocommit = value
+
     def close(self):
         if self._pool is not None:
             # 归还到连接池而非真正关闭
@@ -298,7 +309,9 @@ def _get_pg_pool():
             return _PG_POOL
         import psycopg2
         import psycopg2.pool
-        _PG_POOL = psycopg2.pool.SimpleConnectionPool(1, 20, DATABASE_URL)
+        # 池上限 50：启动自检并发突发下每请求经 web_filter/WAF/device-ban/路由
+        # 多个中间件各取 1 连接，瞬时并发可超 20；PG 默认 max_connections=100 足够
+        _PG_POOL = psycopg2.pool.SimpleConnectionPool(1, 50, DATABASE_URL)
         return _PG_POOL
 
 

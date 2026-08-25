@@ -16,16 +16,19 @@ async def async_db_query(sql, args=None, fetch_one=False):
     """执行 SQL。SELECT 返回 list[dict]；fetch_one=True 时返回单条 dict 或 None。"""
     def _query():
         conn = _get_conn()
-        with conn:
-            cur = conn.cursor()
-            cur.execute(sql, args or ())
-            if sql.strip().upper().startswith("SELECT"):
-                if fetch_one:
-                    row = cur.fetchone()
-                    return dict(row) if row else None
-                rows = cur.fetchall()
-                return [dict(row) for row in rows]
-            else:
-                conn.commit()
-                return cur.rowcount
+        try:
+            with conn:
+                cur = conn.cursor()
+                cur.execute(sql, args or ())
+                if sql.strip().upper().startswith("SELECT"):
+                    if fetch_one:
+                        row = cur.fetchone()
+                        return dict(row) if row else None
+                    rows = cur.fetchall()
+                    return [dict(row) for row in rows]
+                else:
+                    conn.commit()
+                    return cur.rowcount
+        finally:
+            conn.close()  # 归还连接池（PG）/ 关闭（SQLite），修复 PG 连接泄漏
     return await asyncio.to_thread(_query)

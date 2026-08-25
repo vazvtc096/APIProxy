@@ -1,4 +1,4 @@
-﻿import sqlite3
+import sqlite3
 import os
 import bcrypt
 import uuid
@@ -24,7 +24,7 @@ def init_complete_db():
             is_admin INTEGER DEFAULT 0,
             is_banned INTEGER DEFAULT 0,
             ban_reason TEXT,
-            ban_expire_at TIMESTAMP,
+            ban_expire_at REAL,
             email TEXT UNIQUE,
             last_login_ip TEXT,
             last_login_time TIMESTAMP,
@@ -435,7 +435,7 @@ def init_complete_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ip TEXT UNIQUE,
             reason TEXT,
-            ban_expire_at TIMESTAMP,
+            ban_expire_at REAL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -457,7 +457,7 @@ def init_complete_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             fingerprint TEXT UNIQUE,
             reason TEXT,
-            ban_expire_at TIMESTAMP,
+            ban_expire_at REAL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -566,14 +566,14 @@ def ensure_subsystem_tables():
 
     这些表由「上网行为管理 / 堡垒机 / 日志审计服务器 / 认证服务器」共用，
     必须在 Alembic 迁移之外也保证存在（init_database() 会无条件调用本函数）。
-    仅 SQLite 后端在此创建；Postgres 由 Alembic 迁移负责。
+    经 db.py 抽象层统一适配 SQLite / PostgreSQL（AUTOINCREMENT 等方言由
+    _convert_sql 自动转换），任一后端在此创建。
     """
-    from . import configs
-    if (getattr(configs, "DB_TYPE", "sqlite") or "sqlite") != "sqlite":
-        return
-    import sqlite3
-    _path = getattr(configs, "DB_PATH", db_path)
-    conn = sqlite3.connect(_path)
+    from . import db as _db
+    conn = _db.get_conn()
+    # DDL 初始化切 autocommit（对齐 smart_init：单语句失败不污染整事务）
+    if _db.is_postgres():
+        conn.set_autocommit(True)
     try:
         cur = conn.cursor()
         # 上网行为管理：全站访问留痕
