@@ -1,0 +1,3158 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Cloud LLM API 代理</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style nonce="{{ csp_nonce }}">
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #fafafa;
+            color: #1a1a1a;
+            min-height: 100vh;
+        }
+
+        /* 顶部导航栏 */
+        .navbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 64px;
+            background: white;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+            z-index: 100;
+        }
+
+        .navbar-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .logo svg {
+            width: 20px;
+            height: 20px;
+            color: white;
+        }
+
+        .logo-text {
+            font-size: 18px;
+            font-weight: 700;
+            color: #1a1a1a;
+        }
+
+        .navbar-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .balence-display {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #f0f2ff;
+            padding: 8px 16px;
+            border-radius: 20px;
+        }
+
+        .balence-icon {
+            color: #667eea;
+            font-size: 16px;
+        }
+
+        .balence-amount {
+            font-size: 14px;
+            font-weight: 600;
+            color: #667eea;
+        }
+
+        .balence-label {
+            font-size: 12px;
+            color: #9ca3af;
+        }
+
+        /* 用户头像下拉 */
+        .user-menu {
+            position: relative;
+        }
+
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .user-avatar:hover {
+            transform: scale(1.05);
+        }
+
+        .user-dropdown {
+            position: absolute;
+            top: calc(100% + 8px);
+            right: 0;
+            width: 240px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+            padding: 8px;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-10px);
+            transition: all 0.2s;
+        }
+
+        .user-dropdown.show {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+
+        .user-info-header {
+            padding: 16px;
+            border-bottom: 1px solid #f0f0f0;
+            margin-bottom: 8px;
+        }
+
+        .user-info-name {
+            font-size: 15px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 4px;
+        }
+
+        .user-info-uid {
+            font-size: 12px;
+            color: #9ca3af;
+            font-family: monospace;
+        }
+
+        .dropdown-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.15s;
+            font-size: 14px;
+            color: #333;
+        }
+
+        .dropdown-item:hover {
+            background: #f5f5f5;
+        }
+
+        .dropdown-item i {
+            font-size: 18px;
+            color: #667eea;
+        }
+
+        .dropdown-item.danger {
+            color: #dc2626;
+        }
+
+        .dropdown-item.danger i {
+            color: #dc2626;
+        }
+
+        .dropdown-divider {
+            height: 1px;
+            background: #f0f0f0;
+            margin: 8px 0;
+        }
+
+        /* 主内容区 */
+        .main-container {
+            display: flex;
+            padding-top: 64px;
+            min-height: 100vh;
+        }
+
+        /* 侧边栏 */
+        .sidebar {
+            width: 240px;
+            background: white;
+            border-right: 1px solid #f0f0f0;
+            padding: 24px 0;
+            position: fixed;
+            top: 64px;
+            bottom: 0;
+            left: 0;
+            overflow-y: auto;
+        }
+
+        .sidebar-section {
+            margin-bottom: 24px;
+        }
+
+        .sidebar-section-title {
+            font-size: 11px;
+            font-weight: 600;
+            color: #9ca3af;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 0 20px;
+            margin-bottom: 8px;
+        }
+
+        .sidebar-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 20px;
+            cursor: pointer;
+            transition: all 0.15s;
+            font-size: 14px;
+            color: #666;
+            border-left: 3px solid transparent;
+        }
+
+        .sidebar-item:hover {
+            background: #fafafa;
+            color: #1a1a1a;
+        }
+
+        .sidebar-item.active {
+            background: #f0f2ff;
+            color: #667eea;
+            border-left-color: #667eea;
+            font-weight: 500;
+        }
+
+        .sidebar-item i {
+            font-size: 18px;
+            width: 20px;
+            text-align: center;
+        }
+
+        .sidebar-badge {
+            margin-left: auto;
+            background: #fef3c7;
+            color: #d97706;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 10px;
+        }
+
+        /* 内容区 */
+        .content {
+            flex: 1;
+            margin-left: 240px;
+            padding: 32px;
+        }
+
+        .page-header {
+            margin-bottom: 32px;
+        }
+
+        .page-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: #1a1a1a;
+            margin-bottom: 8px;
+        }
+
+        .page-subtitle {
+            font-size: 14px;
+            color: #666;
+        }
+
+        /* 统计卡片 */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 20px;
+            margin-bottom: 32px;
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+            transition: all 0.2s;
+        }
+
+        .stat-card:hover {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            transform: translateY(-2px);
+        }
+
+        .stat-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+
+        .stat-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+        }
+
+        .stat-icon.purple {
+            background: #f0f2ff;
+            color: #667eea;
+        }
+
+        .stat-icon.green {
+            background: #f0fdf4;
+            color: #16a34a;
+        }
+
+        .stat-icon.blue {
+            background: #eff6ff;
+            color: #2563eb;
+        }
+
+        .stat-icon.orange {
+            background: #fff7ed;
+            color: #ea580c;
+        }
+
+        .stat-trend {
+            font-size: 12px;
+            font-weight: 600;
+            padding: 4px 8px;
+            border-radius: 6px;
+        }
+
+        .stat-trend.up {
+            background: #f0fdf4;
+            color: #16a34a;
+        }
+
+        .stat-trend.down {
+            background: #fef2f2;
+            color: #dc2626;
+        }
+
+        .stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #1a1a1a;
+            margin-bottom: 4px;
+        }
+
+        .stat-label {
+            font-size: 13px;
+            color: #666;
+        }
+
+        /* 图表区域 */
+        .chart-card {
+            background: white;
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+            margin-bottom: 24px;
+        }
+
+        .chart-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 24px;
+        }
+
+        .chart-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #1a1a1a;
+        }
+
+        .chart-tabs {
+            display: flex;
+            gap: 4px;
+            background: #f5f5f5;
+            padding: 4px;
+            border-radius: 8px;
+        }
+
+        .chart-tab {
+            padding: 6px 12px;
+            font-size: 12px;
+            font-weight: 500;
+            color: #666;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .chart-tab.active {
+            background: white;
+            color: #1a1a1a;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+
+        .chart-placeholder {
+            height: 300px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(180deg, #fafafa 0%, #f5f5f5 100%);
+            border-radius: 12px;
+            color: #9ca3af;
+            font-size: 14px;
+        }
+
+        /* API Key 卡片 */
+        .apikey-card {
+            background: white;
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+            margin-bottom: 24px;
+        }
+
+        .apikey-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+
+        .apikey-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #1a1a1a;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            font-size: 14px;
+            font-weight: 500;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #f5f5f5;
+            color: #333;
+        }
+
+        .btn-secondary:hover {
+            background: #eee;
+        }
+
+        .btn-danger {
+            background: #fef2f2;
+            color: #dc2626;
+        }
+
+        .btn-danger:hover {
+            background: #fee2e2;
+        }
+
+        .apikey-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .apikey-item {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 16px;
+            background: #fafafa;
+            border-radius: 12px;
+            transition: background 0.15s;
+        }
+
+        .apikey-item:hover {
+            background: #f5f5f5;
+        }
+
+        .apikey-icon {
+            width: 40px;
+            height: 40px;
+            background: #f0f2ff;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #667eea;
+            font-size: 20px;
+        }
+
+        .apikey-info {
+            flex: 1;
+        }
+
+        .apikey-value {
+            font-family: monospace;
+            font-size: 13px;
+            color: #333;
+            margin-bottom: 4px;
+        }
+
+        .apikey-value.hidden {
+            letter-spacing: 2px;
+        }
+
+        .apikey-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .icon-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #666;
+            transition: all 0.15s;
+        }
+
+        .icon-btn:hover {
+            background: #eee;
+            color: #1a1a1a;
+        }
+
+        .icon-btn.danger:hover {
+            background: #fef2f2;
+            color: #dc2626;
+        }
+
+        .icon-btn.success {
+            color: #16a34a;
+        }
+        .icon-btn.success:hover {
+            background: #f0fdf4;
+            color: #15803d;
+        }
+
+        /* 充值区域 */
+        .recharge-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 16px;
+            padding: 32px;
+            color: white;
+            margin-bottom: 24px;
+        }
+
+        .recharge-title {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .recharge-desc {
+            font-size: 14px;
+            opacity: 0.9;
+            margin-bottom: 24px;
+        }
+
+        .recharge-form {
+            display: flex;
+            gap: 12px;
+        }
+
+        .recharge-input {
+            flex: 1;
+            padding: 14px 20px;
+            font-size: 16px;
+            border: none;
+            border-radius: 10px;
+            outline: none;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+        }
+
+        .recharge-input::placeholder {
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        .recharge-btn {
+            padding: 14px 32px;
+            font-size: 16px;
+            font-weight: 600;
+            background: white;
+            color: #667eea;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .recharge-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        /* 表格 */
+        .table-card {
+            background: white;
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+
+        .table-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+
+        .table-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #1a1a1a;
+        }
+
+        .table-search {
+            padding: 8px 16px;
+            font-size: 14px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            outline: none;
+            width: 240px;
+        }
+
+        .table-search:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            text-align: left;
+            padding: 12px 16px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        td {
+            padding: 16px;
+            font-size: 14px;
+            color: #333;
+            border-bottom: 1px solid #f5f5f5;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 12px;
+            font-size: 12px;
+            font-weight: 500;
+            border-radius: 20px;
+        }
+
+        .status-badge.pending {
+            background: #fef3c7;
+            color: #d97706;
+        }
+
+        .status-badge.approved {
+            background: #f0fdf4;
+            color: #16a34a;
+        }
+
+        .status-badge.rejected {
+            background: #fef2f2;
+            color: #dc2626;
+        }
+
+        .status-badge::before {
+            content: '';
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+
+        /* 页面切换 */
+        .page {
+            display: none;
+        }
+
+        .page.active {
+            display: block;
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* 模态框 */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .modal-overlay.show {
+            display: flex;
+        }
+
+        .modal {
+            background: white;
+            border-radius: 16px;
+            width: 100%;
+            max-width: 480px;
+            padding: 32px;
+            animation: modalIn 0.3s ease-out;
+        }
+
+        @keyframes modalIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+
+        .modal-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: #1a1a1a;
+            margin-bottom: 8px;
+        }
+
+        .modal-desc {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 24px;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+            margin-top: 24px;
+        }
+
+        /* 模态框头部/主体/底部 */
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .modal-header .modal-title {
+            margin: 0;
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 20px;
+            color: #999;
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+
+        .modal-close:hover {
+            color: #666;
+            background: #f5f5f5;
+        }
+
+        .modal-body {
+            margin-bottom: 24px;
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            padding-top: 16px;
+            border-top: 1px solid #f0f0f0;
+        }
+
+        /* 表单样式 */
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            color: #333;
+            margin-bottom: 8px;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1.5px solid #e5e7eb;
+            border-radius: 10px;
+            font-size: 14px;
+            color: #1a1a1a;
+            background: #fafafa;
+            transition: all 0.2s;
+            box-sizing: border-box;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #667eea;
+            background: white;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .form-input::placeholder {
+            color: #999;
+        }
+
+        .form-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .form-checkbox input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            accent-color: #667eea;
+            cursor: pointer;
+        }
+
+        .form-checkbox span {
+            font-size: 14px;
+            color: #333;
+        }
+
+        /* 密码强度指示器 */
+        .password-strength {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .strength-bar {
+            flex: 1;
+            height: 4px;
+            background: #e5e7eb;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        .strength-fill {
+            height: 100%;
+            width: 0%;
+            border-radius: 2px;
+            transition: all 0.3s ease;
+        }
+        .strength-fill.weak {
+            background: #ef4444;
+            width: 33%;
+        }
+        .strength-fill.medium {
+            background: #f59e0b;
+            width: 66%;
+        }
+        .strength-fill.strong {
+            background: #10b981;
+            width: 100%;
+        }
+        .strength-text {
+            font-size: 12px;
+            color: #666;
+            white-space: nowrap;
+        }
+
+        /* 按钮样式 */
+        .btn {
+            padding: 10px 20px;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #f5f5f5;
+            color: #666;
+        }
+
+        .btn-secondary:hover {
+            background: #e8e8e8;
+        }
+
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 13px;
+            border-radius: 8px;
+        }
+
+        /* 响应式 */
+        @media (max-width: 768px) {
+            .sidebar {
+                display: none;
+            }
+
+            .content {
+                margin-left: 0;
+                padding: 20px;
+            }
+
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Toast 提示 */
+        .toast-container {
+            position: fixed;
+            top: 80px;
+            right: 24px;
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .toast {
+            background: white;
+            padding: 16px 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            animation: toastIn 0.3s ease-out;
+            min-width: 280px;
+        }
+
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateX(20px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        .toast-icon {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+
+        .toast-icon.success {
+            background: #f0fdf4;
+            color: #16a34a;
+        }
+
+        .toast-icon.error {
+            background: #fef2f2;
+            color: #dc2626;
+        }
+
+        .toast-icon.info {
+            background: #eff6ff;
+            color: #2563eb;
+        }
+
+        .toast-message {
+            font-size: 14px;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <!-- 顶部导航栏 -->
+    <nav class="navbar">
+        <div class="navbar-left">
+            <div class="logo">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+            </div>
+            <span class="logo-text">Cloud LLM API 代理</span>
+        </div>
+        <div class="navbar-right">
+            {% include "_notif_bell.html" %}
+            <div class="balence-display">
+                <i class="bi bi-wallet2 balence-icon"></i>
+                <span class="balence-amount" id="balenceAmount">¥0.00</span>
+            </div>
+            <div class="user-menu">
+                <div class="user-avatar" id="userAvatar" data-action="toggleUserMenu">
+                    <span id="avatarText">U</span>
+                </div>
+                <div class="user-dropdown" id="userDropdown">
+                    <div class="user-info-header">
+                        <div class="user-info-name" id="userName">用户名</div>
+                        <div class="user-info-uid" id="userUid">UID: 000000000000</div>
+                    </div>
+                    <div class="dropdown-item" data-nav="/dashboard">
+                        <i class="bi bi-speedometer2"></i>
+                        <span>概览</span>
+                    </div>
+                    <div class="dropdown-item" data-nav="/dashboard/apikeys">
+                        <i class="bi bi-key"></i>
+                        <span>API Keys</span>
+                    </div>
+                    <div class="dropdown-item" data-nav="/dashboard/recharge">
+                        <i class="bi bi-credit-card"></i>
+                        <span>充值</span>
+                    </div>
+                    <div class="dropdown-item" id="adminMenuItem" data-nav="/dashboard/admin" style="display: none;">
+                        <i class="bi bi-shield-check"></i>
+                        <span>管理后台</span>
+                        <span class="sidebar-badge">Admin</span>
+                    </div>
+                    <div class="dropdown-divider"></div>
+                    <div class="dropdown-item" data-action="showSettings">
+                        <i class="bi bi-gear"></i>
+                        <span>设置</span>
+                    </div>
+                    <div class="dropdown-item danger" data-action="logout">
+                        <i class="bi bi-box-arrow-right"></i>
+                        <span>退出登录</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 主内容区 -->
+    <div class="main-container">
+        <!-- 侧边栏 -->
+        {% include "_sidebar.html" %}
+
+
+        <!-- 内容区 -->
+        <main class="content">
+            <!-- 概览页 -->
+            <div class="page{% if section == 'overview' %} active{% endif %}" id="page-overview">
+                <div class="page-header">
+                    <h1 class="page-title">概览</h1>
+                    <p class="page-subtitle">查看您的账户余额、使用情况和 API Keys</p>
+                </div>
+
+                <!-- 统计卡片 -->
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <div class="stat-icon purple">
+                                <i class="bi bi-wallet2"></i>
+                            </div>
+                            <span class="stat-trend up">+12.5%</span>
+                        </div>
+                        <div class="stat-value" id="statBalance">¥0.00</div>
+                        <div class="stat-label">账户余额</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <div class="stat-icon green">
+                                <i class="bi bi-key"></i>
+                            </div>
+                        </div>
+                        <div class="stat-value" id="statApikeys">0</div>
+                        <div class="stat-label">API Keys 数量</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <div class="stat-icon blue">
+                                <i class="bi bi-chat-dots"></i>
+                            </div>
+                            <span class="stat-trend up">+8.2%</span>
+                        </div>
+                        <div class="stat-value" id="statRequests">0</div>
+                        <div class="stat-label">今日请求数</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <div class="stat-icon orange">
+                                <i class="bi bi-cpu"></i>
+                            </div>
+                            <span class="stat-trend down">-3.1%</span>
+                        </div>
+                        <div class="stat-value" id="statTokens">0</div>
+                        <div class="stat-label">今日 Token 消耗</div>
+                    </div>
+                </div>
+
+                <!-- 使用趋势图 -->
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3 class="chart-title">费用消耗趋势</h3>
+                        <div class="chart-tabs" id="overviewUsageTabs">
+                            <div class="chart-tab active" data-days="7" data-action="setActiveTab" data-arg-this data-then="loadOverviewUsage" data-then-args="7">7 天</div>
+                            <div class="chart-tab" data-days="30" data-action="setActiveTab" data-arg-this data-then="loadOverviewUsage" data-then-args="30">30 天</div>
+                            <div class="chart-tab" data-days="90" data-action="setActiveTab" data-arg-this data-then="loadOverviewUsage" data-then-args="90">90 天</div>
+                        </div>
+                    </div>
+                    <div style="height: 300px; position: relative; padding: 20px;">
+                        <canvas id="overviewUsageChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- 快速操作 -->
+                <div class="apikey-card">
+                    <div class="apikey-header">
+                        <h3 class="apikey-title">快速操作</h3>
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
+                        <div class="apikey-item" style="cursor: pointer;" data-nav="/dashboard/apikeys">
+                            <div class="apikey-icon">
+                                <i class="bi bi-key-fill"></i>
+                            </div>
+                            <div class="apikey-info">
+                                <div style="font-weight: 600; margin-bottom: 4px;">管理 API Keys</div>
+                                <div style="font-size: 12px; color: #999;">创建、查看、删除 API Key</div>
+                            </div>
+                            <i class="bi bi-chevron-right" style="color: #ccc;"></i>
+                        </div>
+                        <div class="apikey-item" style="cursor: pointer;" data-nav="/dashboard/recharge">
+                            <div class="apikey-icon" style="background: #f0fdf4; color: #16a34a;">
+                                <i class="bi bi-plus-circle-fill"></i>
+                            </div>
+                            <div class="apikey-info">
+                                <div style="font-weight: 600; margin-bottom: 4px;">充值余额</div>
+                                <div style="font-size: 12px; color: #999;">提交充值申请</div>
+                            </div>
+                            <i class="bi bi-chevron-right" style="color: #ccc;"></i>
+                        </div>
+                        <div class="apikey-item" style="cursor: pointer;" data-nav="/dashboard/usage">
+                            <div class="apikey-icon" style="background: #eff6ff; color: #2563eb;">
+                                <i class="bi bi-bar-chart-fill"></i>
+                            </div>
+                            <div class="apikey-info">
+                                <div style="font-weight: 600; margin-bottom: 4px;">查看统计</div>
+                                <div style="font-size: 12px; color: #999;">详细使用数据</div>
+                            </div>
+                            <i class="bi bi-chevron-right" style="color: #ccc;"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- API Keys 页 -->
+            <div class="page{% if section == 'apikeys' %} active{% endif %}" id="page-apikeys">
+                <div class="page-header">
+                    <h1 class="page-title">API Keys</h1>
+                    <p class="page-subtitle">管理您的 API Keys，请勿泄露给他人</p>
+                </div>
+
+                <div class="apikey-card">
+                    <div class="apikey-header">
+                        <h3 class="apikey-title">我的 API Keys</h3>
+                        <button class="btn btn-primary" data-action="createApiKey">
+                            <i class="bi bi-plus-lg"></i>
+                            创建新 Key
+                        </button>
+                    </div>
+                    <div class="apikey-list" id="apikeyList">
+                        <!-- 动态生成 -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- 使用统计页 -->
+            <div class="page{% if section == 'usage' %} active{% endif %}" id="page-usage">
+                <div class="page-header">
+                    <h1 class="page-title">使用统计</h1>
+                    <p class="page-subtitle">查看您的 API 使用情况和消耗明细</p>
+                </div>
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <div class="stat-icon purple">
+                                <i class="bi bi-wallet2"></i>
+                            </div>
+                        </div>
+                        <div class="stat-value" id="usageCost">¥0.00</div>
+                        <div class="stat-label">本月消费</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <div class="stat-icon green">
+                                <i class="bi bi-arrow-down"></i>
+                            </div>
+                        </div>
+                        <div class="stat-value" id="usageInputTokens">0</div>
+                        <div class="stat-label">输入 Token</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <div class="stat-icon blue">
+                                <i class="bi bi-arrow-up"></i>
+                            </div>
+                        </div>
+                        <div class="stat-value" id="usageOutputTokens">0</div>
+                        <div class="stat-label">输出 Token</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <div class="stat-icon orange">
+                                <i class="bi bi-chat-dots"></i>
+                            </div>
+                        </div>
+                        <div class="stat-value" id="usageRequests">0</div>
+                        <div class="stat-label">请求次数</div>
+                    </div>
+                </div>
+
+                <style nonce="{{ csp_nonce }}">
+                    .billing-banner { display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:12px 16px; background:#f0f4ff; border:1px solid #d9e2ff; border-radius:12px; margin-bottom:16px; }
+                    .billing-banner .bb-time { font-weight:600; color:#33415c; }
+                    .tier-pill { font-size:12px; padding:2px 8px; border-radius:6px; }
+                    .tier-pill.peak { background:#fde8e8; color:#c0392b; }
+                    .tier-pill.offpeak { background:#e6f4ea; color:#1a7f37; }
+                    .tier-pill.std { background:#eef0f4; color:#555; }
+                </style>
+                <div class="billing-banner" id="billingBanner">
+                    <span class="bb-time">当前计费时段：加载中...</span>
+                </div>
+
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3 class="chart-title">每日消耗趋势（费用）</h3>
+                        <div class="chart-tabs" id="usagePageTabs">
+                            <div class="chart-tab active" data-days="7" data-action="setActiveTab" data-arg-this data-then="loadUsagePage" data-then-args="7">7 天</div>
+                            <div class="chart-tab" data-days="30" data-action="setActiveTab" data-arg-this data-then="loadUsagePage" data-then-args="30">30 天</div>
+                            <div class="chart-tab" data-days="90" data-action="setActiveTab" data-arg-this data-then="loadUsagePage" data-then-args="90">90 天</div>
+                        </div>
+                    </div>
+                    <div style="height: 300px; position: relative; padding: 20px;">
+                        <canvas id="usagePageChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="table-card">
+                    <div class="table-header">
+                        <h3 class="table-title">使用记录</h3>
+                        <input type="text" class="table-search" placeholder="搜索...">
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>时间</th>
+                                <th>模型</th>
+                                <th>输入 Token</th>
+                                <th>输出 Token</th>
+                                <th>费用</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="5" style="text-align: center; color: #999; padding: 40px;">
+                                    暂无使用记录
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 充值页 -->
+            <div class="page{% if section == 'recharge' %} active{% endif %}" id="page-recharge">
+                <div class="page-header">
+                    <h1 class="page-title">充值</h1>
+                    <p class="page-subtitle">提交充值申请，管理员审核后到账</p>
+                </div>
+
+                <div class="recharge-card">
+                    <h2 class="recharge-title">快速充值</h2>
+                    <p class="recharge-desc">输入充值金额，提交申请后联系管理员审核</p>
+                    <div class="recharge-form">
+                        <input type="number" class="recharge-input" id="rechargeAmount" placeholder="输入充值金额（元）" min="1">
+                        <button class="recharge-btn" data-action="submitRecharge">提交申请</button>
+                    </div>
+                </div>
+
+                <div class="table-card">
+                    <div class="table-header">
+                        <h3 class="table-title">充值记录</h3>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>申请时间</th>
+                                <th>金额</th>
+                                <th>状态</th>
+                                <th>处理时间</th>
+                                <th>备注</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rechargeHistory">
+                            <tr>
+                                <td colspan="5" style="text-align: center; color: #999; padding: 40px;">
+                                    暂无充值记录
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 管理员 - 充值审核页 -->
+            <div class="page{% if section == 'admin' %} active{% endif %}" id="page-admin">
+                <div class="page-header">
+                    <h1 class="page-title">充值审核</h1>
+                    <p class="page-subtitle">审核用户的充值申请</p>
+                </div>
+
+                <div class="table-card">
+                    <div class="table-header">
+                        <h3 class="table-title">充值请求队列</h3>
+                        <div style="display: flex; gap: 12px;">
+                            <input type="text" class="table-search" id="searchUid" placeholder="按 UID 搜索">
+                            <input type="number" class="table-search" id="searchMinAmount" placeholder="最小金额" style="width: 120px;">
+                            <input type="number" class="table-search" id="searchMaxAmount" placeholder="最大金额" style="width: 120px;">
+                            <button class="btn btn-secondary" data-action="loadAdminRequests">
+                                <i class="bi bi-search"></i>
+                                搜索
+                            </button>
+                        </div>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>申请时间</th>
+                                <th>用户</th>
+                                <th>UID</th>
+                                <th>金额</th>
+                                <th>状态</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="adminRequestList">
+                            <tr>
+                                <td colspan="6" style="text-align: center; color: #999; padding: 40px;">
+                                    加载中...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 管理员 - 用户管理页 -->
+            <div class="page{% if section == 'users' %} active{% endif %}" id="page-users">
+                <div class="page-header">
+                    <h1 class="page-title">用户管理</h1>
+                    <p class="page-subtitle">管理所有用户账户</p>
+                </div>
+
+                <div class="table-card">
+                    <div class="table-header">
+                        <h3 class="table-title">用户列表</h3>
+                        <div style="display: flex; gap: 12px; align-items: center;">
+                            <input type="text" class="table-search" id="searchUser" placeholder="按用户名或 UID 搜索" style="width: 200px;">
+                            <button class="btn btn-primary btn-sm" data-action="openCreateUserModal">
+                                <i class="bi bi-plus-lg"></i>
+                                创建用户
+                            </button>
+                        </div>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>UID</th>
+                                <th>用户名</th>
+                                <th>余额</th>
+                                <th>超支限额</th>
+                                <th>API Keys</th>
+                                <th>状态</th>
+                                <th>注册时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="userList">
+                            <tr>
+                                <td colspan="8" style="text-align: center; color: #999; padding: 40px;">
+                                    加载中...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 管理员 - 数据统计页 -->
+            <div class="page{% if section == 'stats' %} active{% endif %}" id="page-stats">
+                <div class="page-header">
+                    <h1 class="page-title">数据统计</h1>
+                    <p class="page-subtitle">平台整体数据统计</p>
+                </div>
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <div class="stat-icon purple">
+                                <i class="bi bi-people"></i>
+                            </div>
+                        </div>
+                        <div class="stat-value" id="totalUsers">0</div>
+                        <div class="stat-label">总用户数</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <div class="stat-icon green">
+                                <i class="bi bi-wallet2"></i>
+                            </div>
+                        </div>
+                        <div class="stat-value" id="totalBalance">¥0.00</div>
+                        <div class="stat-label">总余额</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <div class="stat-icon blue">
+                                <i class="bi bi-key"></i>
+                            </div>
+                        </div>
+                        <div class="stat-value" id="totalApikeys">0</div>
+                        <div class="stat-label">总 API Keys</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <div class="stat-icon orange">
+                                <i class="bi bi-clock-history"></i>
+                            </div>
+                        </div>
+                        <div class="stat-value" id="pendingRequests">0</div>
+                        <div class="stat-label">待审核请求</div>
+                    </div>
+                </div>
+
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3 class="chart-title">用户增长趋势</h3>
+                        <div class="chart-tabs">
+                            <div class="chart-tab active" data-action="switchChartPeriod" data-args="7">7 天</div>
+                            <div class="chart-tab" data-action="switchChartPeriod" data-args="30">30 天</div>
+                            <div class="chart-tab" data-action="switchChartPeriod" data-args="90">90 天</div>
+                        </div>
+                    </div>
+                    <div style="height: 300px; position: relative; padding: 20px;">
+                        <canvas id="adminUserGrowthChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3 class="chart-title">平台每日费用（近 30 天）</h3>
+                    </div>
+                    <div style="height: 300px; position: relative; padding: 20px;">
+                        <canvas id="adminUsageDailyChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3 class="chart-title">模型用量分布（近 30 天费用）</h3>
+                    </div>
+                    <div style="height: 300px; position: relative; padding: 20px;">
+                        <canvas id="adminModelUsageChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        <!-- 可用模型页 -->
+        <div class="page{% if section == 'models' %} active{% endif %}" id="page-models">
+            <style nonce="{{ csp_nonce }}">
+                .model-list { display: flex; flex-direction: column; gap: 8px; padding: 8px 0; }
+                .model-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: #f7f8fa; border: 1px solid #eef0f4; border-radius: 10px; }
+                .model-item code { font-family: 'SFMono-Regular', Consolas, monospace; color: #1a1a1a; font-size: 13px; word-break: break-all; }
+                .model-item .copy-btn { flex: none; margin-left: 12px; border: 1px solid #d8dce6; background: #fff; color: #667eea; border-radius: 8px; padding: 4px 12px; cursor: pointer; font-size: 12px; }
+                .model-item .copy-btn:hover { background: #f0f2ff; }
+                .model-list .empty { color: #9ca3af; padding: 12px; font-size: 13px; }
+                .chart-refresh { border: 1px solid #d8dce6; background: #fff; color: #667eea; border-radius: 8px; padding: 6px 14px; cursor: pointer; font-size: 13px; }
+                .chart-refresh:hover { background: #f0f2ff; }
+            </style>
+            <div class="page-header">
+                <h1 class="page-title">可用模型</h1>
+                <p class="page-subtitle">由后台自动从上游（BASEURL）拉取，每 5 分钟刷新一次。</p>
+            </div>
+            <div class="chart-card">
+                <div class="chart-header">
+                    <h3 class="chart-title">模型列表</h3>
+                    <button class="chart-refresh" data-action="loadModels">刷新</button>
+                </div>
+                <div id="modelList" class="model-list">
+                    <div class="empty">加载中...</div>
+                </div>
+            </div>
+            <script nonce="{{ csp_nonce }}">
+                async function loadModels() {
+                    const el = document.getElementById('modelList');
+                    if (!el) return;
+                    el.innerHTML = '<div class="empty">加载中...</div>';
+                    try {
+                        const r = await fetch('/api/models');
+                        if (!r.ok) { el.innerHTML = '<div class="empty">加载失败：' + r.status + '</div>'; return; }
+                        const j = await r.json();
+                        const ids = (j.data || []).map(x => x.id);
+                        if (!ids.length) { el.innerHTML = '<div class="empty">暂无可用模型</div>'; return; }
+                        el.innerHTML = '';
+                        ids.forEach(id => {
+                            const d = document.createElement('div'); d.className = 'model-item';
+                            const c = document.createElement('code'); c.textContent = id;
+                            const b = document.createElement('button'); b.textContent = '复制'; b.className = 'copy-btn';
+                            b.onclick = () => navigator.clipboard.writeText(id);
+                            d.appendChild(c); d.appendChild(b); el.appendChild(d);
+                        });
+                    } catch (e) {
+                        el.innerHTML = '<div class="empty">加载失败：' + e + '</div>';
+                    }
+                }
+                loadModels();
+            </script>
+        </div>
+        <!-- 模型价格管理页（公开可查看，管理员可编辑） -->
+        <div class="page{% if section == 'model-prices' %} active{% endif %}" id="page-model-prices">
+            <div class="page-header">
+                <h1 class="page-title">模型价格</h1>
+                <p class="page-subtitle">各模型每百万 tokens 单价（元）。含基础价与按时段峰/谷价。</p>
+            </div>
+            <div class="chart-card">
+                <div class="chart-header">
+                    <h3 class="chart-title">价格表</h3>
+                    <button class="chart-refresh" data-action="loadModelPrices">刷新</button>
+                </div>
+                <div id="priceTable" class="price-table">
+                    <div class="empty">加载中...</div>
+                </div>
+            </div>
+        </div>
+        <style nonce="{{ csp_nonce }}">
+            .price-row { display: grid; grid-template-columns: 1fr 120px 120px 80px 80px; gap: 10px; align-items: center; padding: 10px 14px; background: #f7f8fa; border: 1px solid #eef0f4; border-radius: 10px; }
+            .price-row.unpriced { border-color: #f5c2c2; background: #fff5f5; }
+            .price-row code { font-family: monospace; font-size: 13px; word-break: break-all; }
+            .price-row input { width: 100%; padding: 6px 8px; border: 1px solid #d8dce6; border-radius: 8px; font-size: 13px; }
+            .price-row .status { font-size: 12px; }
+            .price-row .status.ok { color: #16a34a; }
+            .price-row .status.no { color: #dc2626; }
+            .price-row .price-text { font-size: 14px; font-weight: 600; color: #333; }
+            .price-row .price-readonly { font-size: 11px; color: #999; }
+            .price-row .save-btn { border: 1px solid #667eea; background: #667eea; color: #fff; border-radius: 8px; padding: 6px 12px; cursor: pointer; font-size: 12px; }
+            .price-row .save-btn:hover { background: #5568d3; }
+            .sched-list { margin-top: 8px; padding-left: 16px; }
+            .sched-item { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px; color: #555; }
+            .sched-item .tier-tag { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; }
+            .sched-item .tier-tag.peak { background: #fde8e8; color: #c0392b; }
+            .sched-item .tier-tag.offpeak { background: #e6f4ea; color: #1a7f37; }
+            .sched-item .tier-tag.standard { background: #f0f0f0; color: #666; }
+            .sched-item .sched-del { border: none; background: transparent; color: #dc2626; cursor: pointer; font-size: 12px; padding: 2px 6px; }
+            .sched-add-row { display: flex; gap: 6px; margin-top: 6px; align-items: center; }
+            .sched-add-row input { width: 70px; padding: 4px 6px; border: 1px solid #d8dce6; border-radius: 6px; font-size: 12px; }
+            .sched-add-row .sched-time { width: 80px; }
+            .sched-add-row .sched-add-btn { border: 1px solid #667eea; background: #667eea; color: #fff; border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 12px; }
+        </style>
+        <script nonce="{{ csp_nonce }}">
+            let _isAdmin = false;
+            let _schedCache = [];  // [{id, model, start, end, input, output, enabled}]
+
+            async function loadModelPrices() {
+                const el = document.getElementById('priceTable');
+                if (!el) return;
+                el.innerHTML = '<div class="empty">加载中...</div>';
+                try {
+                    // 并行加载价格表与时段计费
+                    const [prRes, scRes] = await Promise.all([
+                        fetch('/api/admin/model-prices'),
+                        fetch('/api/admin/pricing-schedules').catch(() => null)
+                    ]);
+                    if (!prRes.ok) { el.innerHTML = '<div class="empty">加载失败：' + prRes.status + '</div>'; return; }
+                    const prData = await prRes.json();
+                    const rows = prData.model_prices || [];
+                    _schedCache = (scRes && scRes.ok) ? (await scRes.json()).schedules || [] : [];
+                    _isAdmin = (scRes && scRes.ok);
+                    if (!rows.length) { el.innerHTML = '<div class="empty">暂无模型</div>'; return; }
+                    el.innerHTML = '';
+                    rows.forEach(row => {
+                        const d = document.createElement('div');
+                        d.className = 'price-row' + (row.priced ? '' : ' unpriced');
+                        const c = document.createElement('code'); c.textContent = row.model;
+                        // 基础价：管理员可编辑输入框，普通用户只读文本
+                        let i1, i2, b;
+                        if (_isAdmin) {
+                            i1 = document.createElement('input'); i1.type = 'number'; i1.step = '0.01'; i1.value = row.input;
+                            i2 = document.createElement('input'); i2.type = 'number'; i2.step = '0.01'; i2.value = row.output;
+                            b = document.createElement('button'); b.className = 'save-btn'; b.textContent = '保存';
+                            b.onclick = () => saveModelPrice(row.model, i1.value, i2.value);
+                        } else {
+                            i1 = document.createElement('span'); i1.className = 'price-text'; i1.textContent = row.input;
+                            i2 = document.createElement('span'); i2.className = 'price-text'; i2.textContent = row.output;
+                            b = document.createElement('span'); b.className = 'price-readonly'; b.textContent = '元/百万 tokens';
+                        }
+                        const s = document.createElement('span'); s.className = 'status ' + (row.priced ? 'ok' : 'no'); s.textContent = row.priced ? '已定价' : '未定价';
+                        d.appendChild(c); d.appendChild(i1); d.appendChild(i2); d.appendChild(s); d.appendChild(b);
+                        // 时段计费列表
+                        const modelScheds = _schedCache.filter(sc => sc.model === row.model);
+                        if (modelScheds.length || _isAdmin) {
+                            const sl = document.createElement('div'); sl.className = 'sched-list';
+                            // 峰/谷判断：同一模型内所有时段相对比较（最高=峰、最低=谷、相同=时段价）
+                            const sums = modelScheds.map(sc => (sc.input || 0) + (sc.output || 0));
+                            const maxSum = sums.length ? Math.max.apply(null, sums) : 0;
+                            const minSum = sums.length ? Math.min.apply(null, sums) : 0;
+                            modelScheds.forEach(sc => {
+                                const sum = (sc.input || 0) + (sc.output || 0);
+                                let tier, label;
+                                if (maxSum === minSum) { tier = 'standard'; label = '时段价'; }
+                                else if (sum >= maxSum) { tier = 'peak'; label = '峰价'; }
+                                else if (sum <= minSum) { tier = 'offpeak'; label = '谷价'; }
+                                else { tier = 'standard'; label = '标准价'; }
+                                const si = document.createElement('div'); si.className = 'sched-item';
+                                si.innerHTML = '<span class="tier-tag ' + tier + '">' + label + '</span> '
+                                    + sc.start + ' ~ ' + sc.end + '：输入 <b>' + sc.input + '</b> / 输出 <b>' + sc.output + '</b>';
+                                if (_isAdmin) {
+                                    const del = document.createElement('button'); del.className = 'sched-del'; del.textContent = '删除';
+                                    del.onclick = () => deleteSchedule(sc.id, row.model);
+                                    si.appendChild(del);
+                                }
+                                sl.appendChild(si);
+                            });
+                            // 添加新时段（仅管理员）
+                            if (_isAdmin) {
+                                const ar = document.createElement('div'); ar.className = 'sched-add-row';
+                                ar.innerHTML = '<span style="font-size:12px;color:#888">+ 时段：</span>'
+                                    + '<input class="sched-time" type="text" placeholder="HH:MM:SS" data-field="start" />'
+                                    + '<span style="font-size:11px;color:#aaa">~</span>'
+                                    + '<input class="sched-time" type="text" placeholder="HH:MM:SS" data-field="end" />'
+                                    + '<input type="number" placeholder="输入价" data-field="input" step="0.01" />'
+                                    + '<input type="number" placeholder="输出价" data-field="output" step="0.01" />';
+                                const ab = document.createElement('button'); ab.className = 'sched-add-btn'; ab.textContent = '添加';
+                                ab.onclick = () => {
+                                    const inputs = ar.querySelectorAll('input');
+                                    const obj = {};
+                                    inputs.forEach(inp => { obj[inp.dataset.field] = inp.value; });
+                                    addSchedule(row.model, obj.start, obj.end, obj.input, obj.output);
+                                };
+                                ar.appendChild(ab);
+                                sl.appendChild(ar);
+                            }
+                            el.appendChild(d);
+                            el.appendChild(sl);
+                        } else {
+                            el.appendChild(d);
+                        }
+                    });
+                } catch (e) {
+                    el.innerHTML = '<div class="empty">加载失败：' + e + '</div>';
+                }
+            }
+            async function saveModelPrice(model, inp, out) {
+                try {
+                    const r = await fetch('/api/admin/model-prices', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ model: model, input: parseFloat(inp) || 0, output: parseFloat(out) || 0 })
+                    });
+                    if (!r.ok) { alert('保存失败：' + r.status); return; }
+                    loadModelPrices();
+                } catch (e) { alert('保存失败：' + e); }
+            }
+            async function addSchedule(model, start, end, input, output) {
+                if (!start || !end || !input || !output) { alert('请填写完整时段信息'); return; }
+                try {
+                    const r = await fetch('/api/admin/pricing-schedules', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ model, start, end, input: parseFloat(input), output: parseFloat(output) })
+                    });
+                    if (!r.ok) { alert('添加失败：' + r.status); return; }
+                    loadModelPrices();
+                } catch (e) { alert('添加失败：' + e); }
+            }
+            async function deleteSchedule(sid, model) {
+                if (!confirm('确认删除该时段计费规则？')) return;
+                try {
+                    const r = await fetch('/api/admin/pricing-schedules/' + sid, { method: 'DELETE' });
+                    if (!r.ok) { alert('删除失败：' + r.status); return; }
+                    loadModelPrices();
+                } catch (e) { alert('删除失败：' + e); }
+            }
+            loadModelPrices();
+        </script>
+
+        <!-- 上游管理页 -->
+        <div class="page{% if section == 'upstreams' %} active{% endif %}" id="page-upstreams">
+            <div class="page-header">
+                <h1 class="page-title">上游管理</h1>
+                <p class="page-subtitle">管理上游 API Key，改动即时生效</p>
+            </div>
+            <div style="margin-bottom: 16px;">
+                <button class="btn btn-primary" data-action="openUpstreamModal"><i class="bi bi-plus-lg"></i> 新增上游</button>
+            </div>
+            <div class="chart-card">
+                <div class="chart-header">
+                    <h3 class="chart-title">上游列表</h3>
+                    <button class="chart-refresh" data-action="loadUpstreams">刷新</button>
+                </div>
+                <div id="upstreamTable" class="price-table">
+                    <div class="empty">加载中...</div>
+                </div>
+            </div>
+        </div>
+
+        <style nonce="{{ csp_nonce }}">
+            .up-row { display:grid; grid-template-columns: 1.2fr 2fr 0.8fr 0.7fr 1.6fr 1fr; gap:10px; align-items:center; padding:12px 14px; background:#f7f8fa; border:1px solid #eef0f4; border-radius:10px; }
+            .up-row .up-key { font-family:monospace; font-size:12px; word-break:break-all; }
+            .up-row .up-actions { display:flex; gap:6px; justify-content:flex-end; }
+            .up-row .badge-on { color:#16a34a; font-size:12px; }
+            .up-row .badge-off { color:#dc2626; font-size:12px; }
+            .modal-field { margin-bottom:12px; }
+            .modal-field label { display:block; font-size:13px; margin-bottom:4px; color:#444; }
+            .modal-field input { width:100%; padding:8px 10px; border:1px solid #d8dce6; border-radius:8px; font-size:13px; box-sizing:border-box; }
+        </style>
+        <script nonce="{{ csp_nonce }}">
+            let _upCache = {};
+            function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+            async function loadUpstreams() {
+                const el = document.getElementById('upstreamTable');
+                if (!el) return;
+                el.innerHTML = '<div class="empty">加载中...</div>';
+                try {
+                    const r = await fetch('/api/admin/upstreams');
+                    if (!r.ok) { el.innerHTML = '<div class="empty">加载失败：' + r.status + '</div>'; return; }
+                    const j = await r.json();
+                    const list = j.upstreams || [];
+                    _upCache = {};
+                    if (!list.length) { el.innerHTML = '<div class="empty">暂无上游，点击「新增上游」添加</div>'; return; }
+                    el.innerHTML = '';
+                    list.forEach(u => {
+                        _upCache[u.name] = u;
+                        const d = document.createElement('div');
+                        d.className = 'up-row';
+                        const status = u.enabled ? '<span class="badge-on">启用</span>' : '<span class="badge-off">禁用</span>';
+                        const dm = (u.disabled_models && u.disabled_models.length) ? u.disabled_models.join(', ') : '无';
+                        d.innerHTML =
+                            '<div><b>' + esc(u.name) + '</b></div>' +
+                            '<div class="up-key">' + esc(u.base_url) + '</div>' +
+                            '<div class="up-key"><span id="upk-' + esc(u.name) + '">' + esc(u.api_key_masked) + '</span> <i class="bi bi-eye" style="cursor:pointer" data-action="toggleUpstreamKey" data-args="' + esc(u.name) + '" title="显示/隐藏"></i></div>' +
+                            '<div>' + (u.priority != null ? u.priority : '') + '</div>' +
+                            '<div>' + status + '</div>' +
+                            '<div class="up-actions"><button class="icon-btn" data-action="openUpstreamModal" data-args="' + esc(u.name) + '">编辑</button><button class="icon-btn danger" data-action="deleteUpstream" data-args="' + esc(u.name) + '">删除</button></div>';
+                        el.appendChild(d);
+                    });
+                } catch (e) { el.innerHTML = '<div class="empty">加载失败：' + e + '</div>'; }
+            }
+            function toggleUpstreamKey(name) {
+                const u = _upCache[name]; if (!u) return;
+                const el = document.getElementById('upk-' + name); if (!el) return;
+                if (el.textContent === '***') el.textContent = u.api_key; else el.textContent = '***';
+            }
+            function openUpstreamModal(name) {
+                const u = name ? (_upCache[name] || {}) : {};
+                const html =
+                    '<div class="modal-overlay" id="upModal" style="display:flex;">' +
+                    '<div class="modal" style="width:520px;">' +
+                    '<div class="modal-header"><h3 class="modal-title">' + (name ? '编辑上游' : '新增上游') + '</h3>' +
+                    '<button class="modal-close" data-action="closeUpstreamModal"><i class="bi bi-x-lg"></i></button></div>' +
+                    '<div class="modal-body">' +
+                    '<div class="modal-field"><label>名称（唯一）</label><input id="up-name" value="' + esc(u.name || '') + '" ' + (name ? 'readonly' : '') + '></div>' +
+                    '<div class="modal-field"><label>Base URL</label><input id="up-base" value="' + esc(u.base_url || '') + '"></div>' +
+                    '<div class="modal-field"><label>API Key' + (name ? '（留空不修改）' : '') + '</label><input id="up-key" type="password" placeholder="' + (name ? '留空则不修改' : '') + '" value=""></div>' +
+                    '<div class="modal-field"><label>优先级（数字越小越优先）</label><input id="up-prio" type="number" value="' + (u.priority != null ? u.priority : 100) + '"></div>' +
+                    '<div class="modal-field"><label>禁用模型（逗号分隔）</label><input id="up-dm" value="' + esc((u.disabled_models || []).join(', ')) + '"></div>' +
+                    '<div class="modal-field"><label><input type="checkbox" id="up-enabled" ' + (u.enabled === false ? '' : 'checked') + '> 启用</label></div>' +
+                    '</div>' +
+                    '<div class="modal-footer"><button class="btn btn-secondary" data-action="closeUpstreamModal">取消</button>' +
+                    '<button class="btn btn-primary" data-action="saveUpstream" data-args="' + (name ? esc(name) : '') + '">保存</button></div>' +
+                    '</div></div>';
+                const old = document.getElementById('upModal'); if (old) old.remove();
+                document.body.insertAdjacentHTML('beforeend', html);
+            }
+            function closeUpstreamModal() { const m = document.getElementById('upModal'); if (m) m.remove(); }
+            async function saveUpstream(origName) {
+                const name = document.getElementById('up-name').value.trim();
+                const base = document.getElementById('up-base').value.trim();
+                const key = document.getElementById('up-key').value;
+                const prio = parseInt(document.getElementById('up-prio').value || '100', 10);
+                const dm = document.getElementById('up-dm').value;
+                const enabled = document.getElementById('up-enabled').checked;
+                if (!name || !base) { alert('名称和 Base URL 必填'); return; }
+                const payload = { name, base_url: base, priority: prio, enabled, disabled_models: dm };
+                if (key) payload.api_key = key;
+                try {
+                    let r;
+                    if (origName) {
+                        r = await fetch('/api/admin/upstreams/' + encodeURIComponent(origName), { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+                    } else {
+                        r = await fetch('/api/admin/upstreams', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+                    }
+                    if (!r.ok) { const e = await r.json().catch(()=>({})); alert('保存失败：' + (e.error || r.status)); return; }
+                    closeUpstreamModal();
+                    loadUpstreams();
+                } catch (e) { alert('保存失败：' + e); }
+            }
+            async function deleteUpstream(name) {
+                if (!confirm('确认删除上游「' + name + '」？')) return;
+                try {
+                    const r = await fetch('/api/admin/upstreams/' + encodeURIComponent(name), { method:'DELETE' });
+                    if (!r.ok) { const e = await r.json().catch(()=>({})); alert('删除失败：' + (e.error || r.status)); return; }
+                    loadUpstreams();
+                } catch (e) { alert('删除失败：' + e); }
+            }
+        </script>
+
+        </main>
+    </div>
+
+    <!-- 创建用户模态框 -->
+    <div class="modal-overlay" id="createUserModal" style="display: none;">
+        <div class="modal" style="width: 480px;">
+            <div class="modal-header">
+                <h3 class="modal-title">创建新用户</h3>
+                <button class="modal-close" data-action="closeCreateUserModal">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">用户名 <span style="color: #ef4444;">*</span></label>
+                    <input type="text" class="form-input" id="newUsername" placeholder="请输入用户名">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">密码 <span style="color: #ef4444;">*</span></label>
+                    <input type="password" class="form-input" id="newPassword" placeholder="至少6位，包含字母和数字" data-action="checkPasswordStrength" data-on="input" data-arg-value>
+                    <div class="password-strength" id="passwordStrength" style="margin-top: 8px; display: none;">
+                        <div class="strength-bar">
+                            <div class="strength-fill" id="strengthFill"></div>
+                        </div>
+                        <div class="strength-text" id="strengthText"></div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">邮箱</label>
+                    <input type="email" class="form-input" id="newEmail" placeholder="请输入邮箱（可选）">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">初始余额</label>
+                    <input type="number" class="form-input" id="newBalance" placeholder="0.00" value="0" step="0.01">
+                </div>
+                <div class="form-group">
+                    <label class="form-checkbox">
+                        <input type="checkbox" id="newIsAdmin">
+                        <span>设为管理员</span>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-action="closeCreateUserModal">取消</button>
+                <button class="btn btn-primary" data-action="submitCreateUser">创建</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast 容器 -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- 确认模态框 -->
+    <div class="modal-overlay" id="confirmModal">
+        <div class="modal">
+            <h3 class="modal-title" id="confirmTitle">确认操作</h3>
+            <p class="modal-desc" id="confirmDesc">确定要执行此操作吗？</p>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" data-action="closeConfirmModal">取消</button>
+                <button class="btn btn-primary" id="confirmBtn" data-action="executeConfirm">确认</button>
+            </div>
+        </div>
+    </div>
+
+    <script nonce="{{ csp_nonce }}">
+        // 全局状态
+        let userInfo = null;
+        let confirmCallback = null;
+
+        // 页面加载
+        document.addEventListener('DOMContentLoaded', () => {
+            loadUserInfo();
+            
+            // 点击外部关闭用户菜单
+            document.addEventListener('click', (e) => {
+                const userMenu = document.querySelector('.user-menu');
+                const dropdown = document.getElementById('userDropdown');
+                if (!userMenu.contains(e.target)) {
+                    dropdown.classList.remove('show');
+                }
+            });
+        });
+
+        // 加载用户信息
+        async function loadUserInfo() {
+            try {
+                const data = await window.getUserInfo();
+                if (!data) {
+                    window.location.href = '/login';
+                    return;
+                }
+
+                userInfo = data;
+                
+                // 更新 UI
+                updateUserUI();
+                
+                // 加载 API Keys
+                loadApiKeys();
+                
+                // 加载充值记录
+                loadRechargeHistory();
+                
+                // 如果是管理员，加载管理员数据
+                if (userInfo.is_admin) {
+                    showAdminMenu();
+                    loadAdminRequests();
+                    loadUserList();
+                    loadAdminStats();
+                }
+
+                // 默认展示的概览页：加载费用消耗趋势
+                loadOverviewCharts();
+
+            } catch (e) {
+                console.error('加载用户信息失败:', e);
+                showToast('加载失败，请刷新页面', 'error');
+            }
+        }
+
+        // 更新用户 UI
+        function updateUserUI() {
+            // 头像
+            const avatarText = document.getElementById('avatarText');
+            avatarText.textContent = userInfo.username.charAt(0).toUpperCase();
+            
+            // 用户名和 UID
+            document.getElementById('userName').textContent = userInfo.username;
+            document.getElementById('userUid').textContent = 'UID: ' + userInfo.uid;
+            
+            // 余额
+            const balence = userInfo.balence || 0;
+            document.getElementById('balenceAmount').textContent = '¥' + balence.toFixed(2);
+            document.getElementById('statBalance').textContent = '¥' + balence.toFixed(2);
+            
+            // API Keys 数量
+            const apikeyCount = (userInfo.apikeys || []).length;
+            document.getElementById('statApikeys').textContent = apikeyCount;
+        }
+
+        // 显示管理员菜单
+        function showAdminMenu() {
+            document.getElementById('adminSection').style.display = 'block';
+            document.getElementById('adminMenuItem').style.display = 'flex';
+        }
+
+        // 切换用户菜单
+        function toggleUserMenu() {
+            const dropdown = document.getElementById('userDropdown');
+            dropdown.classList.toggle('show');
+        }
+
+        // 切换页面
+        function switchPage(pageName) {
+            // 隐藏所有页面
+            document.querySelectorAll('.page').forEach(page => {
+                page.classList.remove('active');
+            });
+            
+            // 显示目标页面
+            const targetPage = document.getElementById('page-' + pageName);
+            if (targetPage) {
+                targetPage.classList.add('active');
+            }
+            
+            // 更新侧边栏选中状态
+            document.querySelectorAll('.sidebar-item').forEach(item => {
+                item.classList.remove('active');
+                if (item.dataset.page === pageName) {
+                    item.classList.add('active');
+                }
+            });
+            
+            // 关闭用户菜单
+            document.getElementById('userDropdown').classList.remove('show');
+            
+            // 如果切换到统计页面，重新加载图表（确保在可见状态下渲染）
+            if (pageName === 'stats' && typeof loadChartData === 'function') {
+                setTimeout(loadChartData, 100);
+            }
+            // 概览页 / 用量页：切换时刷新对应图表
+            if (pageName === 'overview' && typeof loadOverviewUsage === 'function') {
+                setTimeout(() => loadOverviewUsage(7), 100);
+            }
+            if (pageName === 'usage' && typeof loadUsagePage === 'function') {
+                setTimeout(() => loadUsagePage(7), 100);
+            }
+        }
+
+        // 服务端按 section 渲染对应页签（每个页签独立地址，无客户端切换）
+        const _SECTION = {{ section|tojson }};
+        function loadSection(sec) {
+            if (sec === 'usage' && typeof loadUsagePage === 'function') setTimeout(() => loadUsagePage(7), 100);
+            else if (sec === 'stats' && typeof loadChartData === 'function') setTimeout(loadChartData, 100);
+        }
+        loadSection(_SECTION);
+
+        // 加载 API Keys
+        async function loadApiKeys() {
+            try {
+                const data = await window.getUserInfo();
+                const apikeys = (data && data.apikeys) || [];
+                
+                const list = document.getElementById('apikeyList');
+                
+                if (apikeys.length === 0) {
+                    list.innerHTML = `
+                        <div style="text-align: center; color: #999; padding: 40px;">
+                            <i class="bi bi-key" style="font-size: 48px; margin-bottom: 12px; opacity: 0.3;"></i>
+                            <p>暂无 API Key，点击上方按钮创建</p>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                list.innerHTML = apikeys.map((key, index) => `
+                    <div class="apikey-item">
+                        <div class="apikey-icon">
+                            <i class="bi bi-key-fill"></i>
+                        </div>
+                        <div class="apikey-info">
+                            <div class="apikey-value" id="key-${index}">${maskApiKey(key)}</div>
+                            <div style="font-size: 12px; color: #999;">创建于: 未知</div>
+                        </div>
+                        <div class="apikey-actions">
+                            <button class="icon-btn" data-action="toggleKeyVisibility" data-args="${index}\u0001'${key}'" title="显示/隐藏">
+                                <i class="bi bi-eye" id="eye-${index}"></i>
+                            </button>
+                            <button class="icon-btn" data-action="copyApiKey" data-args="'${key}'" title="复制">
+                                <i class="bi bi-files"></i>
+                            </button>
+                            <button class="icon-btn danger" data-action="deleteApiKey" data-args="'${key}'" title="删除">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+                
+            } catch (e) {
+                console.error('加载 API Keys 失败:', e);
+            }
+        }
+
+        // 隐藏 API Key
+        function maskApiKey(key) {
+            if (key.length <= 10) return key;
+            return key.substring(0, 8) + '...' + key.substring(key.length - 4);
+        }
+
+        // 切换显示/隐藏
+        let visibleKeys = {};
+        function toggleKeyVisibility(index, key) {
+            const keyEl = document.getElementById('key-' + index);
+            const eyeEl = document.getElementById('eye-' + index);
+            
+            if (visibleKeys[index]) {
+                keyEl.textContent = maskApiKey(key);
+                eyeEl.className = 'bi bi-eye';
+                visibleKeys[index] = false;
+            } else {
+                keyEl.textContent = key;
+                eyeEl.className = 'bi bi-eye-slash';
+                visibleKeys[index] = true;
+            }
+        }
+
+        // 复制 API Key
+        function copyApiKey(key) {
+            navigator.clipboard.writeText(key).then(() => {
+                showToast('已复制到剪贴板', 'success');
+            }).catch(() => {
+                showToast('复制失败', 'error');
+            });
+        }
+
+        // 创建 API Key
+        async function createApiKey() {
+            try {
+                const response = await fetch('/apikey', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showToast('API Key 创建成功', 'success');
+                    loadUserInfo();
+                    loadApiKeys();
+                } else {
+                    showToast(data.error || '创建失败', 'error');
+                }
+            } catch (e) {
+                showToast('网络错误', 'error');
+            }
+        }
+
+        // 删除 API Key
+        function deleteApiKey(key) {
+            showConfirm('删除 API Key', '确定要删除这个 API Key 吗？删除后无法恢复。', async () => {
+                try {
+                    const response = await fetch('/apikey/' + key, {
+                        method: 'DELETE'
+                    });
+                    
+                    if (response.ok) {
+                        showToast('API Key 已删除', 'success');
+                        loadApiKeys();
+                    } else {
+                        const data = await response.json();
+                        showToast(data.error || '删除失败', 'error');
+                    }
+                } catch (e) {
+                    showToast('网络错误', 'error');
+                }
+            });
+        }
+
+        // 提交充值申请
+        async function submitRecharge() {
+            const amount = parseFloat(document.getElementById('rechargeAmount').value);
+            
+            if (!amount || amount <= 0) {
+                showToast('请输入有效的充值金额', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/recharge/request', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ amount })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showToast('充值申请已提交，请等待管理员审核', 'success');
+                    document.getElementById('rechargeAmount').value = '';
+                    loadRechargeHistory();
+                } else {
+                    showToast(data.error || '提交失败', 'error');
+                }
+            } catch (e) {
+                showToast('网络错误', 'error');
+            }
+        }
+
+        // 加载充值记录
+        async function loadRechargeHistory() {
+            try {
+                const response = await fetch('/api/recharge/my-requests');
+                const data = await response.json();
+                
+                const tbody = document.getElementById('rechargeHistory');
+                const requests = data.requests || [];
+                
+                if (requests.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="5" style="text-align: center; color: #999; padding: 40px;">
+                                暂无充值记录
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+                
+                tbody.innerHTML = requests.map(req => `
+                    <tr>
+                        <td>${formatDate(req.created_at)}</td>
+                        <td style="font-weight: 600;">¥${req.amount.toFixed(2)}</td>
+                        <td>
+                            <span class="status-badge ${req.status}">
+                                ${getStatusText(req.status)}
+                            </span>
+                        </td>
+                        <td>${req.processed_at ? formatDate(req.processed_at) : '-'}</td>
+                        <td>${req.admin_remark || '-'}</td>
+                    </tr>
+                `).join('');
+                
+            } catch (e) {
+                console.error('加载充值记录失败:', e);
+            }
+        }
+
+        // 状态文本
+        function getStatusText(status) {
+            const statusMap = {
+                'pending': '待审核',
+                'approved': '已通过',
+                'rejected': '已拒绝'
+            };
+            return statusMap[status] || status;
+        }
+
+        // 格式化日期
+        function formatDate(dateStr) {
+            if (!dateStr) return '-';
+            const date = new Date(dateStr);
+            return date.toLocaleString('zh-CN', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        // ========== 管理员功能 ==========
+
+        // 加载管理员充值请求
+        async function loadAdminRequests() {
+            try {
+                const uid = document.getElementById('searchUid')?.value || '';
+                const minAmount = document.getElementById('searchMinAmount')?.value || '';
+                const maxAmount = document.getElementById('searchMaxAmount')?.value || '';
+                
+                let url = '/api/admin/recharge-requests?limit=50';
+                if (uid) url += '&uid=' + encodeURIComponent(uid);
+                if (minAmount) url += '&min_amount=' + minAmount;
+                if (maxAmount) url += '&max_amount=' + maxAmount;
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                const tbody = document.getElementById('adminRequestList');
+                const requests = data.requests || [];
+                
+                // 更新待审核数量
+                const pendingCount = requests.filter(r => r.status === 'pending').length;
+                document.getElementById('pendingCount').textContent = pendingCount;
+                document.getElementById('pendingRequests').textContent = pendingCount;
+                
+                if (requests.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="6" style="text-align: center; color: #999; padding: 40px;">
+                                暂无充值请求
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+                
+                tbody.innerHTML = requests.map(req => `
+                    <tr>
+                        <td>${formatDate(req.created_at)}</td>
+                        <td style="font-weight: 500;">${req.user_name}</td>
+                        <td style="font-family: monospace; font-size: 12px;">${req.user_uid}</td>
+                        <td style="font-weight: 600;">¥${req.amount.toFixed(2)}</td>
+                        <td>
+                            <span class="status-badge ${req.status}">
+                                ${getStatusText(req.status)}
+                            </span>
+                        </td>
+                        <td>
+                            ${req.status === 'pending' ? `
+                                <button class="btn btn-primary" style="padding: 6px 12px; font-size: 12px;" data-action="approveRequest" data-args="'${req.request_id}'">
+                                    通过
+                                </button>
+                                <button class="btn btn-danger" style="padding: 6px 12px; font-size: 12px;" data-action="rejectRequest" data-args="'${req.request_id}'">
+                                    拒绝
+                                </button>
+                            ` : '-'}
+                        </td>
+                    </tr>
+                `).join('');
+                
+            } catch (e) {
+                console.error('加载充值请求失败:', e);
+            }
+        }
+
+        // 通过充值请求
+        function approveRequest(requestId) {
+            showConfirm('通过充值申请', '确定要通过这个充值申请吗？用户余额将相应增加。', async () => {
+                try {
+                    const response = await fetch(`/api/admin/recharge-requests/${requestId}/approve`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ remark: '审核通过' })
+                    });
+                    
+                    if (response.ok) {
+                        showToast('已通过充值申请', 'success');
+                        loadAdminRequests();
+                    } else {
+                        const data = await response.json();
+                        showToast(data.error || '操作失败', 'error');
+                    }
+                } catch (e) {
+                    showToast('网络错误', 'error');
+                }
+            });
+        }
+
+        // 拒绝充值请求
+        function rejectRequest(requestId) {
+            const remark = prompt('请输入拒绝原因（可选）：');
+            if (remark === null) return;
+            
+            showConfirm('拒绝充值申请', '确定要拒绝这个充值申请吗？', async () => {
+                try {
+                    const response = await fetch(`/api/admin/recharge-requests/${requestId}/reject`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ remark: remark || '审核未通过' })
+                    });
+                    
+                    if (response.ok) {
+                        showToast('已拒绝充值申请', 'success');
+                        loadAdminRequests();
+                    } else {
+                        const data = await response.json();
+                        showToast(data.error || '操作失败', 'error');
+                    }
+                } catch (e) {
+                    showToast('网络错误', 'error');
+                }
+            });
+        }
+
+        // 加载用户列表
+        async function loadUserList() {
+            try {
+                const response = await fetch('/api/admin/users?limit=50');
+                const data = await response.json();
+                
+                const tbody = document.getElementById('userList');
+                const users = data.users || [];
+                
+                if (users.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="7" style="text-align: center; color: #999; padding: 40px;">
+                                暂无用户
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+                
+                tbody.innerHTML = users.map(user => `
+                    <tr>
+                        <td style="font-family: monospace; font-size: 12px;">${user.uid}</td>
+                        <td style="font-weight: 500;">${user.user_name}</td>
+                        <td style="font-weight: 600;">¥${(user.balence || 0).toFixed(2)}</td>
+                        <td style="color: ${(user.max_overdraft || 0) > 0 ? '#10b981' : '#9ca3af'}; font-weight: 500;">
+                            ${(user.max_overdraft || 0) > 0 ? '¥' + (user.max_overdraft || 0).toFixed(2) : '未开通'}
+                        </td>
+                        <td>${(user.apikeys || '').split(',').filter(k => k).length}</td>
+                        <td>
+                            <span class="status-badge ${user.is_banned ? 'rejected' : 'approved'}">
+                                ${user.is_banned ? '已封禁' : '正常'}
+                            </span>
+                        </td>
+                        <td>${formatDate(user.created_at)}</td>
+                        <td>
+                            <button class="icon-btn" data-action="adjustBalance" data-args="'${user.uid}'" title="调整余额">
+                                <i class="bi bi-wallet2"></i>
+                            </button>
+                            <button class="icon-btn" data-action="changeEmail" data-args="'${user.uid}'\u0001'${user.email || ''}'" title="修改邮箱">
+                                <i class="bi bi-envelope"></i>
+                            </button>
+                            <button class="icon-btn" data-action="changePassword" data-args="'${user.uid}'" title="修改密码">
+                                <i class="bi bi-key"></i>
+                            </button>
+                            <button class="icon-btn ${(user.max_overdraft || 0) > 0 ? 'success' : ''}" data-action="setOverdraft" data-args="'${user.uid}'\u0001'${user.user_name}'\u0001${user.max_overdraft || 0}" title="设置超支限额">
+                                <i class="bi bi-credit-card"></i>
+                            </button>
+                            ${user.is_banned ? `
+                                <button class="icon-btn" data-action="unbanUser" data-args="'${user.uid}'" title="解封">
+                                    <i class="bi bi-unlock"></i>
+                                </button>
+                            ` : `
+                                <button class="icon-btn danger" data-action="banUser" data-args="'${user.uid}'" title="封禁">
+                                    <i class="bi bi-slash-circle"></i>
+                                </button>
+                            `}
+                            <button class="icon-btn danger" data-action="deleteUser" data-args="'${user.uid}'\u0001'${user.user_name}'" title="删除用户">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
+                
+            } catch (e) {
+                console.error('加载用户列表失败:', e);
+            }
+        }
+
+        // 调整余额
+        function adjustBalance(uid) {
+            const amount = prompt('请输入调整金额（正数增加，负数减少）：');
+            if (amount === null) return;
+            
+            const numAmount = parseFloat(amount);
+            if (isNaN(numAmount)) {
+                showToast('请输入有效的金额', 'error');
+                return;
+            }
+            
+            showConfirm('调整余额', `确定要将该用户的余额${numAmount >= 0 ? '增加' : '减少'} ¥${Math.abs(numAmount).toFixed(2)} 吗？`, async () => {
+                try {
+                    const response = await fetch(`/api/admin/user/${uid}/balence`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ amount: numAmount })
+                    });
+                    
+                    if (response.ok) {
+                        showToast('余额调整成功', 'success');
+                        loadUserList();
+                    } else {
+                        const data = await response.json();
+                        showToast(data.error || '操作失败', 'error');
+                    }
+                } catch (e) {
+                    showToast('网络错误', 'error');
+                }
+            });
+        }
+
+        // 设置超支限额
+        function setOverdraft(uid, username, currentOverdraft) {
+            const amount = prompt(`请输入用户「${username}」的超支限额（元，0 表示关闭）：`, String(currentOverdraft || 0));
+            if (amount === null) return;
+            
+            const numAmount = parseFloat(amount);
+            if (isNaN(numAmount) || numAmount < 0) {
+                showToast('请输入有效的金额（不能为负）', 'error');
+                return;
+            }
+            
+            const actionText = numAmount > 0 ? `设置为 ¥${numAmount.toFixed(2)}` : '关闭超支';
+            showConfirm('设置超支限额', `确定要将用户「${username}」的超支限额${actionText}吗？`, async () => {
+                try {
+                    const response = await fetch(`/api/admin/user/${uid}/overdraft`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ max_overdraft: numAmount })
+                    });
+                    
+                    if (response.ok) {
+                        showToast('超支限额设置成功', 'success');
+                        loadUserList();
+                    } else {
+                        const data = await response.json();
+                        showToast(data.error || '操作失败', 'error');
+                    }
+                } catch (e) {
+                    showToast('网络错误', 'error');
+                }
+            });
+        }
+
+        // 封禁用户
+        function banUser(uid) {
+            const reason = prompt('请输入封禁原因（可选）：');
+            if (reason === null) return;
+            
+            const days = prompt('请输入封禁天数（0 表示永久）：', '0');
+            if (days === null) return;
+            
+            showConfirm('封禁用户', '确定要封禁该用户吗？', async () => {
+                try {
+                    const response = await fetch(`/api/admin/user/${uid}/ban`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            reason: reason || '违反规定',
+                            days: parseInt(days) || 0
+                        })
+                    });
+                    
+                    if (response.ok) {
+                        showToast('用户已封禁', 'success');
+                        loadUserList();
+                    } else {
+                        const data = await response.json();
+                        showToast(data.error || '操作失败', 'error');
+                    }
+                } catch (e) {
+                    showToast('网络错误', 'error');
+                }
+            });
+        }
+
+        // 解封用户
+        function unbanUser(uid) {
+            showConfirm('解封用户', '确定要解封该用户吗？', async () => {
+                try {
+                    const response = await fetch(`/api/admin/user/${uid}/unban`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                    
+                    if (response.ok) {
+                        showToast('用户已解封', 'success');
+                        loadUserList();
+                    } else {
+                        const data = await response.json();
+                        showToast(data.error || '操作失败', 'error');
+                    }
+                } catch (e) {
+                    showToast('网络错误', 'error');
+                }
+            });
+        }
+
+        // 切换超支权限
+        async function toggleOverdraft(uid, currentState) {
+            const newState = !currentState;
+            const action = newState ? '开启' : '关闭';
+            showConfirm('超支权限', `确定要${action}该用户的超支权限吗？`, async () => {
+                try {
+                    const res = await fetch('/api/admin/user/' + uid + '/overdraft', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ allow_overdraft: newState })
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        showToast(`已${action}超支权限`, 'success');
+                        loadUsers();  // 重新加载用户列表
+                    } else {
+                        showToast(data.error || '操作失败', 'error');
+                    }
+                } catch (e) {
+                    showToast('操作失败: ' + e.message, 'error');
+                }
+            });
+        }
+
+        // 删除用户
+        function deleteUser(uid, username) {
+            showConfirm('删除用户', `确定要删除用户「${username}」吗？此操作不可恢复。`, async () => {
+                try {
+                    const response = await fetch(`/api/admin/user/${uid}`, {
+                        method: 'DELETE'
+                    });
+                    
+                    if (response.ok) {
+                        showToast('用户已删除', 'success');
+                        loadUserList();
+                    } else {
+                        const data = await response.json();
+                        showToast(data.error || '删除失败', 'error');
+                    }
+                } catch (e) {
+                    showToast('网络错误', 'error');
+                }
+            });
+        }
+
+        // 修改邮箱
+        function changeEmail(uid, currentEmail) {
+            const email = prompt('请输入新邮箱：', currentEmail || '');
+            if (email === null) return;
+            
+            if (email && !email.includes('@')) {
+                showToast('请输入有效的邮箱地址', 'error');
+                return;
+            }
+            
+            showConfirm('修改邮箱', `确定要将该用户的邮箱修改为「${email || '（空）'}」吗？`, async () => {
+                try {
+                    const response = await fetch(`/api/admin/user/${uid}/email`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email: email })
+                    });
+                    
+                    if (response.ok) {
+                        showToast('邮箱修改成功', 'success');
+                        loadUserList();
+                    } else {
+                        const data = await response.json();
+                        showToast(data.error || '修改失败', 'error');
+                    }
+                } catch (e) {
+                    showToast('网络错误', 'error');
+                }
+            });
+        }
+
+        // 修改密码
+        function changePassword(uid) {
+            const newPassword = prompt('请输入新密码（至少6位，包含字母和数字）：');
+            if (newPassword === null) return;
+            
+            if (newPassword.length < 6) {
+                showToast('密码至少6位', 'error');
+                return;
+            }
+            if (!/[a-zA-Z]/.test(newPassword)) {
+                showToast('密码必须包含字母', 'error');
+                return;
+            }
+            if (!/[0-9]/.test(newPassword)) {
+                showToast('密码必须包含数字', 'error');
+                return;
+            }
+            
+            showConfirm('修改密码', '确定要修改该用户的密码吗？修改后用户会被强制下线。', async () => {
+                try {
+                    const response = await fetch(`/api/admin/user/${uid}/password`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ new_password: newPassword })
+                    });
+                    
+                    if (response.ok) {
+                        showToast('密码修改成功', 'success');
+                    } else {
+                        const data = await response.json();
+                        showToast(data.error || '修改失败', 'error');
+                    }
+                } catch (e) {
+                    showToast('网络错误', 'error');
+                }
+            });
+        }
+
+        // 打开创建用户模态框
+        function openCreateUserModal() {
+            document.getElementById('newUsername').value = '';
+            document.getElementById('newPassword').value = '';
+            document.getElementById('newEmail').value = '';
+            document.getElementById('newBalance').value = '0';
+            document.getElementById('newIsAdmin').checked = false;
+            document.getElementById('createUserModal').style.display = 'flex';
+        }
+
+        // 关闭创建用户模态框
+        function closeCreateUserModal() {
+            document.getElementById('createUserModal').style.display = 'none';
+        }
+
+        // 提交创建用户
+        async function submitCreateUser() {
+            const username = document.getElementById('newUsername').value.trim();
+            const password = document.getElementById('newPassword').value;
+            const email = document.getElementById('newEmail').value.trim();
+            const balance = parseFloat(document.getElementById('newBalance').value) || 0;
+            const isAdmin = document.getElementById('newIsAdmin').checked;
+            
+            // 验证
+            if (!username) {
+                showToast('请输入用户名', 'error');
+                return;
+            }
+            if (!password) {
+                showToast('请输入密码', 'error');
+                return;
+            }
+            if (password.length < 6) {
+                showToast('密码至少6位', 'error');
+                return;
+            }
+            if (!/[a-zA-Z]/.test(password)) {
+                showToast('密码必须包含字母', 'error');
+                return;
+            }
+            if (!/[0-9]/.test(password)) {
+                showToast('密码必须包含数字', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/admin/users', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        username: username,
+                        password: password,
+                        email: email || undefined,
+                        balance: balance,
+                        is_admin: isAdmin
+                    })
+                });
+                
+                if (response.ok) {
+                    showToast('用户创建成功', 'success');
+                    closeCreateUserModal();
+                    loadUserList();
+                } else {
+                    const data = await response.json();
+                    showToast(data.error || '创建失败', 'error');
+                }
+            } catch (e) {
+                showToast('网络错误', 'error');
+            }
+        }
+
+        // 加载管理员统计
+        async function loadAdminStats() {
+            try {
+                const response = await fetch('/api/admin/stats');
+                const data = await response.json();
+                
+                document.getElementById('totalUsers').textContent = data.total_users || 0;
+                document.getElementById('totalBalance').textContent = '¥' + (data.total_balence || 0).toFixed(2);
+                document.getElementById('totalApikeys').textContent = data.total_apikeys || 0;
+                document.getElementById('pendingRequests').textContent = data.pending_requests || 0;
+                
+            // 加载图表
+            loadChartData();
+            loadAdminUsageCharts();
+
+            } catch (e) {
+                console.error('加载统计数据失败:', e);
+            }
+
+            // 加载用户增长趋势图
+            loadChartData();
+            loadAdminUsageCharts();
+        }
+
+        // 图表相关
+        let userGrowthChart = null;
+        let currentChartPeriod = 7;
+
+        // 切换图表时间范围
+        function switchChartPeriod(days) {
+            currentChartPeriod = days;
+            // 更新 tab 样式
+            document.querySelectorAll('.chart-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            // 找到对应的 tab 并添加 active（简单处理，根据文本匹配）
+            const tabs = document.querySelectorAll('.chart-tab');
+            const labels = {7: '7 天', 30: '30 天', 90: '90 天'};
+            tabs.forEach(tab => {
+                if (tab.textContent.trim() === labels[days]) {
+                    tab.classList.add('active');
+                }
+            });
+            // 重新加载数据
+            loadChartData();
+        }
+
+        // 加载图表数据
+        async function loadChartData() {
+            try {
+                const canvas = document.getElementById('adminUserGrowthChart');
+                if (!canvas) return;
+                
+                const response = await fetch(`/api/admin/stats/user-growth?days=${currentChartPeriod}`);
+                const data = await response.json();
+                
+                if (data.dates && data.counts) {
+                    // 格式化日期（只显示月-日）
+                    const labels = data.dates.map(d => {
+                        const parts = d.split('-');
+                        return `${parts[1]}-${parts[2]}`;
+                    });
+                    
+                    // 如果图表已存在，销毁它
+                    if (userGrowthChart) {
+                        userGrowthChart.destroy();
+                    }
+                    
+                    // 创建新图表
+                    const ctx = canvas.getContext('2d');
+                    userGrowthChart = new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: labels,
+                            datasets: [{
+                                label: '新增用户',
+                                data: data.counts,
+                                backgroundColor: 'rgba(102, 126, 234, 0.65)',
+                                borderColor: '#667eea',
+                                borderWidth: 1,
+                                borderRadius: 4,
+                                maxBarThickness: 28
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: {
+                                    display: false
+                                },
+                                tooltip: {
+                                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                                    titleColor: '#fff',
+                                    bodyColor: '#fff',
+                                    padding: 12,
+                                    cornerRadius: 8
+                                }
+                            },
+                            scales: {
+                                x: {
+                                    grid: {
+                                        display: false
+                                    },
+                                    ticks: {
+                                        color: '#999'
+                                    }
+                                },
+                                y: {
+                                    beginAtZero: true,
+                                    grid: {
+                                        color: '#f0f0f0'
+                                    },
+                                    ticks: {
+                                        color: '#999',
+                                        stepSize: 1
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
+            } catch (e) {
+                console.error('加载图表数据失败:', e);
+            }
+        }
+
+        // ========== 用法 / 费用图表 ==========
+
+        // 切换同一 chart-tabs 分组内的激活态（不波及其它页的 tab）
+        function setActiveTab(el) {
+            const group = el.closest('.chart-tabs');
+            if (!group) return;
+            group.querySelectorAll('.chart-tab').forEach(t => t.classList.remove('active'));
+            el.classList.add('active');
+        }
+
+        // 通用：销毁并重建柱状图
+        function renderBarChart(chartVar, canvasId, labels, datasets, yTitle) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return chartVar;
+            if (chartVar) { try { chartVar.destroy(); } catch (e) {} }
+            const ctx = canvas.getContext('2d');
+            chartVar = new Chart(ctx, {
+                type: 'bar',
+                data: { labels: labels, datasets: datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: datasets.length > 1 },
+                        tooltip: { backgroundColor: 'rgba(0,0,0,0.8)', titleColor: '#fff', bodyColor: '#fff', padding: 12, cornerRadius: 8 }
+                    },
+                    scales: {
+                        x: { grid: { display: false }, ticks: { color: '#999', maxRotation: 60, minRotation: 0 } },
+                        y: { beginAtZero: true, grid: { color: '#f0f0f0' }, ticks: { color: '#999' },
+                             title: { display: !!yTitle, text: yTitle } }
+                    }
+                }
+            });
+            return chartVar;
+        }
+
+        // ---- 概览页：费用消耗趋势 ----
+        let overviewUsageChart = null;
+        function loadOverviewCharts() { loadOverviewUsage(7); }
+        async function loadOverviewUsage(days) {
+            try {
+                const r = await fetch(`/api/usage/summary?days=${days}`);
+                if (!r.ok) return;
+                const d = await r.json();
+                const labels = (d.daily && d.daily.dates || []).map(x => { const p = x.split('-'); return `${p[1]}-${p[2]}`; });
+                overviewUsageChart = renderBarChart(overviewUsageChart, 'overviewUsageChart', labels, [{
+                    label: '费用 (¥)',
+                    data: (d.daily && d.daily.costs) || [],
+                    backgroundColor: 'rgba(37, 99, 235, 0.65)',
+                    borderColor: '#2563eb', borderWidth: 1, borderRadius: 4, maxBarThickness: 28
+                }], '费用 (¥)');
+            } catch (e) { console.error('loadOverviewUsage failed:', e); }
+        }
+
+        // ---- 用量页 ----
+        let usagePageChart = null;
+        function loadUsageCharts() { loadUsagePage(7); }
+        async function loadUsagePage(days) {
+            try {
+                const r = await fetch(`/api/usage/summary?days=${days}`);
+                if (!r.ok) return;
+                const d = await r.json();
+                const t = d.total || {};
+                document.getElementById('usageCost').textContent = '¥' + (parseFloat(t.cost || 0)).toFixed(2);
+                document.getElementById('usageInputTokens').textContent = (t.input_tokens || 0).toLocaleString();
+                document.getElementById('usageOutputTokens').textContent = (t.output_tokens || 0).toLocaleString();
+                document.getElementById('usageRequests').textContent = (t.requests || 0).toLocaleString();
+                const labels = (d.daily && d.daily.dates || []).map(x => { const p = x.split('-'); return `${p[1]}-${p[2]}`; });
+                usagePageChart = renderBarChart(usagePageChart, 'usagePageChart', labels, [{
+                    label: '费用 (¥)',
+                    data: (d.daily && d.daily.costs) || [],
+                    backgroundColor: 'rgba(16, 163, 127, 0.65)',
+                    borderColor: '#10a37f', borderWidth: 1, borderRadius: 4, maxBarThickness: 28
+                }], '费用 (¥)');
+            } catch (e) { console.error('loadUsagePage failed:', e); }
+            loadBillingTier();
+        }
+
+        async function loadBillingTier() {
+            const el = document.getElementById('billingBanner');
+            if (!el) return;
+            try {
+                const r = await fetch('/api/pricing/current');
+                if (!r.ok) { el.innerHTML = '<span class="bb-time">当前计费时段：无权限查看</span>'; return; }
+                const j = await r.json();
+                let html = '<span class="bb-time">当前时间 ' + j.now + ' 计费档位：</span>';
+                const models = j.models || {};
+                const entries = Object.keys(models);
+                if (!entries.length) {
+                    html += '<span class="tier-pill std">标准价</span>';
+                } else {
+                    entries.forEach(function(m) {
+                        const t = models[m].tier;
+                        const cls = t === 'peak' ? 'peak' : (t === 'offpeak' ? 'offpeak' : 'std');
+                        const label = t === 'peak' ? '峰价' : (t === 'offpeak' ? '谷价' : '标准');
+                        html += '<span class="tier-pill ' + cls + '" title="' + m + '">' + m + ': ' + label + '</span>';
+                    });
+                }
+                el.innerHTML = html;
+            } catch (e) {
+                el.innerHTML = '<span class="bb-time">当前计费时段：加载失败</span>';
+            }
+        }
+
+        // ---- 管理员：平台每日费用 + 模型用量分布 ----
+        let adminUsageDailyChart = null;
+        let adminModelUsageChart = null;
+        async function loadAdminUsageCharts() {
+            try {
+                const rd = await fetch('/api/admin/stats/usage-daily?days=30');
+                if (rd.ok) {
+                    const d = await rd.json();
+                    const labels = (d.daily && d.daily.dates || []).map(x => { const p = x.split('-'); return `${p[1]}-${p[2]}`; });
+                    adminUsageDailyChart = renderBarChart(adminUsageDailyChart, 'adminUsageDailyChart', labels, [{
+                        label: '平台每日费用 (¥)',
+                        data: (d.daily && d.daily.costs) || [],
+                        backgroundColor: 'rgba(245, 158, 11, 0.65)',
+                        borderColor: '#f59e0b', borderWidth: 1, borderRadius: 4, maxBarThickness: 22
+                    }], '费用 (¥)');
+                }
+            } catch (e) { console.error('loadAdminUsageCharts(daily) failed:', e); }
+            try {
+                const rm = await fetch('/api/admin/stats/model-usage?days=30');
+                if (rm.ok) {
+                    const d = await rm.json();
+                    const models = d.models || [];
+                    const labels = models.map(m => m.model);
+                    adminModelUsageChart = renderBarChart(adminModelUsageChart, 'adminModelUsageChart', labels, [{
+                        label: '费用 (¥)',
+                        data: models.map(m => m.cost),
+                        backgroundColor: 'rgba(139, 92, 246, 0.65)',
+                        borderColor: '#8b5cf6', borderWidth: 1, borderRadius: 4, maxBarThickness: 28
+                    }], '费用 (¥)');
+                }
+            } catch (e) { console.error('loadAdminUsageCharts(model) failed:', e); }
+        }
+
+        // ========== 通用功能 ==========
+
+        // 显示确认框
+        function showConfirm(title, desc, callback) {
+            document.getElementById('confirmTitle').textContent = title;
+            document.getElementById('confirmDesc').textContent = desc;
+            confirmCallback = callback;
+            document.getElementById('confirmModal').classList.add('show');
+        }
+
+        // 关闭确认框
+        function closeConfirmModal() {
+            document.getElementById('confirmModal').classList.remove('show');
+            confirmCallback = null;
+        }
+
+        // 执行确认
+        function executeConfirm() {
+            if (confirmCallback) {
+                confirmCallback();
+            }
+            closeConfirmModal();
+        }
+
+        // 显示 Toast
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            
+            const iconClass = type === 'success' ? 'bi-check-lg' : type === 'error' ? 'bi-x-lg' : 'bi-info-lg';
+            
+            toast.innerHTML = `
+                <div class="toast-icon ${type}">
+                    <i class="bi ${iconClass}"></i>
+                </div>
+                <div class="toast-message">${message}</div>
+            `;
+            
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(20px)';
+                toast.style.transition = 'all 0.3s';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // 退出登录
+        function logout() {
+            showConfirm('退出登录', '确定要退出登录吗？', async () => {
+                try {
+                    await fetch('/logout', { method: 'POST' });
+                    window.location.href = '/login';
+                } catch (e) {
+                    window.location.href = '/login';
+                }
+            });
+        }
+
+        // 显示设置
+        function showSettings() {
+            window.location.href = '/settings';
+        }
+
+        // 显示文档（新开标签页，原地不跳转）
+        function showDocs() {
+            window.open('/docs', '_blank', 'noopener');
+        }
+    </script>
+    <script nonce="{{ csp_nonce }}">
+        // 未读红点：由侧边栏统一 SSE（/api/stream 的 unread 事件）经 applyUnread 全局维护 [data-unread]，
+        // 本页不再独立 fetch /api/chat/unread；仅在 SSE 未连上时兜底拉取一次。
+        function applyDashboardUnread(d) {
+            if (!d) return;
+            const chat = (d.unread_count || 0) + (d.announcement_unread || 0);
+            const friends = d.friend_requests || 0;
+            document.querySelectorAll('[data-unread="chat"]').forEach(el => {
+                if (chat > 0) { el.style.display = 'inline-flex'; el.textContent = chat > 99 ? '99+' : String(chat); }
+                else el.style.display = 'none';
+            });
+            document.querySelectorAll('[data-unread="friends"]').forEach(el => {
+                if (friends > 0) { el.style.display = 'inline-flex'; el.textContent = friends > 99 ? '99+' : String(friends); }
+                else el.style.display = 'none';
+            });
+        }
+        // 侧边栏 SSE 推送的 unread 快照经 unread-update 事件直达本页，零额外请求
+        document.addEventListener('unread-update', (e) => applyDashboardUnread(e.detail));
+        // SSE 未连上时兜底拉取一次（避免无侧边栏或 EventSource 不可用时红点缺失）
+        if (!window.__unreadSSEAlive) {
+            setTimeout(async () => {
+                if (window.__unreadSSEAlive) return; // SSE 已接管
+                try {
+                    const r = await fetch('/api/chat/unread');
+                    if (r.ok) applyDashboardUnread(await r.json());
+                } catch (e) { /* ignore */ }
+            }, 1500);
+        }
+    </script>
+</body>
+</html>

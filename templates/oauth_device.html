@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>设备授权 - Cloud LLM API 代理</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style nonce="{{ csp_nonce }}">
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .card { background: white; border-radius: 20px; padding: 40px; width: 440px; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+        .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+        .logo { width: 40px; height: 40px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; display: flex; align-items: center; justify-content: center; }
+        .logo svg { width: 22px; height: 22px; color: white; }
+        .brand-text { font-size: 18px; font-weight: 700; }
+        h2 { font-size: 20px; margin-bottom: 6px; }
+        .sub { color: #666; font-size: 14px; margin-bottom: 20px; }
+        .form-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+        label { font-size: 13px; color: #666; font-weight: 500; }
+        input { padding: 12px 14px; border: 1px solid #e5e7eb; border-radius: 10px; font-size: 14px; outline: none; font-family: inherit; letter-spacing: 2px; text-align: center; }
+        input:focus { border-color: #667eea; }
+        .btn { width: 100%; padding: 12px; border: none; border-radius: 10px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 8px; }
+        .btn:hover { transform: translateY(-1px); }
+        .btn-deny { background: #f5f5f5; color: #333; }
+        .actions { display: flex; gap: 12px; }
+        .error { background: #fef2f2; color: #dc2626; padding: 10px 14px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; }
+        .ok { background: #f0fdf4; color: #16a34a; padding: 14px; border-radius: 10px; font-size: 14px; text-align: center; }
+        .msg { color: #666; font-size: 14px; text-align: center; margin: 16px 0; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="brand">
+            <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/></svg></div>
+            <span class="brand-text">Cloud LLM API 代理</span>
+        </div>
+
+        {% if success %}
+            <h2>授权成功</h2>
+            <div class="ok"><i class="bi bi-check-circle-fill"></i> 设备已授权，你可以返回原设备继续。</div>
+        {% elif denied %}
+            <h2>已拒绝</h2>
+            <div class="msg">你已拒绝该设备的授权请求。</div>
+        {% elif not logged_in %}
+            <h2>登录以授权设备</h2>
+            <div class="sub">请输入你的账号并填写设备显示的用户码。</div>
+            {% if error %}<div class="error">{{ error }}</div>{% endif %}
+            <form method="POST" action="/oauth/device">
+                <div class="form-group">
+                    <label>用户名</label>
+                    <input type="text" name="username" autocomplete="username" required>
+                </div>
+                <div class="form-group">
+                    <label>密码</label>
+                    <input type="password" name="password" autocomplete="current-password" required>
+                </div>
+                <div class="form-group">
+                    <label>用户码（设备上显示）</label>
+                    <input type="text" name="user_code" value="{{ user_code }}" required>
+                </div>
+                <button class="btn" type="submit">登录并继续</button>
+            </form>
+        {% else %}
+            <h2>授权设备</h2>
+            <div class="sub">当前登录：<b>{{ user_name }}</b>。请输入设备上显示的用户码并确认。</div>
+            {% if error %}<div class="error">{{ error }}</div>{% endif %}
+            <form method="POST" action="/oauth/device">
+                <div class="form-group">
+                    <label>用户码</label>
+                    <input type="text" name="user_code" value="{{ user_code }}" required>
+                </div>
+                <div class="actions">
+                    <button class="btn btn-deny" type="submit" name="decision" value="deny">拒绝</button>
+                    <button class="btn" type="submit" name="decision" value="allow">允许</button>
+                </div>
+            </form>
+        {% endif %}
+    </div>
+</body>
+</html>

@@ -1,0 +1,1115 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>好友 - Cloud LLM API 代理</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style nonce="{{ csp_nonce }}">
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #fafafa;
+            color: #1a1a1a;
+        }
+        .navbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 64px;
+            background: white;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+            z-index: 100;
+        }
+        .navbar-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .logo {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        .logo svg {
+            width: 20px;
+            height: 20px;
+            color: white;
+        }
+        .logo-text {
+            font-size: 18px;
+            font-weight: 700;
+            color: #1a1a1a;
+            cursor: pointer;
+        }
+        .navbar-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .balence-display {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #f0f2ff;
+            padding: 8px 16px;
+            border-radius: 20px;
+        }
+        .balence-icon {
+            color: #667eea;
+            font-size: 16px;
+        }
+        .balence-amount {
+            font-size: 14px;
+            font-weight: 600;
+            color: #667eea;
+        }
+        .balence-label {
+            font-size: 12px;
+            color: #9ca3af;
+        }
+        .user-menu {
+            position: relative;
+        }
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .user-avatar:hover {
+            transform: scale(1.05);
+        }
+        .user-dropdown {
+            position: absolute;
+            top: calc(100% + 8px);
+            right: 0;
+            width: 240px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+            padding: 8px;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-10px);
+            transition: all 0.2s;
+        }
+        .user-dropdown.show {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+        .user-info-header {
+            padding: 16px;
+            border-bottom: 1px solid #f0f0f0;
+            margin-bottom: 8px;
+        }
+        .user-info-name {
+            font-size: 15px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 4px;
+        }
+        .user-info-uid {
+            font-size: 12px;
+            color: #9ca3af;
+            font-family: monospace;
+        }
+        .dropdown-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.15s;
+            font-size: 14px;
+            color: #333;
+        }
+        .dropdown-item:hover {
+            background: #f5f5f5;
+        }
+        .dropdown-item i {
+            font-size: 18px;
+            color: #667eea;
+        }
+        .dropdown-item.danger {
+            color: #dc2626;
+        }
+        .dropdown-item.danger i {
+            color: #dc2626;
+        }
+        .dropdown-divider {
+            height: 1px;
+            background: #f0f0f0;
+            margin: 8px 0;
+        }
+        .main-container {
+            display: flex;
+            padding-top: 64px;
+            height: 100vh;
+            box-sizing: border-box;
+        }
+        .sidebar {
+            width: 240px;
+            background: white;
+            border-right: 1px solid #f0f0f0;
+            padding: 24px 0;
+            position: fixed;
+            top: 64px;
+            bottom: 0;
+            left: 0;
+            overflow-y: auto;
+        }
+        .sidebar-section {
+            margin-bottom: 24px;
+        }
+        .sidebar-section-title {
+            font-size: 11px;
+            font-weight: 600;
+            color: #9ca3af;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 0 20px;
+            margin-bottom: 8px;
+        }
+        .sidebar-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 20px;
+            cursor: pointer;
+            transition: all 0.15s;
+            font-size: 14px;
+            color: #666;
+            border-left: 3px solid transparent;
+        }
+        .sidebar-item:hover {
+            background: #fafafa;
+            color: #1a1a1a;
+        }
+        .sidebar-item.active {
+            background: #f0f2ff;
+            color: #667eea;
+            border-left-color: #667eea;
+            font-weight: 500;
+        }
+        .sidebar-item i {
+            font-size: 18px;
+            width: 20px;
+            text-align: center;
+        }
+        .sidebar-badge {
+            margin-left: auto;
+            background: #fef3c7;
+            color: #d97706;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 10px;
+        }
+        .content {
+            flex: 1;
+            margin-left: 240px;
+            padding: 32px;
+        }
+        .page-header {
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .page-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: #1a1a1a;
+        }
+        .btn {
+            padding: 10px 20px;
+            font-size: 14px;
+            font-weight: 500;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+        }
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        .btn-secondary {
+            background: #f5f5f5;
+            color: #333;
+        }
+        .btn-secondary:hover {
+            background: #eee;
+        }
+        .btn-sm {
+            padding: 6px 14px;
+            font-size: 13px;
+        }
+        .tabs {
+            display: flex;
+            gap: 4px;
+            background: #f5f5f5;
+            padding: 4px;
+            border-radius: 10px;
+            margin-bottom: 24px;
+        }
+        .tab {
+            flex: 1;
+            padding: 10px 16px;
+            font-size: 14px;
+            font-weight: 500;
+            color: #666;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.15s;
+            text-align: center;
+            position: relative;
+        }
+        .tab.active {
+            background: white;
+            color: #1a1a1a;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        .tab-badge {
+            position: absolute;
+            top: 6px;
+            right: 10px;
+            background: #ef4444;
+            color: white;
+            font-size: 10px;
+            font-weight: 600;
+            padding: 2px 6px;
+            border-radius: 10px;
+            min-width: 16px;
+            text-align: center;
+        }
+        .search-box {
+            position: relative;
+            margin-bottom: 20px;
+        }
+        .search-box input {
+            width: 100%;
+            padding: 12px 16px 12px 44px;
+            font-size: 14px;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            outline: none;
+            transition: all 0.15s;
+        }
+        .search-box input:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        .search-box i {
+            position: absolute;
+            left: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #9ca3af;
+            font-size: 18px;
+        }
+        .friends-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .friend-item {
+            background: white;
+            border-radius: 12px;
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            transition: all 0.15s;
+            cursor: pointer;
+        }
+        .friend-item:hover {
+            background: #fafafa;
+        }
+        .friend-avatar {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 18px;
+            flex-shrink: 0;
+        }
+        .friend-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .friend-name {
+            font-size: 15px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 4px;
+        }
+        .friend-uid {
+            font-size: 12px;
+            color: #9ca3af;
+            font-family: monospace;
+        }
+        .friend-actions {
+            display: flex;
+            gap: 8px;
+        }
+        .icon-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #666;
+            transition: all 0.15s;
+        }
+        .icon-btn:hover {
+            background: #f5f5f5;
+            color: #1a1a1a;
+        }
+        .icon-btn.danger:hover {
+            background: #fef2f2;
+            color: #dc2626;
+        }
+        .icon-btn.success:hover {
+            background: #f0fdf4;
+            color: #16a34a;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #9ca3af;
+        }
+        .empty-state i {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+        .empty-state-text {
+            font-size: 14px;
+        }
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal-overlay.show {
+            display: flex;
+        }
+        .modal {
+            background: white;
+            border-radius: 16px;
+            width: 100%;
+            max-width: 480px;
+            animation: modalIn 0.3s ease-out;
+        }
+        @keyframes modalIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        .modal-header {
+            padding: 24px;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .modal-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: #1a1a1a;
+        }
+        .modal-close {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            border: none;
+            background: #f5f5f5;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #666;
+            transition: all 0.15s;
+        }
+        .modal-close:hover {
+            background: #eee;
+            color: #1a1a1a;
+        }
+        .modal-body {
+            padding: 24px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            color: #333;
+            margin-bottom: 8px;
+        }
+        .form-input {
+            width: 100%;
+            padding: 12px 16px;
+            font-size: 14px;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            outline: none;
+            transition: all 0.15s;
+        }
+        .form-input:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        .form-hint {
+            font-size: 12px;
+            color: #9ca3af;
+            margin-top: 6px;
+        }
+        .modal-footer {
+            padding: 20px 24px;
+            border-top: 1px solid #f0f0f0;
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+        .search-results {
+            margin-top: 16px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .search-result-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .search-result-item:hover {
+            background: #f5f5f5;
+        }
+        .search-result-avatar {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        .search-result-info {
+            flex: 1;
+        }
+        .search-result-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: #1a1a1a;
+        }
+        .search-result-uid {
+            font-size: 12px;
+            color: #9ca3af;
+            font-family: monospace;
+        }
+        .toast-container {
+            position: fixed;
+            top: 80px;
+            right: 24px;
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .toast {
+            background: white;
+            padding: 16px 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            animation: toastIn 0.3s ease-out;
+            min-width: 280px;
+        }
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateX(20px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        .toast-icon {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+        .toast-icon.success {
+            background: #f0fdf4;
+            color: #16a34a;
+        }
+        .toast-icon.error {
+            background: #fef2f2;
+            color: #dc2626;
+        }
+        .toast-icon.info {
+            background: #eff6ff;
+            color: #2563eb;
+        }
+        .toast-message {
+            font-size: 14px;
+            color: #333;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #9ca3af;
+        }
+        .loading-spinner {
+            width: 32px;
+            height: 32px;
+            border: 3px solid #f0f0f0;
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 12px;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        @media (max-width: 768px) {
+            .sidebar {
+                display: none;
+            }
+            .content {
+                margin-left: 0;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    {% include "_navbar.html" %}
+
+    <div class="main-container">
+                {% with active_page = 'friends' %}
+{% include "_sidebar.html" %}
+{% endwith %}
+
+        <main class="content">
+            <div class="page-header">
+                <h1 class="page-title">好友</h1>
+                <button class="btn btn-primary" data-action="openAddModal">
+                    <i class="bi bi-person-plus"></i>
+                    添加好友
+                </button>
+            </div>
+
+            <div class="tabs">
+                <div class="tab active" data-tab="friends" data-action="switchTab" data-args="'friends'">我的好友</div>
+                <div class="tab" data-tab="requests" data-action="switchTab" data-args="'requests'">
+                    好友请求
+                    <span class="tab-badge" id="friendTabBadge" style="display: none;">0</span>
+                </div>
+            </div>
+
+            <div id="friendsView">
+                <div class="search-box">
+                    <i class="bi bi-search"></i>
+                    <input type="text" id="searchInput" placeholder="搜索好友..." data-action="filterFriends" data-on="input">
+                </div>
+                <div class="friends-list" id="friendsList">
+                    <div class="loading">
+                        <div class="loading-spinner"></div>
+                        <div>加载中...</div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="requestsView" style="display: none;">
+                <div id="receivedRequests">
+                    <h3 style="font-size: 14px; color: #666; margin-bottom: 12px;">收到的请求</h3>
+                    <div class="friends-list" id="receivedList">
+                        <div class="loading">
+                            <div class="loading-spinner"></div>
+                            <div>加载中...</div>
+                        </div>
+                    </div>
+                </div>
+                <div id="sentRequests" style="margin-top: 24px;">
+                    <h3 style="font-size: 14px; color: #666; margin-bottom: 12px;">发出的请求</h3>
+                    <div class="friends-list" id="sentList">
+                        <div class="loading">
+                            <div class="loading-spinner"></div>
+                            <div>加载中...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 添加好友模态框 -->
+    <div class="modal-overlay" id="addModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 class="modal-title">添加好友</h2>
+                <button class="modal-close" data-action="closeAddModal">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">搜索用户</label>
+                    <input type="text" class="form-input" id="searchUserInput" placeholder="输入用户名或 UID 搜索（至少 2 个字符）" data-action="searchUsers" data-on="input">
+                    <div class="form-hint">可以通过用户名或 UID 搜索</div>
+                </div>
+                <div class="search-results" id="searchResults">
+                    <div class="empty-state" style="padding: 30px;">
+                        <i class="bi bi-search"></i>
+                        <div class="empty-state-text">输入关键词搜索用户</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script nonce="{{ csp_nonce }}">
+        let currentTab = 'friends';
+        let allFriends = [];
+        let searchTimeout = null;
+
+        document.addEventListener('DOMContentLoaded', function() {
+            loadUserInfo();
+            loadFriends();
+            loadRequests();
+
+            document.addEventListener('click', function(e) {
+                const dropdown = document.getElementById('userDropdown');
+                const avatar = document.getElementById('userAvatar');
+                if (!dropdown.contains(e.target) && !avatar.contains(e.target)) {
+                    dropdown.classList.remove('show');
+                }
+            });
+        });
+
+        async function loadUserInfo() {
+            try {
+                const data = await window.getUserInfo();
+                if (data && data.username) {
+                    document.getElementById('userName').textContent = data.username;
+                    document.getElementById('userUid').textContent = 'UID: ' + (data.uid || '');
+                    document.getElementById('userAvatar').textContent = data.username.charAt(0).toUpperCase();
+                    document.getElementById('balenceAmount').textContent = parseFloat(data.balence || 0).toFixed(2);
+                    // 管理员显示管理菜单
+                    if (data.is_admin) {
+                        const adminSection = document.getElementById('adminSection');
+                        if (adminSection) adminSection.style.display = '';
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to load user info:', e);
+            }
+        }
+
+        function toggleUserMenu() {
+            document.getElementById('userDropdown').classList.toggle('show');
+        }
+
+        function switchTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelector(`.tab[data-tab="${tab}"]`).classList.add('active');
+
+            if (tab === 'friends') {
+                document.getElementById('friendsView').style.display = 'block';
+                document.getElementById('requestsView').style.display = 'none';
+            } else {
+                document.getElementById('friendsView').style.display = 'none';
+                document.getElementById('requestsView').style.display = 'block';
+                loadRequests();
+            }
+        }
+
+        async function loadFriends() {
+            try {
+                const res = await fetch('/api/friends');
+                const data = await res.json();
+                allFriends = data.friends || [];
+                renderFriends(allFriends);
+            } catch (e) {
+                console.error('Failed to load friends:', e);
+                document.getElementById('friendsList').innerHTML = `
+                    <div class="empty-state">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        <div class="empty-state-text">加载失败，请重试</div>
+                    </div>
+                `;
+            }
+        }
+
+        function renderFriends(friends) {
+            const listEl = document.getElementById('friendsList');
+            
+            if (friends.length === 0) {
+                listEl.innerHTML = `
+                    <div class="empty-state">
+                        <i class="bi bi-person-x"></i>
+                        <div class="empty-state-text">暂无好友，快去添加吧</div>
+                    </div>
+                `;
+                return;
+            }
+
+            listEl.innerHTML = friends.map(friend => `
+                <div class="friend-item" data-nav="/chat?uid=${friend.uid}">
+                    <div class="friend-avatar">${friend.user_name.charAt(0).toUpperCase()}</div>
+                    <div class="friend-info">
+                        <div class="friend-name">${escapeHtml(friend.user_name)}</div>
+                        <div class="friend-uid">${friend.uid}</div>
+                    </div>
+                    <div class="friend-actions">
+                        <button class="icon-btn" data-nav="/chat?uid=${friend.uid}" data-stop title="发消息">
+                            <i class="bi bi-chat-dots"></i>
+                        </button>
+                        <button class="icon-btn danger" data-action="deleteFriend" data-args="${friend.uid}${escapeHtml(friend.user_name)}" data-stop title="删除好友">
+                            <i class="bi bi-person-x"></i>
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function filterFriends() {
+            const keyword = document.getElementById('searchInput').value.toLowerCase();
+            const filtered = allFriends.filter(f => 
+                f.user_name.toLowerCase().includes(keyword) || 
+                f.uid.toLowerCase().includes(keyword)
+            );
+            renderFriends(filtered);
+        }
+
+        async function loadRequests() {
+            try {
+                const res = await fetch('/api/friends/requests');
+                const data = await res.json();
+                
+                const received = data.received || [];
+                const sent = data.sent || [];
+
+                // 更新徽章
+                const badge = document.getElementById('friendTabBadge');
+                if (received.length > 0) {
+                    badge.textContent = received.length;
+                    badge.style.display = 'inline-block';
+                } else {
+                    badge.style.display = 'none';
+                }
+
+                // 渲染收到的请求
+                const receivedEl = document.getElementById('receivedList');
+                if (received.length === 0) {
+                    receivedEl.innerHTML = `
+                        <div class="empty-state" style="padding: 30px;">
+                            <i class="bi bi-inbox"></i>
+                            <div class="empty-state-text">暂无收到的请求</div>
+                        </div>
+                    `;
+                } else {
+                    receivedEl.innerHTML = received.map(req => `
+                        <div class="friend-item">
+                            <div class="friend-avatar">${req.from_name.charAt(0).toUpperCase()}</div>
+                            <div class="friend-info">
+                                <div class="friend-name">${escapeHtml(req.from_name)}</div>
+                                <div class="friend-uid">${req.from_uid}</div>
+                            </div>
+                            <div class="friend-actions">
+                                <button class="icon-btn success" data-action="acceptRequest" data-args="${req.id}" title="接受">
+                                    <i class="bi bi-check-lg"></i>
+                                </button>
+                                <button class="icon-btn danger" data-action="rejectRequest" data-args="${req.id}" title="拒绝">
+                                    <i class="bi bi-x-lg"></i>
+                                </button>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+
+                // 渲染发出的请求
+                const sentEl = document.getElementById('sentList');
+                if (sent.length === 0) {
+                    sentEl.innerHTML = `
+                        <div class="empty-state" style="padding: 30px;">
+                            <i class="bi bi-send"></i>
+                            <div class="empty-state-text">暂无发出的请求</div>
+                        </div>
+                    `;
+                } else {
+                    sentEl.innerHTML = sent.map(req => `
+                        <div class="friend-item">
+                            <div class="friend-avatar">${req.to_name.charAt(0).toUpperCase()}</div>
+                            <div class="friend-info">
+                                <div class="friend-name">${escapeHtml(req.to_name)}</div>
+                                <div class="friend-uid">${req.to_uid}</div>
+                            </div>
+                            <div class="friend-actions">
+                                <span style="font-size: 12px; color: #d97706; padding: 4px 10px; background: #fef3c7; border-radius: 20px;">等待中</span>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+            } catch (e) {
+                console.error('Failed to load requests:', e);
+            }
+        }
+
+        async function acceptRequest(requestId) {
+            try {
+                const res = await fetch(`/api/friends/requests/${requestId}/accept`, { method: 'POST' });
+                const data = await res.json();
+                
+                if (res.ok) {
+                    showToast('已接受好友请求', 'success');
+                    loadRequests();
+                    loadFriends();
+                } else {
+                    showToast(data.error || '操作失败', 'error');
+                }
+            } catch (e) {
+                showToast('操作失败，请重试', 'error');
+            }
+        }
+
+        async function rejectRequest(requestId) {
+            try {
+                const res = await fetch(`/api/friends/requests/${requestId}/reject`, { method: 'POST' });
+                const data = await res.json();
+                
+                if (res.ok) {
+                    showToast('已拒绝好友请求', 'info');
+                    loadRequests();
+                } else {
+                    showToast(data.error || '操作失败', 'error');
+                }
+            } catch (e) {
+                showToast('操作失败，请重试', 'error');
+            }
+        }
+
+        async function deleteFriend(uid, name) {
+            if (!confirm(`确定要删除好友 ${name} 吗？`)) {
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/friends/${uid}`, { method: 'DELETE' });
+                const data = await res.json();
+                
+                if (res.ok) {
+                    showToast('已删除好友', 'info');
+                    loadFriends();
+                } else {
+                    showToast(data.error || '删除失败', 'error');
+                }
+            } catch (e) {
+                showToast('删除失败，请重试', 'error');
+            }
+        }
+
+        function openAddModal() {
+            document.getElementById('addModal').classList.add('show');
+            document.getElementById('searchUserInput').value = '';
+            document.getElementById('searchResults').innerHTML = `
+                <div class="empty-state" style="padding: 30px;">
+                    <i class="bi bi-search"></i>
+                    <div class="empty-state-text">输入关键词搜索用户</div>
+                </div>
+            `;
+        }
+
+        function closeAddModal() {
+            document.getElementById('addModal').classList.remove('show');
+        }
+
+        function searchUsers() {
+            clearTimeout(searchTimeout);
+            const keyword = document.getElementById('searchUserInput').value.trim();
+            
+            if (keyword.length < 2) {
+                document.getElementById('searchResults').innerHTML = `
+                    <div class="empty-state" style="padding: 30px;">
+                        <i class="bi bi-search"></i>
+                        <div class="empty-state-text">输入关键词搜索用户（至少 2 个字符）</div>
+                    </div>
+                `;
+                return;
+            }
+
+            searchTimeout = setTimeout(async () => {
+                try {
+                    const res = await fetch(`/api/users/search?q=${encodeURIComponent(keyword)}`);
+                    const data = await res.json();
+                    
+                    const users = data.users || [];
+                    const resultsEl = document.getElementById('searchResults');
+                    
+                    if (users.length === 0) {
+                        resultsEl.innerHTML = `
+                            <div class="empty-state" style="padding: 30px;">
+                                <i class="bi bi-person-x"></i>
+                                <div class="empty-state-text">未找到相关用户</div>
+                            </div>
+                        `;
+                        return;
+                    }
+
+                    resultsEl.innerHTML = users.map(user => `
+                        <div class="search-result-item">
+                            <div class="search-result-avatar">${user.user_name.charAt(0).toUpperCase()}</div>
+                            <div class="search-result-info">
+                                <div class="search-result-name">${escapeHtml(user.user_name)}</div>
+                                <div class="search-result-uid">${user.uid}</div>
+                            </div>
+                            <button class="btn btn-primary btn-sm" data-action="sendFriendRequest" data-args="${user.uid}${escapeHtml(user.user_name)}">
+                                <i class="bi bi-person-plus"></i>
+                                添加
+                            </button>
+                        </div>
+                    `).join('');
+                } catch (e) {
+                    console.error('Failed to search users:', e);
+                    document.getElementById('searchResults').innerHTML = `
+                        <div class="empty-state" style="padding: 30px;">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            <div class="empty-state-text">搜索失败，请重试</div>
+                        </div>
+                    `;
+                }
+            }, 300);
+        }
+
+        async function sendFriendRequest(uid, name) {
+            try {
+                const res = await fetch('/api/friends/request', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_uid: uid })
+                });
+                const data = await res.json();
+                
+                if (res.ok) {
+                    showToast(`已向 ${name} 发送好友请求`, 'success');
+                    closeAddModal();
+                    switchTab('requests');
+                } else {
+                    showToast(data.error || '发送失败', 'error');
+                }
+            } catch (e) {
+                showToast('发送失败，请重试', 'error');
+            }
+        }
+
+        async function logout() {
+            try {
+                await fetch('/logout', { method: 'POST' });
+                location.href = '/login';
+            } catch (e) {
+                location.href = '/login';
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            
+            const iconClass = {
+                'success': 'bi-check-lg',
+                'error': 'bi-x-lg',
+                'info': 'bi-info-lg'
+            }[type] || 'bi-info-lg';
+            
+            toast.innerHTML = `
+                <div class="toast-icon ${type}">
+                    <i class="bi ${iconClass}"></i>
+                </div>
+                <span class="toast-message">${escapeHtml(message)}</span>
+            `;
+            
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(20px)';
+                toast.style.transition = 'all 0.3s';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

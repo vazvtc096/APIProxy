@@ -1,0 +1,31 @@
+# 版本控制与本地缓存
+.git
+.gitignore
+.workbuddy
+
+# 测试与开发产物
+tests/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# 本地数据与证书（容器用 volume 挂载，不应打进镜像）
+data/
+*.db
+certs/
+.env
+.env.example
+
+# 文档与临时归档
+docs/
+archive/
+*.md
+
+# 其他
+.cloudflared/
+service.out.log
+service.err.log

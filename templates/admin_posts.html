@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>帖子审核 - 管理后台</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style nonce="{{ csp_nonce }}">
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #fafafa;
+            color: #1a1a1a;
+            min-height: 100vh;
+        }
+        .navbar {
+            position: fixed; top: 0; left: 0; right: 0; height: 64px;
+            background: white; border-bottom: 1px solid #f0f0f0;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 24px; z-index: 100;
+        }
+        .navbar-left { display: flex; align-items: center; gap: 12px; }
+        .logo {
+            width: 36px; height: 36px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px; display: flex; align-items: center; justify-content: center;
+        }
+        .logo svg { width: 20px; height: 20px; color: white; }
+        .logo-text { font-size: 18px; font-weight: 700; color: #1a1a1a; }
+        .navbar-right { display: flex; align-items: center; gap: 16px; }
+        .user-avatar {
+            width: 40px; height: 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            color: white; font-weight: 600; font-size: 16px; cursor: pointer;
+        }
+        .main-container { display: flex; padding-top: 64px; min-height: 100vh; }
+        .sidebar {
+            width: 240px; background: white; border-right: 1px solid #f0f0f0;
+            padding: 24px 0; position: fixed; top: 64px; bottom: 0; left: 0; overflow-y: auto;
+        }
+        .sidebar-section { margin-bottom: 24px; }
+        .sidebar-section-title {
+            font-size: 11px; font-weight: 600; color: #9ca3af;
+            text-transform: uppercase; letter-spacing: 0.5px;
+            padding: 0 20px; margin-bottom: 8px;
+        }
+        .sidebar-item {
+            display: flex; align-items: center; gap: 12px;
+            padding: 10px 20px; cursor: pointer; transition: all 0.15s;
+            font-size: 14px; color: #666; border-left: 3px solid transparent;
+            text-decoration: none;
+        }
+        .sidebar-item:hover { background: #fafafa; color: #1a1a1a; }
+        .sidebar-item.active {
+            background: #f0f2ff; color: #667eea; border-left-color: #667eea; font-weight: 500;
+        }
+        .sidebar-item i { font-size: 18px; width: 20px; text-align: center; }
+        .badge {
+            background: #f59e0b;
+            color: white;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 10px;
+            margin-left: auto;
+        }
+        .content { flex: 1; margin-left: 240px; padding: 32px; }
+        .page-header { margin-bottom: 24px; }
+        .page-title { font-size: 24px; font-weight: 700; color: #1a1a1a; }
+        .page-subtitle { font-size: 14px; color: #666; margin-top: 4px; }
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .stat-card {
+            background: white;
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+        }
+        .stat-label { font-size: 13px; color: #666; margin-bottom: 8px; }
+        .stat-value { font-size: 28px; font-weight: 700; }
+        .stat-value.pending { color: #f59e0b; }
+        .stat-value.approved { color: #10b981; }
+        .stat-value.rejected { color: #ef4444; }
+        .tabs {
+            display: flex; gap: 8px; margin-bottom: 20px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .tab {
+            padding: 10px 16px;
+            font-size: 13px;
+            font-weight: 500;
+            color: #666;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.15s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .tab:hover { color: #1a1a1a; }
+        .tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+        }
+        .post-card {
+            background: white;
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 16px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+        }
+        .post-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .post-avatar {
+            width: 40px; height: 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 15px;
+        }
+        .post-meta { flex: 1; }
+        .post-author { font-size: 14px; font-weight: 600; margin-bottom: 2px; }
+        .post-time { font-size: 12px; color: #9ca3af; }
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .status-pending { background: #fef3c7; color: #d97706; }
+        .status-approved { background: #d1fae5; color: #059669; }
+        .status-rejected { background: #fee2e2; color: #dc2626; }
+        .post-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 12px;
+            color: #1a1a1a;
+        }
+        .post-content {
+            font-size: 14px;
+            line-height: 1.6;
+            color: #374151;
+            margin-bottom: 16px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .post-actions {
+            display: flex;
+            gap: 12px;
+            padding-top: 16px;
+            border-top: 1px solid #f0f0f0;
+        }
+        .btn {
+            padding: 10px 20px;
+            font-size: 14px;
+            font-weight: 500;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .btn-approve {
+            background: #10b981;
+            color: white;
+        }
+        .btn-approve:hover { background: #059669; }
+        .btn-reject {
+            background: #ef4444;
+            color: white;
+        }
+        .btn-reject:hover { background: #dc2626; }
+        .btn-secondary {
+            background: #f3f4f6;
+            color: #374151;
+        }
+        .btn-secondary:hover { background: #e5e7eb; }
+        .empty-state {
+            text-align: center;
+            padding: 80px 20px;
+            color: #9ca3af;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+        }
+        .empty-state i { font-size: 64px; margin-bottom: 16px; opacity: 0.3; }
+        .empty-state p { font-size: 14px; margin-bottom: 8px; }
+        .empty-state .sub { font-size: 13px; color: #9ca3af; }
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: none; align-items: center; justify-content: center;
+            z-index: 1000;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal {
+            background: white; border-radius: 16px;
+            padding: 24px; width: 100%; max-width: 400px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+        .modal-title { font-size: 18px; font-weight: 700; margin-bottom: 20px; }
+        .form-group { margin-bottom: 16px; }
+        .form-label { font-size: 13px; font-weight: 500; color: #374151; margin-bottom: 6px; display: block; }
+        .form-textarea {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1.5px solid #e5e7eb;
+            border-radius: 10px;
+            font-size: 14px;
+            font-family: inherit;
+            background: #fafafa;
+            resize: vertical;
+            min-height: 100px;
+            transition: all 0.2s;
+        }
+        .form-textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            background: white;
+        }
+        .modal-actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 20px; }
+        .toast {
+            position: fixed; top: 80px; right: 24px;
+            padding: 12px 20px; border-radius: 10px;
+            font-size: 14px; font-weight: 500;
+            z-index: 2000;
+            transform: translateX(120%);
+            transition: transform 0.3s ease;
+        }
+        .toast.show { transform: translateX(0); }
+        .toast.success { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+        .toast.error { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+    </style>
+{% include "_navbar_css.html" %}
+</head>
+<body>
+    <!-- 导航栏 -->
+    {% include "_navbar.html" %}
+
+    <div class="main-container">
+        {% with active_page = 'posts' %}
+        {% include "_sidebar.html" %}
+        {% endwith %}
+
+        <!-- 主内容区 -->
+        <main class="content">
+            <div class="page-header">
+                <h1 class="page-title">帖子审核</h1>
+                <p class="page-subtitle">审核用户发布的帖子</p>
+            </div>
+
+            <div class="stats-row">
+                <div class="stat-card">
+                    <div class="stat-label">待审核</div>
+                    <div class="stat-value pending" id="pendingStat">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">已通过</div>
+                    <div class="stat-value approved" id="approvedStat">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">已拒绝</div>
+                    <div class="stat-value rejected" id="rejectedStat">0</div>
+                </div>
+            </div>
+
+            <div class="tabs">
+                <div class="tab active" data-action="filterPosts" data-args="'pending'">
+                    <i class="bi bi-clock"></i>
+                    待审核
+                </div>
+                <div class="tab" data-action="filterPosts" data-args="'approved'">
+                    <i class="bi bi-check-circle"></i>
+                    已通过
+                </div>
+                <div class="tab" data-action="filterPosts" data-args="'rejected'">
+                    <i class="bi bi-x-circle"></i>
+                    已拒绝
+                </div>
+            </div>
+
+            <div id="postList">
+                <div class="empty-state">
+                    <i class="bi bi-file-text"></i>
+                    <p>加载中...</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 拒绝原因弹窗 -->
+    <div class="modal-overlay" id="rejectModal">
+        <div class="modal">
+            <h3 class="modal-title">拒绝帖子</h3>
+            <div class="form-group">
+                <label class="form-label">拒绝原因（可选）</label>
+                <textarea class="form-textarea" id="rejectReason" placeholder="请输入拒绝原因"></textarea>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" data-action="hideRejectModal">取消</button>
+                <button class="btn btn-reject" data-action="confirmReject">确认拒绝</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast 提示 -->
+    <div class="toast" id="toast"></div>
+
+    <script nonce="{{ csp_nonce }}">
+        let allPosts = [];
+        let currentFilter = 'pending';
+        let currentPostId = null;
+
+        // 页面加载
+        document.addEventListener('DOMContentLoaded', function() {
+            loadUserInfo();
+            loadPosts();
+        });
+
+        // 加载用户信息
+        async function loadUserInfo() {
+            try {
+                const data = await window.getUserInfo();
+                if (data) {
+                    document.getElementById('userAvatar').textContent = data.user_name.charAt(0).toUpperCase();
+                }
+            } catch (e) {
+                console.error('加载用户信息失败:', e);
+            }
+        }
+
+        // 加载帖子列表
+        async function loadPosts() {
+            try {
+                const res = await fetch('/api/admin/posts');
+                const data = await res.json();
+                if (data.posts) {
+                    allPosts = data.posts;
+                    updateStats();
+                    renderPosts();
+                }
+            } catch (e) {
+                console.error('加载帖子失败:', e);
+                document.getElementById('postList').innerHTML = `
+                    <div class="empty-state">
+                        <i class="bi bi-exclamation-circle"></i>
+                        <p>加载失败，请刷新重试</p>
+                    </div>
+                `;
+            }
+        }
+
+        // 更新统计数据
+        function updateStats() {
+            const pending = allPosts.filter(p => p.status === 'pending').length;
+            const approved = allPosts.filter(p => p.status === 'approved').length;
+            const rejected = allPosts.filter(p => p.status === 'rejected').length;
+            
+            document.getElementById('pendingStat').textContent = pending;
+            document.getElementById('approvedStat').textContent = approved;
+            document.getElementById('rejectedStat').textContent = rejected;
+            const pendingEl = document.getElementById('pendingCount');
+            pendingEl.textContent = pending;
+            pendingEl.style.display = pending > 0 ? 'inline-flex' : 'none';
+        }
+
+        // 过滤帖子
+        function filterPosts(filter) {
+            currentFilter = filter;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+            renderPosts();
+        }
+
+        // 渲染帖子列表
+        function renderPosts() {
+            const container = document.getElementById('postList');
+            let filtered = allPosts.filter(p => p.status === currentFilter);
+
+            if (filtered.length === 0) {
+                const messages = {
+                    pending: '暂无待审核的帖子',
+                    approved: '暂无已通过的帖子',
+                    rejected: '暂无已拒绝的帖子'
+                };
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <i class="bi bi-file-text"></i>
+                        <p>${messages[currentFilter]}</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = filtered.map(post => `
+                <div class="post-card">
+                    <div class="post-header">
+                        <div class="post-avatar">${post.user_name.charAt(0).toUpperCase()}</div>
+                        <div class="post-meta">
+                            <div class="post-author">${post.user_name}</div>
+                            <div class="post-time">${formatTime(post.created_at)}</div>
+                        </div>
+                        <span class="status-badge status-${post.status}">
+                            ${getStatusText(post.status)}
+                        </span>
+                    </div>
+                    <h3 class="post-title">${escapeHtml(post.title)}</h3>
+                    <div class="post-content">${escapeHtml(post.content)}</div>
+                    ${post.admin_remark ? `<div style="font-size: 13px; color: #666; margin-bottom: 16px;"><strong>审核备注：</strong>${escapeHtml(post.admin_remark)}</div>` : ''}
+                    <div class="post-actions">
+                        ${post.status === 'pending' ? `
+                            <button class="btn btn-approve" data-action="approvePost" data-args="'${post.post_id}'">
+                                <i class="bi bi-check"></i>
+                                通过
+                            </button>
+                            <button class="btn btn-reject" data-action="showRejectModal" data-args="'${post.post_id}'">
+                                <i class="bi bi-x"></i>
+                                拒绝
+                            </button>
+                        ` : `
+                            <button class="btn btn-secondary" data-action="loadPosts">
+                                <i class="bi bi-arrow-clockwise"></i>
+                                刷新
+                            </button>
+                        `}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // 获取状态文本
+        function getStatusText(status) {
+            const texts = {
+                pending: '待审核',
+                approved: '已通过',
+                rejected: '已拒绝'
+            };
+            return texts[status] || status;
+        }
+
+        // 通过帖子
+        async function approvePost(postId) {
+            try {
+                const res = await fetch('/api/admin/posts/' + postId + '/approve', {
+                    method: 'POST'
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    showToast('已通过审核', 'success');
+                    await loadPosts();
+                } else {
+                    showToast(data.error || '操作失败', 'error');
+                }
+            } catch (e) {
+                showToast('操作失败，请重试', 'error');
+            }
+        }
+
+        // 显示拒绝弹窗
+        function showRejectModal(postId) {
+            currentPostId = postId;
+            document.getElementById('rejectReason').value = '';
+            document.getElementById('rejectModal').classList.add('active');
+        }
+
+        // 隐藏拒绝弹窗
+        function hideRejectModal() {
+            document.getElementById('rejectModal').classList.remove('active');
+            currentPostId = null;
+        }
+
+        // 确认拒绝
+        async function confirmReject() {
+            if (!currentPostId) return;
+            
+            const reason = document.getElementById('rejectReason').value;
+            
+            try {
+                const res = await fetch('/api/admin/posts/' + currentPostId + '/reject', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ reason: reason })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    showToast('已拒绝', 'success');
+                    hideRejectModal();
+                    await loadPosts();
+                } else {
+                    showToast(data.error || '操作失败', 'error');
+                }
+            } catch (e) {
+                showToast('操作失败，请重试', 'error');
+            }
+        }
+
+        // 格式化时间
+        function formatTime(timeStr) {
+            if (!timeStr) return '';
+            const date = new Date(timeStr);
+            const now = new Date();
+            const diff = now - date;
+            
+            if (diff < 60000) return '刚刚';
+            if (diff < 3600000) return Math.floor(diff / 60000) + '分钟前';
+            if (diff < 86400000) return Math.floor(diff / 3600000) + '小时前';
+            if (diff < 604800000) return Math.floor(diff / 86400000) + '天前';
+            
+            return date.toLocaleDateString() + ' ' + date.getHours().toString().padStart(2, '0') + ':' + date.getMinutes().toString().padStart(2, '0');
+        }
+
+        // HTML 转义
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // 显示 Toast
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = 'toast ' + type + ' show';
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        // 点击弹窗外部关闭
+        document.getElementById('rejectModal').addEventListener('click', function(e) {
+            if (e.target === this) hideRejectModal();
+        });
+    </script>
+</body>
+</html>

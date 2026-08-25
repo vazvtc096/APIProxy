@@ -1,0 +1,81 @@
+# ============================================================================
+# APIProxy .gitignore
+# ============================================================================
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# --- 虚拟环境 ---
+venv/
+.venv/
+env/
+ENV/
+
+# --- 数据库 ---
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# --- 密钥与敏感文件 ---
+.session_secret
+.rcon_key
+*.pem
+*.key
+*.crt
+*.cer
+*.csr
+.env
+.env.*
+!.env.example
+
+# --- 配置文件（含密钥，不提交） ---
+config.yaml
+config.yml
+config.json
+config.toml
+!.env.example
+
+# --- 日志 ---
+*.log
+*.log.*
+service.out.log
+service.err.log
+cloudflared.log
+
+# --- IDE / 编辑器 ---
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# --- Docker ---
+docker-compose.override.yml
+
+# --- 测试 / 覆盖率 ---
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+
+# --- 其他 ---
+*.bak
+*.tmp
+*.cache
+
+# --- 全量备份快照（git 已有历史，无需纳入版本库）---
+archive/
+*.tar.gz
+*.tar

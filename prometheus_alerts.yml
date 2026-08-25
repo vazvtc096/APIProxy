@@ -1,0 +1,77 @@
+# Prometheus 告警规则（配合 /metrics 端点使用）
+#
+# 用法：在 prometheus.yml 中通过 rule_files 引入本文件，例如：
+#   rule_files:
+#     - "prometheus_alerts.yml"
+#
+# 依赖指标（由 utils/metrics.py 暴露）：
+#   apiproxy_http_requests_total         按 method/route/status 的请求计数
+#   apiproxy_http_request_duration_seconds 按 method/route 的延迟直方图
+#   apiproxy_http_requests_in_progress   当前进行中的请求数
+#
+groups:
+  - name: apiproxy
+    rules:
+      # 5xx 错误率过高：5 分钟内 5xx 占比超过 5%
+      - alert: APIProxyHighErrorRate
+        expr: |
+          (
+            sum(rate(apiproxy_http_requests_total{status=~"5.."}[5m]))
+            /
+            clamp_min(sum(rate(apiproxy_http_requests_total[5m])), 1e-9)
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "APIProxy 5xx 错误率过高"
+          description: "5 分钟内 5xx 错误率 {{ $value | humanizePercentage }}，超过 5% 阈值"
+
+      # 4xx 错误率异常：超过 20% 通常意味着客户端配置错误或存在攻击/滥用
+      - alert: APIProxyHighClientErrorRate
+        expr: |
+          (
+            sum(rate(apiproxy_http_requests_total{status=~"4.."}[5m]))
+            /
+            clamp_min(sum(rate(apiproxy_http_requests_total[5m])), 1e-9)
+          ) > 0.2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "APIProxy 4xx 客户端错误率异常"
+          description: "5 分钟内 4xx 错误率 {{ $value | humanizePercentage }}，超过 20% 阈值"
+
+      # P95 延迟过高
+      - alert: APIProxyHighLatency
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(apiproxy_http_request_duration_seconds_bucket[5m]))
+          ) > 2.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "APIProxy P95 延迟过高"
+          description: "P95 请求延迟 {{ $value }}s，超过 2.5s 阈值"
+
+      # 请求积压：进行中的请求数过高（单进程），说明上游或本进程处理能力不足
+      - alert: APIProxyRequestBacklog
+        expr: apiproxy_http_requests_in_progress > 100
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "APIProxy 请求积压"
+          description: "当前进行中请求数 {{ $value }}，超过 100 阈值，可能上游拥塞或流量突增"
+
+      # 实例宕机 / 指标停止上报
+      - alert: APIProxyDown
+        expr: up{job="apiproxy"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "APIProxy 实例宕机"
+          description: "实例 {{ $labels.instance }} 已停止被 Prometheus 抓取超过 1 分钟"

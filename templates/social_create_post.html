@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>发布帖子 - 社区</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style nonce="{{ csp_nonce }}">
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #fafafa; color: #1a1a1a; min-height: 100vh;
+        }
+        .navbar {
+            position: fixed; top: 0; left: 0; right: 0; height: 64px;
+            background: white; border-bottom: 1px solid #f0f0f0;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 24px; z-index: 100;
+        }
+        .navbar-left { display: flex; align-items: center; gap: 12px; }
+        .logo {
+            width: 36px; height: 36px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px; display: flex; align-items: center; justify-content: center;
+        }
+        .logo svg { width: 20px; height: 20px; color: white; }
+        .logo-text { font-size: 18px; font-weight: 700; color: #1a1a1a; }
+        .main-container { display: flex; padding-top: 64px; min-height: 100vh; }
+        .sidebar {
+            width: 240px; background: white; border-right: 1px solid #f0f0f0;
+            padding: 24px 0; position: fixed; top: 64px; bottom: 0; left: 0; overflow-y: auto;
+        }
+        .sidebar-section { margin-bottom: 24px; }
+        .sidebar-section-title {
+            font-size: 11px; font-weight: 600; color: #9ca3af;
+            text-transform: uppercase; letter-spacing: 0.5px;
+            padding: 0 20px; margin-bottom: 8px;
+        }
+        .sidebar-item {
+            display: flex; align-items: center; gap: 12px;
+            padding: 10px 20px; cursor: pointer; transition: all 0.15s;
+            font-size: 14px; color: #666; border-left: 3px solid transparent;
+            text-decoration: none;
+        }
+        .sidebar-item:hover { background: #fafafa; color: #1a1a1a; }
+        .sidebar-item.active {
+            background: #f0f2ff; color: #667eea; border-left-color: #667eea; font-weight: 500;
+        }
+        .sidebar-item i { font-size: 18px; width: 20px; text-align: center; }
+        .content { flex: 1; margin-left: 240px; padding: 32px; }
+        .page-header { margin-bottom: 24px; }
+        .page-title { font-size: 24px; font-weight: 700; color: #1a1a1a; }
+        .page-subtitle { font-size: 14px; color: #666; margin-top: 4px; }
+        .form-card {
+            background: white; border-radius: 16px; padding: 32px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05); max-width: 800px;
+        }
+        .form-group { margin-bottom: 24px; }
+        .form-label {
+            display: block; font-size: 14px; font-weight: 500;
+            color: #333; margin-bottom: 8px;
+        }
+        .form-input {
+            width: 100%; padding: 12px 16px; border: 1px solid #e5e7eb;
+            border-radius: 10px; font-size: 14px; outline: none; transition: border-color 0.2s;
+            font-family: inherit;
+        }
+        .form-input:focus { border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); }
+        .form-textarea {
+            width: 100%; padding: 12px 16px; border: 1px solid #e5e7eb;
+            border-radius: 10px; font-size: 14px; outline: none; transition: border-color 0.2s;
+            font-family: inherit; resize: vertical; min-height: 300px; line-height: 1.6;
+        }
+        .form-textarea:focus { border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); }
+        .form-hint { font-size: 12px; color: #9ca3af; margin-top: 6px; }
+        .btn {
+            padding: 12px 24px; font-size: 14px; font-weight: 500;
+            border-radius: 10px; cursor: pointer; transition: all 0.2s;
+            border: none; display: inline-flex; align-items: center; gap: 8px;
+            text-decoration: none;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+        }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4); }
+        .btn-secondary { background: #f5f5f5; color: #333; }
+        .btn-secondary:hover { background: #eee; }
+        .btn-group { display: flex; gap: 12px; margin-top: 32px; }
+        .tag-input-container {
+            display: flex; flex-wrap: wrap; gap: 8px;
+            padding: 8px; border: 1px solid #e5e7eb; border-radius: 10px;
+            min-height: 44px; align-items: center;
+        }
+        .tag-input-container:focus-within { border-color: #667eea; }
+        .tag {
+            display: flex; align-items: center; gap: 4px;
+            padding: 4px 10px; background: #f0f2ff; color: #667eea;
+            border-radius: 6px; font-size: 13px; font-weight: 500;
+        }
+        .tag-remove {
+            cursor: pointer; opacity: 0.7; transition: opacity 0.2s;
+        }
+        .tag-remove:hover { opacity: 1; }
+        .tag-input {
+            flex: 1; min-width: 100px; border: none; outline: none;
+            font-size: 14px; padding: 4px; background: transparent;
+        }
+        .toast {
+            position: fixed; top: 80px; right: 24px; padding: 12px 20px;
+            background: white; border-radius: 10px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            font-size: 14px; z-index: 1000; transform: translateX(120%); transition: transform 0.3s;
+        }
+        .toast.show { transform: translateX(0); }
+        .toast.success { border-left: 4px solid #16a34a; }
+        .toast.error { border-left: 4px solid #dc2626; }
+    </style>
+{% include "_navbar_css.html" %}
+</head>
+<body>
+    {% include "_navbar.html" %}
+
+    <div class="main-container">
+        {% with active_page = 'social' %}
+        {% include "_sidebar.html" %}
+        {% endwith %}
+
+        <main class="content">
+            <div class="page-header">
+                <h1 class="page-title">发布帖子</h1>
+                <p class="page-subtitle">分享你的想法和经验，帖子需要审核后才能显示</p>
+            </div>
+
+            <div class="form-card">
+                <div class="form-group">
+                    <label class="form-label">帖子标题</label>
+                    <input type="text" class="form-input" id="titleInput" placeholder="请输入帖子标题..." maxlength="200">
+                    <div class="form-hint">标题最多 200 个字符</div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">标签（可选）</label>
+                    <div class="tag-input-container" id="tagContainer">
+                        <input type="text" class="tag-input" id="tagInput" placeholder="输入标签后按回车添加...">
+                    </div>
+                    <div class="form-hint">按回车添加标签，最多 5 个</div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">帖子内容</label>
+                    <textarea class="form-textarea" id="contentInput" placeholder="请输入帖子内容..." maxlength="10000"></textarea>
+                    <div class="form-hint">内容最多 10000 个字符</div>
+                </div>
+
+                <div class="btn-group">
+                    <a href="/social" class="btn btn-secondary">
+                        <i class="bi bi-arrow-left"></i>
+                        返回
+                    </a>
+                    <button class="btn btn-primary" data-action="submitPost">
+                        <i class="bi bi-send"></i>
+                        发布帖子
+                    </button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script nonce="{{ csp_nonce }}">
+        let tags = [];
+
+        // 标签输入处理
+        const tagInput = document.getElementById('tagInput');
+        const tagContainer = document.getElementById('tagContainer');
+
+        tagInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                addTag();
+            }
+        });
+
+        tagInput.addEventListener('blur', addTag);
+
+        function addTag() {
+            const value = tagInput.value.trim();
+            if (value && !tags.includes(value) && tags.length < 5) {
+                tags.push(value);
+                renderTags();
+            }
+            tagInput.value = '';
+        }
+
+        function removeTag(index) {
+            tags.splice(index, 1);
+            renderTags();
+        }
+
+        function renderTags() {
+            const tagElements = tags.map((tag, index) => `
+                <span class="tag">
+                    ${escapeHtml(tag)}
+                    <span class="tag-remove" data-action="removeTag" data-args="${index}">×</span>
+                </span>
+            `).join('');
+            
+            tagContainer.innerHTML = tagElements + `<input type="text" class="tag-input" id="tagInput" placeholder="输入标签后按回车添加...">`;
+            
+            // 重新绑定事件
+            const newInput = document.getElementById('tagInput');
+            newInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    addTag();
+                }
+            });
+            newInput.addEventListener('blur', addTag);
+            newInput.focus();
+        }
+
+        async function submitPost() {
+            const title = document.getElementById('titleInput').value.trim();
+            const content = document.getElementById('contentInput').value.trim();
+
+            if (!title) {
+                showToast('请输入帖子标题', 'error');
+                return;
+            }
+            if (!content) {
+                showToast('请输入帖子内容', 'error');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/posts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        title,
+                        content,
+                        tags: tags.join(',')
+                    })
+                });
+
+                const data = await res.json();
+
+                if (res.ok) {
+                    showToast('帖子发布成功，等待审核', 'success');
+                    setTimeout(() => {
+                        window.location.href = '/social';
+                    }, 1500);
+                } else {
+                    showToast(data.error || '发布失败', 'error');
+                }
+            } catch (e) {
+                showToast('网络错误', 'error');
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast ${type} show`;
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

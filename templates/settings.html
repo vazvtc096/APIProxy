@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>设置 - Cloud LLM API 代理</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style nonce="{{ csp_nonce }}">
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #fafafa;
+            color: #1a1a1a;
+            min-height: 100vh;
+        }
+        /* 顶部导航栏 */
+        .navbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 64px;
+            background: white;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+            z-index: 100;
+        }
+        .navbar-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .logo {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        .logo svg {
+            width: 20px;
+            height: 20px;
+            color: white;
+        }
+        .logo-text {
+            font-size: 18px;
+            font-weight: 700;
+            color: #1a1a1a;
+            cursor: pointer;
+        }
+        .navbar-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-right: 16px;
+        }
+        .nav-link {
+            padding: 8px 16px;
+            font-size: 14px;
+            font-weight: 500;
+            color: #666;
+            text-decoration: none;
+            border-radius: 8px;
+            transition: all 0.2s;
+        }
+        .nav-link:hover {
+            background: #f5f5f5;
+            color: #1a1a1a;
+        }
+        .nav-link.active {
+            background: #f0f2ff;
+            color: #667eea;
+        }
+        .balence-display {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #f0f2ff;
+            padding: 8px 16px;
+            border-radius: 20px;
+        }
+        .balence-icon {
+            color: #667eea;
+            font-size: 16px;
+        }
+        .balence-amount {
+            font-size: 14px;
+            font-weight: 600;
+            color: #667eea;
+        }
+        /* 用户头像下拉 */
+        .user-menu {
+            position: relative;
+        }
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .user-avatar:hover {
+            transform: scale(1.05);
+        }
+        .user-dropdown {
+            position: absolute;
+            top: calc(100% + 8px);
+            right: 0;
+            width: 240px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+            padding: 8px;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-10px);
+            transition: all 0.2s;
+        }
+        .user-dropdown.show {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+        .user-info-header {
+            padding: 16px;
+            border-bottom: 1px solid #f0f0f0;
+            margin-bottom: 8px;
+        }
+        .user-info-name {
+            font-size: 15px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 4px;
+        }
+        .user-info-uid {
+            font-size: 12px;
+            color: #9ca3af;
+            font-family: monospace;
+        }
+        .dropdown-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.15s;
+            font-size: 14px;
+            color: #333;
+        }
+        .dropdown-item:hover {
+            background: #f5f5f5;
+        }
+        .dropdown-item i {
+            font-size: 18px;
+            color: #667eea;
+        }
+        .dropdown-item.danger {
+            color: #dc2626;
+        }
+        .dropdown-item.danger i {
+            color: #dc2626;
+        }
+        .dropdown-divider {
+            height: 1px;
+            background: #f0f0f0;
+            margin: 8px 0;
+        }
+        /* 主内容区 */
+        .main-container {
+            display: flex;
+            padding-top: 64px;
+            padding-left: 240px;
+            min-height: 100vh;
+            box-sizing: border-box;
+        }
+        .main-content {
+            flex: 1;
+            min-height: calc(100vh - 64px);
+        }
+        /* 左侧侧边栏（固定定位：仅内容区滚动，侧边栏不随页面滚动） */
+        .sidebar {
+            width: 240px;
+            background: white;
+            border-right: 1px solid #f0f0f0;
+            padding: 24px 0;
+            position: fixed;
+            top: 64px;
+            bottom: 0;
+            left: 0;
+            overflow-y: auto;
+            box-sizing: border-box;
+        }
+        .sidebar-section { margin-bottom: 24px; }
+        .sidebar-section-title {
+            font-size: 11px; font-weight: 600; color: #9ca3af;
+            text-transform: uppercase; letter-spacing: 0.5px;
+            padding: 0 20px; margin-bottom: 8px;
+        }
+        .sidebar-item {
+            display: flex; align-items: center; gap: 12px;
+            padding: 10px 20px; cursor: pointer; transition: all 0.15s;
+            font-size: 14px; color: #666; border-left: 3px solid transparent;
+            text-decoration: none;
+        }
+        .sidebar-item:hover { background: #fafafa; color: #1a1a1a; }
+        .sidebar-item.active {
+            background: #f0f2ff; color: #667eea;
+            border-left-color: #667eea; font-weight: 500;
+        }
+        .sidebar-item i { font-size: 18px; width: 20px; text-align: center; }
+        .page-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 32px 24px;
+        }
+        .page-header {
+            margin-bottom: 32px;
+        }
+        .page-title {
+            font-size: 28px;
+            font-weight: 700;
+            color: #1a1a1a;
+            margin-bottom: 8px;
+        }
+        .page-subtitle {
+            font-size: 14px;
+            color: #666;
+        }
+        /* 卡片 */
+        .card {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+        .card-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .card-icon {
+            width: 40px;
+            height: 40px;
+            background: #f0f2ff;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #667eea;
+            font-size: 20px;
+        }
+        .card-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1a1a1a;
+        }
+        /* 表单 */
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            color: #333;
+            margin-bottom: 8px;
+        }
+        .form-input {
+            width: 100%;
+            padding: 12px 16px;
+            font-size: 14px;
+            border: 1.5px solid #e5e7eb;
+            border-radius: 10px;
+            outline: none;
+            transition: all 0.2s;
+            background: #fafafa;
+        }
+        .form-input:focus {
+            border-color: #667eea;
+            background: white;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        .form-input::placeholder {
+            color: #9ca3af;
+        }
+        .form-hint {
+            font-size: 12px;
+            color: #9ca3af;
+            margin-top: 6px;
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+        /* 按钮 */
+        .btn-primary {
+            padding: 12px 24px;
+            font-size: 14px;
+            font-weight: 600;
+            color: white;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+        .btn-primary:active {
+            transform: translateY(0);
+        }
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .btn-danger {
+            padding: 12px 24px;
+            font-size: 14px;
+            font-weight: 600;
+            color: white;
+            background: #dc2626;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
+        }
+        .btn-danger:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(220, 38, 38, 0.4);
+        }
+        /* 消息提示 */
+        .alert {
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .alert.show {
+            display: block;
+        }
+        .alert-error {
+            background: #fef2f2;
+            color: #dc2626;
+        }
+        .alert-success {
+            background: #f0fdf4;
+            color: #16a34a;
+        }
+        /* 信息表格 */
+        .info-table {
+            width: 100%;
+        }
+        .info-row {
+            display: flex;
+            padding: 12px 0;
+            border-bottom: 1px solid #f5f5f5;
+        }
+        .info-row:last-child {
+            border-bottom: none;
+        }
+        .info-label {
+            width: 120px;
+            font-size: 14px;
+            color: #666;
+            flex-shrink: 0;
+        }
+        .info-value {
+            font-size: 14px;
+            color: #1a1a1a;
+            font-weight: 500;
+        }
+        /* 加载动画 */
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 0.8s linear infinite;
+            vertical-align: middle;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        /* 响应式 */
+        @media (max-width: 768px) {
+            .sidebar {
+                display: none;
+            }
+            .main-container {
+                padding-left: 0;
+            }
+            .page-container {
+                padding: 24px 16px;
+            }
+            .page-title {
+                font-size: 24px;
+            }
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- 顶部导航栏 -->
+    <nav class="navbar">
+        <div class="navbar-left">
+            <div class="logo" data-nav="/dashboard">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+            </div>
+            <span class="logo-text" data-nav="/dashboard">Cloud LLM API 代理</span>
+        </div>
+        <div class="navbar-right">
+            {% include "_notif_bell.html" %}
+            <div class="balence-display">
+                <i class="bi bi-wallet2 balence-icon"></i>
+                <span class="balence-amount" id="balenceAmount">¥0.00</span>
+            </div>
+            <div class="user-menu">
+                <div class="user-avatar" id="userAvatar" data-action="toggleUserMenu">
+                    <span id="avatarText">U</span>
+                </div>
+                <div class="user-dropdown" id="userDropdown">
+                    <div class="user-info-header">
+                        <div class="user-info-name" id="userName">用户名</div>
+                        <div class="user-info-uid" id="userUid">UID: 000000000000</div>
+                    </div>
+                    <div class="dropdown-item" data-nav="/dashboard">
+                        <i class="bi bi-speedometer2"></i>
+                        <span>仪表板</span>
+                    </div>
+                    <div class="dropdown-item" data-nav="/settings">
+                        <i class="bi bi-gear"></i>
+                        <span>设置</span>
+                    </div>
+                    <div class="dropdown-divider"></div>
+                    <div class="dropdown-item danger" data-action="logout">
+                        <i class="bi bi-box-arrow-right"></i>
+                        <span>退出登录</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 主内容区（侧边栏作为索引，替代原上导航栏） -->
+    <div class="main-container">
+    {% with active_page='settings' %}{% include "_sidebar.html" %}{% endwith %}
+    <div class="main-content">
+        <div class="page-container">
+            <div class="page-header">
+                <h1 class="page-title">设置</h1>
+                <p class="page-subtitle">管理你的账户设置和安全选项</p>
+            </div>
+
+            <!-- 修改密码 -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon">
+                        <i class="bi bi-key"></i>
+                    </div>
+                    <h2 class="card-title">修改密码</h2>
+                </div>
+                <div id="passwordAlert" class="alert"></div>
+                <form id="changePasswordForm">
+                    <div class="form-group">
+                        <label class="form-label">当前密码</label>
+                        <input type="password" class="form-input" id="oldPassword" placeholder="请输入当前密码" required>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">新密码</label>
+                            <input type="password" class="form-input" id="newPassword" placeholder="请输入新密码" required>
+                            <div class="form-hint">至少 6 位，必须包含字母和数字</div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">确认新密码</label>
+                            <input type="password" class="form-input" id="confirmPassword" placeholder="请再次输入新密码" required>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn-primary" id="changePasswordBtn">
+                        <span id="changePasswordBtnText">修改密码</span>
+                    </button>
+                </form>
+            </div>
+
+            <!-- 账户信息 -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon">
+                        <i class="bi bi-person-circle"></i>
+                    </div>
+                    <h2 class="card-title">账户信息</h2>
+                </div>
+                <div class="info-table" id="userInfo">
+                    <div class="info-row">
+                        <div class="info-label">用户名</div>
+                        <div class="info-value" id="infoUsername">-</div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-label">UID</div>
+                        <div class="info-value" id="infoUid">-</div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-label">邮箱</div>
+                        <div class="info-value" id="infoEmail">-</div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-label">余额</div>
+                        <div class="info-value" id="infoBalance">-</div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-label">注册时间</div>
+                        <div class="info-value" id="infoCreatedAt">-</div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-label">API Key</div>
+                        <div class="info-value" id="infoApiKeys">-</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 危险区域 -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon" style="background: #fef2f2; color: #dc2626;">
+                        <i class="bi bi-exclamation-triangle"></i>
+                    </div>
+                    <h2 class="card-title">危险操作</h2>
+                </div>
+                <p style="font-size: 14px; color: #666; margin-bottom: 16px;">
+                    注销账户后，你的所有数据将被永久删除，且无法恢复。
+                </p>
+                <button class="btn-danger" data-action="showDeleteConfirm">
+                    注销账户
+                </button>
+            </div>
+        </div>
+    </div>
+    </div>
+
+    <script nonce="{{ csp_nonce }}">
+        // 用户菜单切换
+        function toggleUserMenu() {
+            const dropdown = document.getElementById('userDropdown');
+            dropdown.classList.toggle('show');
+        }
+
+        // 点击其他地方关闭下拉菜单
+        document.addEventListener('click', function(e) {
+            const userMenu = document.querySelector('.user-menu');
+            if (!userMenu.contains(e.target)) {
+                document.getElementById('userDropdown').classList.remove('show');
+            }
+        });
+
+        // 显示消息
+        function showAlert(elementId, message, type) {
+            const alert = document.getElementById(elementId);
+            alert.textContent = message;
+            alert.className = 'alert alert-' + type + ' show';
+        }
+
+        function hideAlert(elementId) {
+            const alert = document.getElementById(elementId);
+            alert.classList.remove('show');
+        }
+
+        // 加载用户信息
+        async function loadUserInfo() {
+            try {
+                const data = await window.getUserInfo();
+                if (!data) {
+                    window.location.href = '/login';
+                    return;
+                }
+
+                // 更新导航栏
+                document.getElementById('balenceAmount').textContent = '¥' + Number(data.balence).toFixed(6);
+                document.getElementById('avatarText').textContent = data.username.charAt(0).toUpperCase();
+                document.getElementById('userName').textContent = data.username;
+                document.getElementById('userUid').textContent = 'UID: ' + (data.uid || '-');
+
+                // 更新账户信息
+                document.getElementById('infoUsername').textContent = data.username;
+                document.getElementById('infoUid').textContent = data.uid || '-';
+                document.getElementById('infoEmail').textContent = data.email || '未绑定';
+                document.getElementById('infoBalance').textContent = '¥' + Number(data.balence).toFixed(6);
+                document.getElementById('infoCreatedAt').textContent = data.created_at || '-';
+                document.getElementById('infoApiKeys').textContent = (data.apikeys ? data.apikeys.length : 0) + ' / 10';
+
+            } catch (e) {
+                console.error('加载用户信息失败:', e);
+            }
+        }
+
+        // 修改密码
+        document.getElementById('changePasswordForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            hideAlert('passwordAlert');
+
+            const oldPassword = document.getElementById('oldPassword').value;
+            const newPassword = document.getElementById('newPassword').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+            const btn = document.getElementById('changePasswordBtn');
+            const btnText = document.getElementById('changePasswordBtnText');
+
+            if (newPassword !== confirmPassword) {
+                showAlert('passwordAlert', '两次输入的密码不一致', 'error');
+                return;
+            }
+
+            if (newPassword.length < 6) {
+                showAlert('passwordAlert', '密码至少 6 位', 'error');
+                return;
+            }
+            if (!/[a-zA-Z]/.test(newPassword)) {
+                showAlert('passwordAlert', '密码必须包含字母', 'error');
+                return;
+            }
+            if (!/[0-9]/.test(newPassword)) {
+                showAlert('passwordAlert', '密码必须包含数字', 'error');
+                return;
+            }
+
+            btn.disabled = true;
+            btnText.innerHTML = '<span class="loading"></span>';
+
+            try {
+                const res = await fetch('/api/user/change-password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        old_password: oldPassword,
+                        new_password: newPassword
+                    })
+                });
+
+                const data = await res.json();
+
+                if (res.ok) {
+                    showAlert('passwordAlert', '密码修改成功', 'success');
+                    this.reset();
+                } else {
+                    showAlert('passwordAlert', data.error || '修改失败', 'error');
+                }
+            } catch (e) {
+                showAlert('passwordAlert', '网络错误，请稍后重试', 'error');
+            } finally {
+                btn.disabled = false;
+                btnText.textContent = '修改密码';
+            }
+        });
+
+        // 注销账户确认
+        function showDeleteConfirm() {
+            const password = prompt('请输入你的密码以确认注销账户：');
+            if (!password) return;
+
+            if (!confirm('确定要注销账户吗？此操作不可撤销！')) return;
+
+            fetch('/api/user/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password })
+            })
+            .then(res => res.json().then(data => ({ ok: res.ok, data })))
+            .then(({ ok, data }) => {
+                if (ok) {
+                    alert('账户已注销');
+                    window.location.href = '/login';
+                } else {
+                    alert(data.error || '注销失败');
+                }
+            })
+            .catch(() => {
+                alert('网络错误，请稍后重试');
+            });
+        }
+
+        // 退出登录
+        async function logout() {
+            try {
+                await fetch('/logout', { method: 'POST' });
+            } catch (e) {}
+            window.location.href = '/login';
+        }
+
+        // 页面加载
+        loadUserInfo();
+        // 从侧边栏引导横幅跳转而来（?pw=1）：滚动到改密表单并聚焦
+        if (new URLSearchParams(location.search).get('pw') === '1') {
+            const pwCard = document.getElementById('changePasswordForm');
+            if (pwCard) {
+                setTimeout(() => {
+                    pwCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    const oldInput = document.getElementById('oldPassword');
+                    if (oldInput) oldInput.focus();
+                }, 300);
+            }
+        }
+    </script>
+</body>
+</html>

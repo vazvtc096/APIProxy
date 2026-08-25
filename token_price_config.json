@@ -1,0 +1,21 @@
+{
+    "token_used_table": {
+        "0000:007F": 0.3,
+        "3000:9FFF": 0.6
+    },
+    "unexcept_char": 0.6,
+    "money_per_million_tokens": {
+        "deepseek-v4-flash": {
+            "input": 1,
+            "output": 2
+        },
+        "deepseek-v4-pro": {
+            "input": 3,
+            "output": 6
+        }
+    },
+    "unexcept_model": {
+        "input": 2,
+        "output": 4
+    }
+}

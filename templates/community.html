@@ -1,0 +1,1162 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>社区 - Cloud LLM API 代理</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style nonce="{{ csp_nonce }}">
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #fafafa;
+            color: #1a1a1a;
+        }
+        /* 顶部导航栏 */
+        .navbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 64px;
+            background: white;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+            z-index: 100;
+        }
+        .navbar-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .logo {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        .logo svg {
+            width: 20px;
+            height: 20px;
+            color: white;
+        }
+        .logo-text {
+            font-size: 18px;
+            font-weight: 700;
+            color: #1a1a1a;
+            cursor: pointer;
+        }
+        .navbar-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .balence-display {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #f0f2ff;
+            padding: 8px 16px;
+            border-radius: 20px;
+        }
+        .balence-icon {
+            color: #667eea;
+            font-size: 16px;
+        }
+        .balence-amount {
+            font-size: 14px;
+            font-weight: 600;
+            color: #667eea;
+        }
+        .balence-label {
+            font-size: 12px;
+            color: #9ca3af;
+        }
+        .user-menu {
+            position: relative;
+        }
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .user-avatar:hover {
+            transform: scale(1.05);
+        }
+        .user-dropdown {
+            position: absolute;
+            top: calc(100% + 8px);
+            right: 0;
+            width: 240px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+            padding: 8px;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-10px);
+            transition: all 0.2s;
+        }
+        .user-dropdown.show {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+        .user-info-header {
+            padding: 16px;
+            border-bottom: 1px solid #f0f0f0;
+            margin-bottom: 8px;
+        }
+        .user-info-name {
+            font-size: 15px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 4px;
+        }
+        .user-info-uid {
+            font-size: 12px;
+            color: #9ca3af;
+            font-family: monospace;
+        }
+        .dropdown-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.15s;
+            font-size: 14px;
+            color: #333;
+        }
+        .dropdown-item:hover {
+            background: #f5f5f5;
+        }
+        .dropdown-item i {
+            font-size: 18px;
+            color: #667eea;
+        }
+        .dropdown-item.danger {
+            color: #dc2626;
+        }
+        .dropdown-item.danger i {
+            color: #dc2626;
+        }
+        .dropdown-divider {
+            height: 1px;
+            background: #f0f0f0;
+            margin: 8px 0;
+        }
+        /* 主内容区 */
+        .main-container {
+            display: flex;
+            padding-top: 64px;
+            height: 100vh;
+            box-sizing: border-box;
+        }
+        /* 侧边栏 */
+        .sidebar {
+            width: 240px;
+            background: white;
+            border-right: 1px solid #f0f0f0;
+            padding: 24px 0;
+            position: fixed;
+            top: 64px;
+            bottom: 0;
+            left: 0;
+            overflow-y: auto;
+        }
+        .sidebar-section {
+            margin-bottom: 24px;
+        }
+        .sidebar-section-title {
+            font-size: 11px;
+            font-weight: 600;
+            color: #9ca3af;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 0 20px;
+            margin-bottom: 8px;
+        }
+        .sidebar-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 20px;
+            cursor: pointer;
+            transition: all 0.15s;
+            font-size: 14px;
+            color: #666;
+            border-left: 3px solid transparent;
+        }
+        .sidebar-item:hover {
+            background: #fafafa;
+            color: #1a1a1a;
+        }
+        .sidebar-item.active {
+            background: #f0f2ff;
+            color: #667eea;
+            border-left-color: #667eea;
+            font-weight: 500;
+        }
+        .sidebar-item i {
+            font-size: 18px;
+            width: 20px;
+            text-align: center;
+        }
+        .sidebar-badge {
+            margin-left: auto;
+            background: #fef3c7;
+            color: #d97706;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 10px;
+        }
+        /* 内容区 */
+        .content {
+            flex: 1;
+            margin-left: 240px;
+            padding: 32px;
+        }
+        .page-header {
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .page-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: #1a1a1a;
+        }
+        .btn {
+            padding: 10px 20px;
+            font-size: 14px;
+            font-weight: 500;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+        }
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        .btn-secondary {
+            background: #f5f5f5;
+            color: #333;
+        }
+        .btn-secondary:hover {
+            background: #eee;
+        }
+        /* Tab 切换 */
+        .tabs {
+            display: flex;
+            gap: 4px;
+            background: #f5f5f5;
+            padding: 4px;
+            border-radius: 10px;
+            margin-bottom: 24px;
+        }
+        .tab {
+            flex: 1;
+            padding: 10px 16px;
+            font-size: 14px;
+            font-weight: 500;
+            color: #666;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.15s;
+            text-align: center;
+        }
+        .tab.active {
+            background: white;
+            color: #1a1a1a;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        /* 帖子列表 */
+        .posts-list {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        .post-card {
+            background: white;
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        .post-card:hover {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            transform: translateY(-2px);
+        }
+        .post-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+        .post-author {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .post-avatar {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        .post-author-info {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .post-author-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: #1a1a1a;
+        }
+        .post-time {
+            font-size: 12px;
+            color: #9ca3af;
+        }
+        .post-status {
+            font-size: 12px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-weight: 500;
+        }
+        .post-status.pending {
+            background: #fef3c7;
+            color: #d97706;
+        }
+        .post-status.approved {
+            background: #f0fdf4;
+            color: #16a34a;
+        }
+        .post-status.rejected {
+            background: #fef2f2;
+            color: #dc2626;
+        }
+        .post-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 8px;
+            line-height: 1.4;
+        }
+        .post-content {
+            font-size: 14px;
+            color: #666;
+            line-height: 1.6;
+            margin-bottom: 16px;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .post-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding-top: 12px;
+            border-top: 1px solid #f5f5f5;
+        }
+        .post-stats {
+            display: flex;
+            gap: 20px;
+        }
+        .post-stat {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            color: #666;
+        }
+        .post-stat i {
+            font-size: 16px;
+        }
+        .post-stat.favorited {
+            color: #ef4444;
+        }
+        .favorite-btn {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.15s;
+            font-size: 13px;
+            color: #666;
+            background: transparent;
+            border: none;
+        }
+        .favorite-btn:hover {
+            background: #fef2f2;
+            color: #ef4444;
+        }
+        .favorite-btn.favorited {
+            color: #ef4444;
+        }
+        .favorite-btn.favorited i {
+            fill: #ef4444;
+        }
+        /* 空状态 */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #9ca3af;
+        }
+        .empty-state i {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+        .empty-state-text {
+            font-size: 14px;
+        }
+        /* 模态框 */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal-overlay.show {
+            display: flex;
+        }
+        .modal {
+            background: white;
+            border-radius: 16px;
+            width: 100%;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+            animation: modalIn 0.3s ease-out;
+        }
+        @keyframes modalIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        .modal-header {
+            padding: 24px;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .modal-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: #1a1a1a;
+        }
+        .modal-close {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            border: none;
+            background: #f5f5f5;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #666;
+            transition: all 0.15s;
+        }
+        .modal-close:hover {
+            background: #eee;
+            color: #1a1a1a;
+        }
+        .modal-body {
+            padding: 24px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            color: #333;
+            margin-bottom: 8px;
+        }
+        .form-input {
+            width: 100%;
+            padding: 12px 16px;
+            font-size: 14px;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            outline: none;
+            transition: all 0.15s;
+            font-family: inherit;
+        }
+        .form-input:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        .form-textarea {
+            width: 100%;
+            padding: 12px 16px;
+            font-size: 14px;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            outline: none;
+            transition: all 0.15s;
+            font-family: inherit;
+            resize: vertical;
+            min-height: 200px;
+            line-height: 1.6;
+        }
+        .form-textarea:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        .form-hint {
+            font-size: 12px;
+            color: #9ca3af;
+            margin-top: 6px;
+        }
+        .modal-footer {
+            padding: 20px 24px;
+            border-top: 1px solid #f0f0f0;
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+        /* 帖子详情 */
+        .post-detail {
+            background: white;
+            border-radius: 16px;
+            padding: 32px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+            margin-bottom: 24px;
+        }
+        .post-detail-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: #1a1a1a;
+            margin-bottom: 16px;
+            line-height: 1.4;
+        }
+        .post-detail-meta {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #f5f5f5;
+        }
+        .post-detail-content {
+            font-size: 15px;
+            line-height: 1.8;
+            color: #333;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .back-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            font-size: 14px;
+            color: #666;
+            background: #f5f5f5;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-bottom: 20px;
+            transition: all 0.15s;
+        }
+        .back-btn:hover {
+            background: #eee;
+            color: #1a1a1a;
+        }
+        /* Toast 提示 */
+        .toast-container {
+            position: fixed;
+            top: 80px;
+            right: 24px;
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .toast {
+            background: white;
+            padding: 16px 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            animation: toastIn 0.3s ease-out;
+            min-width: 280px;
+        }
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateX(20px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        .toast-icon {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+        .toast-icon.success {
+            background: #f0fdf4;
+            color: #16a34a;
+        }
+        .toast-icon.error {
+            background: #fef2f2;
+            color: #dc2626;
+        }
+        .toast-icon.info {
+            background: #eff6ff;
+            color: #2563eb;
+        }
+        .toast-message {
+            font-size: 14px;
+            color: #333;
+        }
+        /* 加载状态 */
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #9ca3af;
+        }
+        .loading-spinner {
+            width: 32px;
+            height: 32px;
+            border: 3px solid #f0f0f0;
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 12px;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        /* 响应式 */
+        @media (max-width: 768px) {
+            .sidebar {
+                display: none;
+            }
+            .content {
+                margin-left: 0;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- 顶部导航栏 -->
+    {% include "_navbar.html" %}
+
+    <div class="main-container">
+        <!-- 侧边栏 -->
+        {% with active_page = 'social' %}
+{% include "_sidebar.html" %}
+{% endwith %}
+
+        <!-- 内容区 -->
+        <main class="content">
+            <!-- 列表视图 -->
+            <div id="listView">
+                <div class="page-header">
+                    <h1 class="page-title">社区广场</h1>
+                    <button class="btn btn-primary" data-action="openCreateModal">
+                        <i class="bi bi-plus-lg"></i>
+                        发布帖子
+                    </button>
+                </div>
+
+                <div class="tabs">
+                    <div class="tab active" data-tab="all" data-action="switchTab" data-args="'all'">全部帖子</div>
+                    <div class="tab" data-tab="my" data-action="switchTab" data-args="'my'">我的帖子</div>
+                    <div class="tab" data-tab="favorites" data-action="switchTab" data-args="'favorites'">我的收藏</div>
+                </div>
+
+                <div class="posts-list" id="postsList">
+                    <div class="loading">
+                        <div class="loading-spinner"></div>
+                        <div>加载中...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 详情视图 -->
+            <div id="detailView" style="display: none;">
+                <button class="back-btn" data-action="showList">
+                    <i class="bi bi-arrow-left"></i>
+                    返回列表
+                </button>
+                <div id="postDetail">
+                    <!-- 帖子详情内容 -->
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 发帖模态框 -->
+    <div class="modal-overlay" id="createModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 class="modal-title">发布新帖子</h2>
+                <button class="modal-close" data-action="closeCreateModal">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">标题</label>
+                    <input type="text" class="form-input" id="postTitle" placeholder="请输入帖子标题" maxlength="200">
+                    <div class="form-hint" id="titleCount">0/200</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">内容</label>
+                    <textarea class="form-textarea" id="postContent" placeholder="请输入帖子内容..." maxlength="10000"></textarea>
+                    <div class="form-hint" id="contentCount">0/10000</div>
+                </div>
+                <div class="form-hint" style="color: #d97706;">
+                    <i class="bi bi-info-circle"></i>
+                    帖子发布后需要管理员审核通过才能显示
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-action="closeCreateModal">取消</button>
+                <button class="btn btn-primary" data-action="submitPost">发布</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast 容器 -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script nonce="{{ csp_nonce }}">
+        let currentTab = 'all';
+        let currentPage = 1;
+        let isLoading = false;
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            loadUserInfo();
+            loadPosts();
+            
+            // 字数统计
+            document.getElementById('postTitle').addEventListener('input', function() {
+                document.getElementById('titleCount').textContent = this.value.length + '/200';
+            });
+            document.getElementById('postContent').addEventListener('input', function() {
+                document.getElementById('contentCount').textContent = this.value.length + '/10000';
+            });
+
+            // 点击外部关闭下拉菜单
+            document.addEventListener('click', function(e) {
+                const dropdown = document.getElementById('userDropdown');
+                const avatar = document.getElementById('userAvatar');
+                if (!dropdown.contains(e.target) && !avatar.contains(e.target)) {
+                    dropdown.classList.remove('show');
+                }
+            });
+        });
+
+        // 加载用户信息
+        async function loadUserInfo() {
+            try {
+                const data = await window.getUserInfo();
+                if (data && data.username) {
+                    document.getElementById('userName').textContent = data.username;
+                    document.getElementById('userUid').textContent = 'UID: ' + (data.uid || '');
+                    document.getElementById('userAvatar').textContent = data.username.charAt(0).toUpperCase();
+                    document.getElementById('balenceAmount').textContent = parseFloat(data.balence || 0).toFixed(2);
+                    // 管理员显示管理菜单
+                    if (data.is_admin) {
+                        const adminSection = document.getElementById('adminSection');
+                        if (adminSection) adminSection.style.display = '';
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to load user info:', e);
+            }
+        }
+
+        // 切换用户菜单
+        function toggleUserMenu() {
+            document.getElementById('userDropdown').classList.toggle('show');
+        }
+
+        // 切换 Tab
+        function switchTab(tab) {
+            currentTab = tab;
+            currentPage = 1;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelector(`.tab[data-tab="${tab}"]`).classList.add('active');
+            loadPosts();
+        }
+
+        // 加载帖子列表
+        async function loadPosts() {
+            if (isLoading) return;
+            isLoading = true;
+
+            const listEl = document.getElementById('postsList');
+            listEl.innerHTML = '<div class="loading"><div class="loading-spinner"></div><div>加载中...</div></div>';
+
+            try {
+                let url;
+                if (currentTab === 'all') {
+                    url = `/api/posts?page=${currentPage}&page_size=20`;
+                } else if (currentTab === 'my') {
+                    url = `/api/posts/my?page=${currentPage}&page_size=20`;
+                } else if (currentTab === 'favorites') {
+                    url = `/api/posts/favorites?page=${currentPage}&page_size=20`;
+                }
+
+                const res = await fetch(url);
+                const data = await res.json();
+
+                if (data.posts && data.posts.length > 0) {
+                    listEl.innerHTML = data.posts.map(post => renderPostCard(post)).join('');
+                } else {
+                    listEl.innerHTML = `
+                        <div class="empty-state">
+                            <i class="bi bi-file-text"></i>
+                            <div class="empty-state-text">暂无帖子</div>
+                        </div>
+                    `;
+                }
+            } catch (e) {
+                console.error('Failed to load posts:', e);
+                listEl.innerHTML = `
+                    <div class="empty-state">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        <div class="empty-state-text">加载失败，请重试</div>
+                    </div>
+                `;
+            } finally {
+                isLoading = false;
+            }
+        }
+
+        // 渲染帖子卡片
+        function renderPostCard(post) {
+            const statusClass = post.status || 'approved';
+            const statusText = {
+                'pending': '待审核',
+                'approved': '已通过',
+                'rejected': '已拒绝'
+            }[statusClass] || statusClass;
+
+            const favClass = post.is_favorited ? 'favorited' : '';
+            const favIcon = post.is_favorited ? 'bi-heart-fill' : 'bi-heart';
+            const favCount = post.favorite_count || 0;
+
+            return `
+                <div class="post-card" data-action="viewPost" data-args="'${post.post_id}'">
+                    <div class="post-header">
+                        <div class="post-author">
+                            <div class="post-avatar">${post.user_name.charAt(0).toUpperCase()}</div>
+                            <div class="post-author-info">
+                                <span class="post-author-name">${escapeHtml(post.user_name)}</span>
+                                <span class="post-time">${formatTime(post.created_at)}</span>
+                            </div>
+                        </div>
+                        ${currentTab === 'my' ? `<span class="post-status ${statusClass}">${statusText}</span>` : ''}
+                    </div>
+                    <h3 class="post-title">${escapeHtml(post.title)}</h3>
+                    <p class="post-content">${escapeHtml(post.content)}</p>
+                    <div class="post-footer">
+                        <div class="post-stats">
+                            <div class="post-stat">
+                                <i class="bi bi-clock"></i>
+                                <span>${formatTime(post.created_at)}</span>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            ${currentTab === 'my' || post.is_owner || (userInfo && userInfo.is_admin) ? `
+                                <button class="icon-btn danger" data-action="deletePost" data-args="${post.post_id}" data-stop title="删除" style="width: 32px; height: 32px; padding: 0; background: transparent; border: none; cursor: pointer; color: #ef4444; border-radius: 6px;">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            ` : ''}
+                            <button class="favorite-btn ${favClass}" data-action="toggleFavorite" data-args="${post.post_id}" data-arg-this data-stop>
+                                <i class="bi ${favIcon}"></i>
+                                <span>${favCount}</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // 查看帖子详情
+        async function viewPost(postId) {
+            try {
+                const res = await fetch(`/api/posts/${postId}`);
+                const data = await res.json();
+                
+                if (data.post) {
+                    const post = data.post;
+                    document.getElementById('postDetail').innerHTML = `
+                        <div class="post-detail">
+                            <h1 class="post-detail-title">${escapeHtml(post.title)}</h1>
+                            <div class="post-detail-meta">
+                                <div class="post-author">
+                                    <div class="post-avatar">${post.user_name.charAt(0).toUpperCase()}</div>
+                                    <div class="post-author-info">
+                                        <span class="post-author-name">${escapeHtml(post.user_name)}</span>
+                                        <span class="post-time">${formatTime(post.created_at)}</span>
+                                    </div>
+                                </div>
+                                <div style="display: flex; gap: 12px; align-items: center;">
+                                    <button class="favorite-btn ${post.is_favorited ? 'favorited' : ''}" data-action="toggleFavorite" data-args="${post.post_id}" data-arg-this data-then="updateDetailFav" data-then-args="${post.post_id}">
+                                        <i class="bi ${post.is_favorited ? 'bi-heart-fill' : 'bi-heart'}"></i>
+                                        <span>${post.favorite_count || 0} 收藏</span>
+                                    </button>
+                                    ${post.is_owner || (userInfo && userInfo.is_admin) ? `
+                                        <button class="btn btn-danger btn-sm" data-action="deletePost" data-args="'${post.post_id}'" style="background: #ef4444; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 14px;">
+                                            <i class="bi bi-trash" style="margin-right: 4px;"></i>删除帖子
+                                        </button>
+                                    ` : ''}
+                                </div>
+                            </div>
+                            <div class="post-detail-content">${escapeHtml(post.content).replace(/\n/g, '<br>')}</div>
+                        </div>
+                    `;
+                    
+                    document.getElementById('listView').style.display = 'none';
+                    document.getElementById('detailView').style.display = 'block';
+                }
+            } catch (e) {
+                console.error('Failed to load post:', e);
+                showToast('加载帖子失败', 'error');
+            }
+        }
+
+        // 更新详情页收藏状态
+        async function updateDetailFav(postId) {
+            // 重新加载详情
+            await viewPost(postId);
+        }
+
+        // 删除帖子
+        async function deletePost(postId) {
+            if (!confirm('确定要删除这个帖子吗？删除后无法恢复。')) {
+                return;
+            }
+            
+            try {
+                const res = await fetch(`/api/posts/${postId}`, { method: 'DELETE' });
+                const data = await res.json();
+                
+                if (res.ok) {
+                    showToast('帖子已删除', 'success');
+                    // 如果在详情页，返回列表
+                    if (document.getElementById('detailView').style.display !== 'none') {
+                        showList();
+                    } else {
+                        // 在列表页，重新加载
+                        loadPosts();
+                    }
+                } else {
+                    showToast(data.error || '删除失败', 'error');
+                }
+            } catch (e) {
+                console.error('Failed to delete post:', e);
+                showToast('删除失败', 'error');
+            }
+        }
+
+        // 返回列表
+        function showList() {
+            document.getElementById('detailView').style.display = 'none';
+            document.getElementById('listView').style.display = 'block';
+            loadPosts();
+        }
+
+        // 切换收藏
+        async function toggleFavorite(postId, btn) {
+            try {
+                const res = await fetch(`/api/posts/${postId}/favorite`, { method: 'POST' });
+                const data = await res.json();
+                
+                if (data.is_favorited) {
+                    btn.classList.add('favorited');
+                    btn.querySelector('i').className = 'bi bi-heart-fill';
+                    showToast('已添加到收藏', 'success');
+                } else {
+                    btn.classList.remove('favorited');
+                    btn.querySelector('i').className = 'bi bi-heart';
+                    showToast('已取消收藏', 'info');
+                }
+            } catch (e) {
+                console.error('Failed to toggle favorite:', e);
+                showToast('操作失败', 'error');
+            }
+        }
+
+        // 打开发帖模态框
+        function openCreateModal() {
+            document.getElementById('createModal').classList.add('show');
+            document.getElementById('postTitle').value = '';
+            document.getElementById('postContent').value = '';
+            document.getElementById('titleCount').textContent = '0/200';
+            document.getElementById('contentCount').textContent = '0/10000';
+        }
+
+        // 关闭发帖模态框
+        function closeCreateModal() {
+            document.getElementById('createModal').classList.remove('show');
+        }
+
+        // 提交帖子
+        async function submitPost() {
+            const title = document.getElementById('postTitle').value.trim();
+            const content = document.getElementById('postContent').value.trim();
+
+            if (!title) {
+                showToast('请输入标题', 'error');
+                return;
+            }
+            if (!content) {
+                showToast('请输入内容', 'error');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/posts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title, content })
+                });
+                const data = await res.json();
+
+                if (res.ok) {
+                    showToast('帖子已提交，等待审核', 'success');
+                    closeCreateModal();
+                    if (currentTab === 'my') {
+                        loadPosts();
+                    } else {
+                        switchTab('my');
+                    }
+                } else {
+                    showToast(data.error || '发布失败', 'error');
+                }
+            } catch (e) {
+                console.error('Failed to create post:', e);
+                showToast('发布失败，请重试', 'error');
+            }
+        }
+
+        // 退出登录
+        async function logout() {
+            try {
+                await fetch('/logout', { method: 'POST' });
+                location.href = '/login';
+            } catch (e) {
+                location.href = '/login';
+            }
+        }
+
+        // 工具函数
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatTime(timeStr) {
+            if (!timeStr) return '';
+            const date = new Date(timeStr);
+            const now = new Date();
+            const diff = now - date;
+            
+            if (diff < 60000) return '刚刚';
+            if (diff < 3600000) return Math.floor(diff / 60000) + ' 分钟前';
+            if (diff < 86400000) return Math.floor(diff / 3600000) + ' 小时前';
+            if (diff < 604800000) return Math.floor(diff / 86400000) + ' 天前';
+            
+            return date.toLocaleDateString('zh-CN');
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            
+            const iconClass = {
+                'success': 'bi-check-lg',
+                'error': 'bi-x-lg',
+                'info': 'bi-info-lg'
+            }[type] || 'bi-info-lg';
+            
+            toast.innerHTML = `
+                <div class="toast-icon ${type}">
+                    <i class="bi ${iconClass}"></i>
+                </div>
+                <span class="toast-message">${escapeHtml(message)}</span>
+            `;
+            
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(20px)';
+                toast.style.transition = 'all 0.3s';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

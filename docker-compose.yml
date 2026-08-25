@@ -1,0 +1,82 @@
+# ============================================================================
+# APIProxy 编排配置
+# 启动前：复制 .env.example 为 .env，填入必填密钥
+#   cp .env.example .env   （编辑 OAUTH_JWT_SECRET 等）
+#   docker compose up -d
+# ============================================================================
+
+services:
+  apiproxy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: apiproxy:latest
+    container_name: apiproxy
+    restart: unless-stopped
+    ports:
+      - "5000:5000"    # HTTP 主服务
+      - "5001:5001"    # RCON 远程控制台（TLS）
+      # - "5443:5443"  # HTTPS（启用 APIPROXY_SSL_ENABLED=true 后放开）
+    environment:
+      # ---- 必填：OAuth JWT 签名密钥（fail-closed，缺失拒启）----
+      # 生成：python -c "import secrets; print(secrets.token_hex(32))"
+      APIPROXY_OAUTH_JWT_SECRET: ${APIPROXY_OAUTH_JWT_SECRET:?请在 .env 中设置 APIPROXY_OAUTH_JWT_SECRET}
+
+      # ---- 上游 API Key（按 upstream 名称注入，覆盖 config.yaml 空值）----
+      # 规则：APIPROXY_UPSTREAM_<NAME 大写、- 转 _>_API_KEY
+      APIPROXY_UPSTREAM_DEEPSEEK_MAIN_API_KEY: ${APIPROXY_UPSTREAM_DEEPSEEK_MAIN_API_KEY:-}
+
+      # ---- 数据库路径（指向持久卷）----
+      DB_PATH: /data/users.db
+      # ---- 数据库后端：sqlite（默认）| postgres ----
+      DB_TYPE: ${DB_TYPE:-sqlite}
+      # PostgreSQL 连接串（DB_TYPE=postgres 时必填，如另起 postgres 服务）
+      # DATABASE_URL: ${DATABASE_URL:-}
+      # ---- Redis（可选：限流/会话缓存加速）----
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+
+      # ---- 可选：SMTP（邮箱验证 / 找回密码）----
+      # APIPROXY_SMTP_USER: ${SMTP_USER:-}
+      # APIPROXY_SMTP_PASS: ${SMTP_PASS:-}
+
+      # ---- 可选：HTTPS ----
+      # APIPROXY_SSL_ENABLED: "true"
+      # APIPROXY_HTTPS_PORT: "5443"
+
+      TZ: Asia/Shanghai
+
+    volumes:
+      - apiproxy_data:/data              # 数据库持久化
+      # 可选：挂载自定义配置（覆盖镜像内置 config.yaml）
+      # - ./config.yaml:/opt/apiproxy/APIProxy/config.yaml:ro
+      # 可选：挂载自定义 TLS 证书
+      # - ./certs:/opt/apiproxy/APIProxy/certs:ro
+
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=3).read(); sys.exit(0)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # 可选：Redis（限流/会话缓存加速）。apiproxy 服务通过 REDIS_URL 引用。
+  redis:
+    image: redis:7-alpine
+    container_name: apiproxy-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  apiproxy_data:
+  redis_data:

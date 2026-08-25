@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>注册 - Cloud LLM API 代理</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style nonce="{{ csp_nonce }}">
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #fafafa;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+        }
+        .bg-decoration {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            overflow: hidden;
+            z-index: 0;
+        }
+        .bg-circle {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(80px);
+            opacity: 0.3;
+        }
+        .bg-circle-1 {
+            width: 600px;
+            height: 600px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            top: -200px;
+            right: -200px;
+        }
+        .bg-circle-2 {
+            width: 500px;
+            height: 500px;
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            bottom: -150px;
+            left: -150px;
+        }
+        .bg-circle-3 {
+            width: 400px;
+            height: 400px;
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            opacity: 0.15;
+        }
+        .auth-container {
+            position: relative;
+            z-index: 1;
+            width: 100%;
+            max-width: 440px;
+            padding: 20px;
+        }
+        .auth-card {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+            padding: 48px 40px;
+            animation: slideUp 0.5s ease-out;
+        }
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .auth-header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        .logo {
+            width: 64px;
+            height: 64px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 16px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+        .logo svg {
+            width: 32px;
+            height: 32px;
+            color: white;
+        }
+        .auth-title {
+            font-size: 28px;
+            font-weight: 700;
+            color: #1a1a1a;
+            margin-bottom: 8px;
+        }
+        .auth-subtitle {
+            font-size: 14px;
+            color: #666;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            color: #333;
+            margin-bottom: 8px;
+        }
+        .form-input {
+            width: 100%;
+            padding: 12px 16px;
+            font-size: 14px;
+            border: 1.5px solid #e5e7eb;
+            border-radius: 10px;
+            outline: none;
+            transition: all 0.2s;
+            background: #fafafa;
+        }
+        .form-input:focus {
+            border-color: #667eea;
+            background: white;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        .form-input::placeholder {
+            color: #9ca3af;
+        }
+        .input-group {
+            display: flex;
+            gap: 10px;
+        }
+        .input-group .form-input {
+            flex: 1;
+        }
+        .btn-code {
+            padding: 12px 20px;
+            font-size: 14px;
+            font-weight: 500;
+            color: #667eea;
+            background: #f0f2ff;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+        .btn-code:hover:not(:disabled) {
+            background: #e5e8ff;
+        }
+        .btn-code:disabled {
+            color: #9ca3af;
+            background: #f3f4f6;
+            cursor: not-allowed;
+        }
+        .btn-primary {
+            width: 100%;
+            padding: 14px;
+            font-size: 16px;
+            font-weight: 600;
+            color: white;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+        .btn-primary:active {
+            transform: translateY(0);
+        }
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .auth-switch {
+            text-align: center;
+            margin-top: 24px;
+            font-size: 14px;
+            color: #666;
+        }
+        .auth-switch a {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        .auth-switch a:hover {
+            text-decoration: underline;
+        }
+        .error-message {
+            background: #fef2f2;
+            color: #dc2626;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            margin-bottom: 20px;
+            display: none;
+            animation: shake 0.3s ease-out;
+        }
+        .error-message.show {
+            display: block;
+        }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+        .success-message {
+            background: #f0fdf4;
+            color: #16a34a;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .success-message.show {
+            display: block;
+        }
+        .auth-footer {
+            text-align: center;
+            margin-top: 32px;
+            font-size: 12px;
+            color: #9ca3af;
+        }
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0 16px;
+        }
+        .form-group.full {
+            grid-column: 1 / -1;
+        }
+        @media (max-width: 480px) {
+            .auth-card { padding: 32px 24px; }
+            .auth-title { font-size: 24px; }
+            .form-row { grid-template-columns: 1fr; }
+        }
+        /* ---------- 滑块验证码 ---------- */
+        .captcha-box { margin-bottom: 20px; display: none; }
+        .captcha-track {
+            position: relative;
+            height: 44px;
+            background: #f3f4f6;
+            border-radius: 10px;
+            border: 1.5px solid #e5e7eb;
+            overflow: hidden;
+            user-select: none;
+            touch-action: none;
+        }
+        .captcha-track.verified { border-color: #16a34a; background: #f0fdf4; }
+        .captcha-track.failed { border-color: #dc2626; }
+        .captcha-gap {
+            position: absolute;
+            top: 0;
+            height: 100%;
+            background: rgba(102, 126, 234, 0.16);
+            border-left: 2px dashed #667eea;
+            border-right: 2px dashed #667eea;
+        }
+        .captcha-handle {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px;
+            cursor: grab;
+            box-shadow: 0 2px 6px rgba(102, 126, 234, 0.3);
+            font-size: 18px;
+            line-height: 1;
+        }
+        .captcha-handle:active { cursor: grabbing; }
+        .captcha-text {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #9ca3af;
+            font-size: 13px;
+            pointer-events: none;
+        }
+        .captcha-text.hide { display: none; }
+        .captcha-msg {
+            font-size: 13px;
+            margin-top: 6px;
+            min-height: 16px;
+        }
+        .captcha-msg.ok { color: #16a34a; }
+        .captcha-msg.err { color: #dc2626; }
+        .captcha-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 8px;
+        }
+        .btn-refresh {
+            padding: 6px 14px;
+            font-size: 13px;
+            font-weight: 500;
+            color: #667eea;
+            background: #f0f2ff;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        .btn-refresh:hover { background: #e5e8ff; }
+    </style>
+</head>
+<body>
+    <div class="bg-decoration">
+        <div class="bg-circle bg-circle-1"></div>
+        <div class="bg-circle bg-circle-2"></div>
+        <div class="bg-circle bg-circle-3"></div>
+    </div>
+    <div class="auth-container">
+        <div class="auth-card">
+            <div class="auth-header">
+                <div class="logo">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                </div>
+                <h1 class="auth-title">创建账户</h1>
+                <p class="auth-subtitle">注册开始使用 API 代理服务</p>
+            </div>
+            <div class="error-message" id="errorMessage"></div>
+            <div class="success-message" id="successMessage"></div>
+            <form id="registerForm">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">用户名</label>
+                        <input type="text" class="form-input" id="regUsername" placeholder="请输入用户名" autocomplete="username">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">密码</label>
+                        <input type="password" class="form-input" id="regPassword" placeholder="至少 6 位，包含字母和数字" autocomplete="new-password">
+                    </div>
+                </div>
+                <div class="form-group full" id="emailGroup">
+                    <label class="form-label">邮箱</label>
+                    <div class="input-group">
+                        <input type="email" class="form-input" id="regEmail" placeholder="请输入邮箱地址" autocomplete="email">
+                        <button type="button" class="btn-code" id="sendCodeBtn">获取验证码</button>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group" id="codeGroup">
+                        <label class="form-label">验证码</label>
+                        <input type="text" class="form-input" id="regCode" placeholder="请输入 6 位验证码" maxlength="6">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">确认密码</label>
+                        <input type="password" class="form-input" id="regPassword2" placeholder="请再次输入密码" autocomplete="new-password">
+                    </div>
+                </div>
+                <div class="captcha-box" id="captchaBox">
+                    <label class="form-label">请拖动滑块完成验证</label>
+                    <div class="captcha-track" id="captchaTrack">
+                        <div class="captcha-gap" id="captchaGap"></div>
+                        <div class="captcha-text" id="captchaText">拖动滑块到缺口位置</div>
+                        <div class="captcha-handle" id="captchaHandle">&#8594;</div>
+                    </div>
+                    <div class="captcha-msg" id="captchaMsg"></div>
+                    <div class="captcha-bar">
+                        <span style="font-size:12px;color:#9ca3af;">未配置邮件服务，已启用滑块验证</span>
+                        <button type="button" class="btn-refresh" id="captchaRefresh">刷新</button>
+                    </div>
+                </div>
+                <button type="submit" class="btn-primary" id="registerBtn">
+                    <span id="registerBtnText">注册</span>
+                </button>
+            </form>
+            <div class="auth-switch">
+                已有账户？<a href="/login">立即登录</a>
+            </div>
+            <div class="auth-footer">
+                © 2024 Cloud LLM API 代理. All rights reserved.
+            </div>
+        </div>
+    </div>
+    <script nonce="{{ csp_nonce }}">
+        let codeCountdown = 0;
+        let countdownTimer = null;
+
+        const errorMessage = document.getElementById('errorMessage');
+        const successMessage = document.getElementById('successMessage');
+        const sendCodeBtn = document.getElementById('sendCodeBtn');
+
+        // 滑块验证码相关状态
+        let captchaMode = false;
+        let captchaVerified = false;
+        let currentToken = '';
+        let currentTargetX = 0;
+        let captchaGapSize = 42;
+        const emailGroup = document.getElementById('emailGroup');
+        const codeGroup = document.getElementById('codeGroup');
+        const captchaBox = document.getElementById('captchaBox');
+
+        async function initMode() {
+            try {
+                const res = await fetch('/api/captcha/mode');
+                const data = await res.json();
+                captchaMode = !data.smtp_configured;
+            } catch (e) {
+                captchaMode = false;
+            }
+            if (captchaMode) {
+                emailGroup.style.display = 'none';
+                codeGroup.style.display = 'none';
+                captchaBox.style.display = 'block';
+                loadCaptcha();
+            }
+        }
+        initMode();
+
+        function showError(msg) {
+            errorMessage.textContent = msg;
+            errorMessage.classList.add('show');
+            successMessage.classList.remove('show');
+        }
+
+        function showSuccess(msg) {
+            successMessage.textContent = msg;
+            successMessage.classList.add('show');
+            errorMessage.classList.remove('show');
+        }
+
+        function hideMessages() {
+            errorMessage.classList.remove('show');
+            successMessage.classList.remove('show');
+        }
+
+        function setButtonLoading(btn, loading, text) {
+            const btnText = btn.querySelector('span');
+            if (loading) {
+                btn.disabled = true;
+                btnText.innerHTML = '<span class="loading"></span>';
+            } else {
+                btn.disabled = false;
+                btnText.textContent = text;
+            }
+        }
+
+        sendCodeBtn.addEventListener('click', async () => {
+            const email = document.getElementById('regEmail').value.trim();
+            if (!email) { showError('请输入邮箱地址'); return; }
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showError('请输入有效的邮箱地址'); return; }
+            if (codeCountdown > 0) return;
+
+            try {
+                const response = await fetch('/api/email/send-code', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    showSuccess(data.message || '验证码已发送');
+                    startCountdown();
+                } else {
+                    showError(data.error || '发送失败');
+                }
+            } catch (e) {
+                showError('网络错误，请稍后重试');
+            }
+        });
+
+        function startCountdown() {
+            codeCountdown = 60;
+            sendCodeBtn.disabled = true;
+            sendCodeBtn.textContent = codeCountdown + 's 后重发';
+            countdownTimer = setInterval(() => {
+                codeCountdown--;
+                if (codeCountdown <= 0) {
+                    clearInterval(countdownTimer);
+                    sendCodeBtn.disabled = false;
+                    sendCodeBtn.textContent = '获取验证码';
+                } else {
+                    sendCodeBtn.textContent = codeCountdown + 's 后重发';
+                }
+            }, 1000);
+        }
+
+        document.getElementById('registerForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            hideMessages();
+
+            const username = document.getElementById('regUsername').value.trim();
+            const password = document.getElementById('regPassword').value;
+            const password2 = document.getElementById('regPassword2').value;
+            const registerBtn = document.getElementById('registerBtn');
+
+            if (!username) { showError('请输入用户名'); return; }
+            if (password.length < 6) { showError('密码至少 6 位'); return; }
+            if (!/[a-zA-Z]/.test(password)) { showError('密码必须包含字母'); return; }
+            if (!/[0-9]/.test(password)) { showError('密码必须包含数字'); return; }
+            if (password !== password2) { showError('两次输入的密码不一致'); return; }
+
+            let payload;
+            if (captchaMode) {
+                if (!captchaVerified) { showError('请先拖动滑块完成验证'); return; }
+                payload = { username, password, captcha_token: currentToken, captcha_x: currentTargetX };
+            } else {
+                const email = document.getElementById('regEmail').value.trim();
+                const code = document.getElementById('regCode').value.trim();
+                if (!email) { showError('请输入邮箱'); return; }
+                if (!code) { showError('请输入验证码'); return; }
+                payload = { username, email, code, password };
+            }
+
+            setButtonLoading(registerBtn, true, '注册');
+
+            try {
+                const response = await fetch('/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    showSuccess('注册成功，正在跳转到登录页...');
+                    setTimeout(() => { window.location.href = '/login'; }, 1500);
+                } else {
+                    showError(data.error || '注册失败');
+                    if (captchaMode) { captchaVerified = false; loadCaptcha(); }
+                }
+            } catch (e) {
+                showError('网络错误，请稍后重试');
+            } finally {
+                setButtonLoading(registerBtn, false, '注册');
+            }
+        });
+
+        // ---------- 滑块验证码交互 ----------
+        const captchaTrack = document.getElementById('captchaTrack');
+        const captchaGap = document.getElementById('captchaGap');
+        const captchaHandle = document.getElementById('captchaHandle');
+        const captchaText = document.getElementById('captchaText');
+        const captchaMsg = document.getElementById('captchaMsg');
+        const captchaRefresh = document.getElementById('captchaRefresh');
+        let dragStartX = 0, dragStartLeft = 0, dragging = false;
+
+        async function loadCaptcha() {
+            captchaVerified = false;
+            captchaTrack.className = 'captcha-track';
+            captchaMsg.textContent = '';
+            captchaMsg.className = 'captcha-msg';
+            captchaHandle.style.left = '0px';
+            try {
+                const res = await fetch('/api/captcha/slider');
+                const d = await res.json();
+                currentToken = d.token;
+                currentTargetX = d.target_x;
+                captchaGapSize = d.gap_size;
+                captchaGap.style.width = captchaGapSize + 'px';
+                captchaGap.style.left = currentTargetX + 'px';
+                captchaHandle.style.width = captchaGapSize + 'px';
+                captchaText.classList.remove('hide');
+            } catch (e) {
+                captchaMsg.textContent = '验证码加载失败，请点击刷新';
+                captchaMsg.className = 'captcha-msg err';
+            }
+        }
+
+        function onDragStart(e) {
+            if (captchaVerified) return;
+            dragging = true;
+            dragStartX = e.clientX;
+            dragStartLeft = parseInt(captchaHandle.style.left || '0', 10);
+            window.addEventListener('pointermove', onDragMove);
+            window.addEventListener('pointerup', onDragEnd);
+        }
+
+        function onDragMove(e) {
+            if (!dragging) return;
+            const trackW = captchaTrack.clientWidth;
+            let left = dragStartLeft + (e.clientX - dragStartX);
+            left = Math.max(0, Math.min(left, trackW - captchaGapSize));
+            captchaHandle.style.left = left + 'px';
+        }
+
+        function onDragEnd(e) {
+            if (!dragging) return;
+            dragging = false;
+            window.removeEventListener('pointermove', onDragMove);
+            window.removeEventListener('pointerup', onDragEnd);
+            const left = parseInt(captchaHandle.style.left || '0', 10);
+            if (Math.abs(left - currentTargetX) <= 6) {
+                captchaVerified = true;
+                captchaTrack.className = 'captcha-track verified';
+                captchaText.classList.add('hide');
+                captchaMsg.textContent = '验证成功';
+                captchaMsg.className = 'captcha-msg ok';
+            } else {
+                captchaTrack.className = 'captcha-track failed';
+                captchaMsg.textContent = '未对准，请重新拖动';
+                captchaMsg.className = 'captcha-msg err';
+                setTimeout(() => {
+                    if (!captchaVerified) {
+                        captchaHandle.style.left = '0px';
+                        captchaTrack.className = 'captcha-track';
+                        captchaMsg.textContent = '';
+                        captchaMsg.className = 'captcha-msg';
+                    }
+                }, 800);
+            }
+        }
+
+        captchaHandle.addEventListener('pointerdown', onDragStart);
+        captchaRefresh.addEventListener('click', loadCaptcha);
+
+        async function checkLogin() {
+            try {
+                const response = await fetch('/userinfo');
+                if (response.ok) { window.location.href = '/dashboard'; }
+            } catch (e) {}
+        }
+        checkLogin();
+    </script>
+</body>
+</html>

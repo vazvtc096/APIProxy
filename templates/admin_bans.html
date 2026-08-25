@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>封禁管理 - 管理员后台</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style nonce="{{ csp_nonce }}">
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #fafafa; color: #1a1a1a; min-height: 100vh; }
+        .navbar { position: fixed; top: 0; left: 0; right: 0; height: 64px; background: white; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; z-index: 100; }
+        .navbar-left { display: flex; align-items: center; gap: 12px; }
+        .logo { width: 36px; height: 36px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; display: flex; align-items: center; justify-content: center; }
+        .logo svg { width: 20px; height: 20px; color: white; }
+        .logo-text { font-size: 18px; font-weight: 700; color: #1a1a1a; }
+        .main-container { display: flex; padding-top: 64px; min-height: 100vh; }
+        .sidebar { width: 240px; background: white; border-right: 1px solid #f0f0f0; padding: 24px 0; position: fixed; top: 64px; bottom: 0; left: 0; overflow-y: auto; }
+        .sidebar-section { margin-bottom: 24px; }
+        .sidebar-section-title { font-size: 11px; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.5px; padding: 0 20px; margin-bottom: 8px; }
+        .sidebar-item { display: flex; align-items: center; gap: 12px; padding: 10px 20px; cursor: pointer; transition: all 0.15s; font-size: 14px; color: #666; border-left: 3px solid transparent; text-decoration: none; }
+        .sidebar-item:hover { background: #fafafa; color: #1a1a1a; }
+        .sidebar-item.active { background: #f0f2ff; color: #667eea; border-left-color: #667eea; font-weight: 500; }
+        .sidebar-item i { font-size: 18px; width: 20px; text-align: center; }
+        .content { flex: 1; margin-left: 240px; padding: 32px; }
+        .page-title { font-size: 24px; font-weight: 700; color: #1a1a1a; }
+        .page-subtitle { font-size: 14px; color: #666; margin-top: 4px; }
+        .btn { padding: 10px 20px; font-size: 14px; font-weight: 500; border-radius: 10px; cursor: pointer; transition: all 0.2s; border: none; display: inline-flex; align-items: center; gap: 8px; text-decoration: none; }
+        .btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; box-shadow: 0 2px 8px rgba(102,126,234,0.3); }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(102,126,234,0.4); }
+        .btn-secondary { background: #f5f5f5; color: #333; }
+        .btn-secondary:hover { background: #eee; }
+        .btn-danger { background: #fef2f2; color: #dc2626; }
+        .btn-danger:hover { background: #fee2e2; }
+        .btn-sm { padding: 6px 12px; font-size: 12px; border-radius: 6px; }
+        .tabs { display: flex; gap: 8px; margin: 24px 0; border-bottom: 1px solid #f0f0f0; }
+        .tab { padding: 12px 20px; cursor: pointer; font-size: 14px; font-weight: 500; color: #666; border-bottom: 2px solid transparent; }
+        .tab.active { color: #667eea; border-bottom-color: #667eea; }
+        .panel { display: none; }
+        .panel.active { display: block; }
+        .card { background: white; border-radius: 16px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 24px; }
+        .card h3 { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+        .form-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+        .form-group { display: flex; flex-direction: column; gap: 6px; }
+        .form-group label { font-size: 12px; color: #666; font-weight: 500; }
+        input, select { padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px; font-family: inherit; outline: none; }
+        input:focus, select:focus { border-color: #667eea; }
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; padding: 12px 16px; font-size: 12px; font-weight: 600; color: #666; text-transform: uppercase; letter-spacing: 0.5px; background: #fafafa; border-bottom: 1px solid #f0f0f0; }
+        td { padding: 12px 16px; font-size: 14px; border-bottom: 1px solid #f0f0f0; color: #333; }
+        tr:hover td { background: #fafafa; }
+        .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 500; }
+        .badge-danger { background: #fef2f2; color: #dc2626; }
+        .badge-warn { background: #fffbeb; color: #d97706; }
+        .badge-ok { background: #f0fdf4; color: #16a34a; }
+        .badge-info { background: #eff6ff; color: #2563eb; }
+        .empty { text-align: center; color: #9ca3af; padding: 32px; font-size: 14px; }
+        .toast { position: fixed; top: 80px; right: 24px; background: #1a1a1a; color: white; padding: 12px 20px; border-radius: 10px; font-size: 14px; opacity: 0; transform: translateY(-10px); transition: all 0.25s; z-index: 200; }
+        .toast.show { opacity: 1; transform: translateY(0); }
+        .toast.error { background: #dc2626; }
+        .toast.ok { background: #16a34a; }
+    </style>
+{% include "_navbar_css.html" %}
+</head>
+<body>
+    {% include "_navbar.html" %}
+    <div class="main-container">
+        {% with active_page = 'bans' %}
+        {% include "_sidebar.html" %}
+        {% endwith %}
+
+        <main class="content">
+            <div class="page-title">封禁管理</div>
+            <div class="page-subtitle">IP 封禁、玩家封禁与登录安全事件审计</div>
+
+            <div class="tabs">
+                <div class="tab active" data-tab="ip">IP 封禁</div>
+                <div class="tab" data-tab="player">玩家封禁</div>
+                <div class="tab" data-tab="waf">WAF 与行为监测</div>
+                <div class="tab" data-tab="events">安全事件审计</div>
+            </div>
+
+            <!-- IP 封禁 -->
+            <section class="panel active" id="panel-ip">
+                <div class="card">
+                    <h3>新增 IP 封禁</h3>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>IP 地址 / CIDR</label>
+                            <input id="ipInput" placeholder="例如 1.2.3.4 或 2001:db8::/32" style="width:240px">
+                        </div>
+                        <div class="form-group">
+                            <label>原因</label>
+                            <input id="ipReason" placeholder="封禁原因（可选）" style="width:220px">
+                        </div>
+                        <div class="form-group">
+                            <label>时长（小时，留空=永久）</label>
+                            <input id="ipDuration" type="number" min="1" placeholder="永久" style="width:160px">
+                        </div>
+                        <button class="btn btn-primary" data-action="addIpBan"><i class="bi bi-plus-lg"></i> 封禁</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>当前 IP 封禁列表</h3>
+                    <table>
+                        <thead><tr><th>ID</th><th>IP</th><th>原因</th><th>到期时间</th><th>状态</th><th>操作</th></tr></thead>
+                        <tbody id="ipTable"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- 玩家封禁 -->
+            <section class="panel" id="panel-player">
+                <div class="card">
+                    <h3>按用户名封禁</h3>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>用户名</label>
+                            <input id="banUser" placeholder="要封禁的用户名" style="width:200px">
+                        </div>
+                        <div class="form-group">
+                            <label>原因</label>
+                            <input id="banReason" placeholder="封禁原因（可选）" style="width:220px">
+                        </div>
+                        <div class="form-group">
+                            <label>时长（小时，留空=永久）</label>
+                            <input id="banDuration" type="number" min="1" placeholder="永久" style="width:160px">
+                        </div>
+                        <button class="btn btn-danger" data-action="banUser"><i class="bi bi-lock-fill"></i> 封禁</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>已封禁玩家</h3>
+                    <table>
+                        <thead><tr><th>UID</th><th>用户名</th><th>原因</th><th>到期时间</th><th>操作</th></tr></thead>
+                        <tbody id="playerTable"><tr><td colspan="5" class="empty">加载中…</td></tr></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- 安全事件审计 -->
+            <section class="panel" id="panel-events">
+                <div class="card">
+                    <h3>筛选</h3>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>风险等级</label>
+                            <select id="evSeverity">
+                                <option value="">全部</option>
+                                <option value="safe">safe</option>
+                                <option value="warn">warn</option>
+                                <option value="restrict">restrict</option>
+                                <option value="ban">ban</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>用户名</label>
+                            <input id="evUser" placeholder="用户名（可选）" style="width:180px">
+                        </div>
+                        <div class="form-group">
+                            <label>数量</label>
+                            <input id="evLimit" type="number" min="1" max="1000" value="200" style="width:100px">
+                        </div>
+                        <button class="btn btn-primary" data-action="loadEvents"><i class="bi bi-search"></i> 查询</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>安全事件</h3>
+                    <table>
+                        <thead><tr><th>时间</th><th>用户</th><th>类型</th><th>等级</th><th>风险分</th><th>IP</th><th>设备</th><th>明细</th></tr></thead>
+                        <tbody id="eventTable"><tr><td colspan="8" class="empty">加载中…</td></tr></tbody>
+                    </table>
+                </div>
+            </section>
+            <!-- WAF 与行为监测 -->
+            <section class="panel" id="panel-waf">
+                <div class="card">
+                    <h3>概览（近 24 小时）</h3>
+                    <div class="form-row" style="align-items:stretch;">
+                        <div class="form-group" style="flex:1;">
+                            <label>WAF 拦截数</label>
+                            <div id="wafStatBlocks" style="font-size:28px;font-weight:700;color:#dc2626;">-</div>
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>行为监测自动封禁</label>
+                            <div id="wafStatBans" style="font-size:28px;font-weight:700;color:#d97706;">-</div>
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>WAF 状态</label>
+                            <div id="wafStatEnabled" style="font-size:18px;font-weight:600;color:#16a34a;">-</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>Top 违规 IP（被 WAF 拦截最多）</h3>
+                    <table>
+                        <thead><tr><th>IP</th><th>拦截次数</th></tr></thead>
+                        <tbody id="wafTopIps"><tr><td colspan="2" class="empty">加载中…</td></tr></tbody>
+                    </table>
+                </div>
+                <div class="card">
+                    <h3>近期 WAF / 行为监测事件</h3>
+                    <table>
+                        <thead><tr><th>时间</th><th>类型</th><th>IP</th><th>风险分</th><th>明细</th></tr></thead>
+                        <tbody id="wafEvents"><tr><td colspan="5" class="empty">加载中…</td></tr></tbody>
+                    </table>
+                </div>
+            </section>
+
+        </main>
+    </div>
+    <div class="toast" id="toast"></div>
+
+    <script nonce="{{ csp_nonce }}">
+        function toast(msg, type) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.className = 'toast show ' + (type || '');
+            setTimeout(() => t.className = 'toast', 2600);
+        }
+        function fmtExp(v) {
+            if (!v) return '永久';
+            const d = new Date(v * 1000);
+            return d.toLocaleString('zh-CN');
+        }
+        function escapeHtml(s) {
+            return (s == null ? '' : String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+
+        // 选项卡切换
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+                tab.classList.add('active');
+                document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+            });
+        });
+
+        // ---- IP 封禁 ----
+        async function loadIpBans() {
+            const res = await fetch('/api/admin/ip-bans');
+            const data = await res.json();
+            const tb = document.getElementById('ipTable');
+            if (!data.ip_bans || !data.ip_bans.length) {
+                tb.innerHTML = '<tr><td colspan="6" class="empty">暂无 IP 封禁</td></tr>';
+                return;
+            }
+            tb.innerHTML = data.ip_bans.map(r => `
+                <tr>
+                    <td>${r.id}</td>
+                    <td>${escapeHtml(r.ip)}</td>
+                    <td>${escapeHtml(r.reason)}</td>
+                    <td>${fmtExp(r.ban_expire_at)}</td>
+                    <td><span class="badge ${r.active ? 'badge-danger' : 'badge-ok'}">${r.active ? '生效中' : '已过期'}</span></td>
+                    <td><button class="btn btn-secondary btn-sm" data-action="removeIpBan" data-args="${r.id}">解除</button></td>
+                </tr>`).join('');
+        }
+        async function addIpBan() {
+            const ip = document.getElementById('ipInput').value.trim();
+            const reason = document.getElementById('ipReason').value.trim();
+            const dur = document.getElementById('ipDuration').value.trim();
+            if (!ip) { toast('请填写 IP', 'error'); return; }
+            const res = await fetch('/api/admin/ip-bans', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ ip, reason, duration_hours: dur ? Number(dur) : null })
+            });
+            const data = await res.json();
+            if (res.ok) { toast('IP 已封禁', 'ok'); document.getElementById('ipInput').value=''; loadIpBans(); }
+            else toast(data.error || '操作失败', 'error');
+        }
+        async function removeIpBan(id) {
+            const res = await fetch('/api/admin/ip-bans/' + id, { method: 'DELETE' });
+            if (res.ok) { toast('已解除封禁', 'ok'); loadIpBans(); }
+            else toast('操作失败', 'error');
+        }
+
+        // ---- 玩家封禁 ----
+        async function loadBannedPlayers() {
+            const res = await fetch('/api/admin/users?is_banned=1&limit=200');
+            const data = await res.json();
+            const tb = document.getElementById('playerTable');
+            const list = data.users || [];
+            if (!list.length) { tb.innerHTML = '<tr><td colspan="5" class="empty">暂无被封禁玩家</td></tr>'; return; }
+            tb.innerHTML = list.map(u => `
+                <tr>
+                    <td>${escapeHtml(u.uid)}</td>
+                    <td>${escapeHtml(u.user_name)}</td>
+                    <td>${escapeHtml(u.ban_reason || '')}</td>
+                    <td>${fmtExp(u.ban_expire_at)}</td>
+                    <td><button class="btn btn-secondary btn-sm" data-action="unbanUser" data-args="'${u.uid}'">解封</button></td>
+                </tr>`).join('');
+        }
+        async function banUser() {
+            const name = document.getElementById('banUser').value.trim();
+            const reason = document.getElementById('banReason').value.trim();
+            const dur = document.getElementById('banDuration').value.trim();
+            if (!name) { toast('请填写用户名', 'error'); return; }
+            const search = await fetch('/api/admin/users?search=' + encodeURIComponent(name));
+            const sdata = await search.json();
+            const u = (sdata.users || []).find(x => x.user_name === name);
+            if (!u) { toast('用户不存在', 'error'); return; }
+            let expire = null;
+            if (dur) {
+                const d = new Date(Date.now() + Number(dur) * 3600 * 1000);
+                expire = d.toISOString().slice(0, 19).replace('T', ' ');
+            }
+            const res = await fetch('/api/admin/user/' + u.uid + '/ban', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ reason, expire_at: expire })
+            });
+            if (res.ok) { toast('玩家已封禁', 'ok'); document.getElementById('banUser').value=''; loadBannedPlayers(); }
+            else toast('操作失败', 'error');
+        }
+        async function unbanUser(uid) {
+            const res = await fetch('/api/admin/user/' + uid + '/unban', { method: 'POST' });
+            if (res.ok) { toast('已解封', 'ok'); loadBannedPlayers(); }
+            else toast('操作失败', 'error');
+        }
+
+        // ---- 安全事件 ----
+        async function loadEvents() {
+            const sev = document.getElementById('evSeverity').value;
+            const user = document.getElementById('evUser').value.trim();
+            const limit = document.getElementById('evLimit').value || 200;
+            const q = new URLSearchParams();
+            if (sev) q.set('severity', sev);
+            if (user) q.set('user', user);
+            q.set('limit', limit);
+            const res = await fetch('/api/admin/security-events?' + q.toString());
+            const data = await res.json();
+            const tb = document.getElementById('eventTable');
+            const list = data.security_events || [];
+            if (!list.length) { tb.innerHTML = '<tr><td colspan="8" class="empty">暂无安全事件</td></tr>'; return; }
+            const sevBadge = s => ({safe:'badge-ok',warn:'badge-warn',restrict:'badge-danger',ban:'badge-danger'}[s] || 'badge-info');
+            tb.innerHTML = list.map(e => `
+                <tr>
+                    <td>${escapeHtml(e.created_at || '')}</td>
+                    <td>${escapeHtml(e.user_name || '')}</td>
+                    <td>${escapeHtml(e.event_type || '')}</td>
+                    <td><span class="badge ${sevBadge(e.severity)}">${escapeHtml(e.severity || '')}</span></td>
+                    <td>${e.risk_score != null ? e.risk_score : ''}</td>
+                    <td>${escapeHtml(e.client_ip || '')}</td>
+                    <td>${escapeHtml(e.device_info || '')}</td>
+                    <td>${escapeHtml(e.details || '')}</td>
+                </tr>`).join('');
+        }
+
+        loadIpBans();
+        loadBannedPlayers();
+        loadEvents();
+        loadWafStats();
+
+        // ---- WAF 与行为监测 ----
+        async function loadWafStats() {
+            try {
+                const res = await fetch('/api/admin/waf/stats');
+                if (!res.ok) return;
+                const d = await res.json();
+                document.getElementById('wafStatBlocks').textContent = d.waf_blocks_24h;
+                document.getElementById('wafStatBans').textContent = d.behavior_bans_24h;
+                document.getElementById('wafStatEnabled').textContent = '运行中（全站生效）';
+                const tb = document.getElementById('wafTopIps');
+                const ips = d.top_offender_ips || [];
+                if (!ips.length) { tb.innerHTML = '<tr><td colspan="2" class="empty">近 24 小时无拦截</td></tr>'; }
+                else {
+                    tb.innerHTML = ips.map(r => `<tr><td>${escapeHtml(r.client_ip)}</td><td>${r.c}</td></tr>`).join('');
+                }
+                const et = document.getElementById('wafEvents');
+                const list = d.recent_events || [];
+                if (!list.length) { et.innerHTML = '<tr><td colspan="5" class="empty">暂无事件</td></tr>'; }
+                else {
+                    et.innerHTML = list.map(e => `
+                        <tr>
+                            <td>${escapeHtml(e.created_at || '')}</td>
+                            <td><span class="badge ${e.event_type === 'behavior_ban' ? 'badge-danger' : 'badge-warn'}">${escapeHtml(e.event_type || '')}</span></td>
+                            <td>${escapeHtml(e.client_ip || '')}</td>
+                            <td>${e.risk_score != null ? e.risk_score : ''}</td>
+                            <td>${escapeHtml(e.details || '')}</td>
+                        </tr>`).join('');
+                }
+            } catch (e) { /* 忽略加载失败，不阻塞其他面板 */ }
+        }
+    </script>
+</body>
+</html>

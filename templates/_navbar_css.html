@@ -1,0 +1,63 @@
+    <style nonce="{{ csp_nonce }}">
+        /* 顶部导航栏（与仪表盘/设置页统一） */
+        .navbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 64px;
+            background: white;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+            z-index: 100;
+        }
+        .navbar-left { display: flex; align-items: center; gap: 12px; }
+        .logo {
+            width: 36px; height: 36px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px; display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+        }
+        .logo svg { width: 20px; height: 20px; color: white; }
+        .logo-text { font-size: 18px; font-weight: 700; color: #1a1a1a; cursor: pointer; }
+        .navbar-right { display: flex; align-items: center; gap: 16px; }
+        .balence-display {
+            display: flex; align-items: center; gap: 8px;
+            background: #f0f2ff; padding: 8px 16px; border-radius: 20px;
+        }
+        .balence-icon { color: #667eea; font-size: 16px; }
+        .balence-amount { font-size: 14px; font-weight: 600; color: #667eea; }
+        /* 用户头像下拉 */
+        .user-menu { position: relative; }
+        .user-avatar {
+            width: 40px; height: 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            color: white; font-weight: 600; font-size: 16px; cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .user-avatar:hover { transform: scale(1.05); }
+        .user-dropdown {
+            position: absolute; top: calc(100% + 8px); right: 0; width: 240px;
+            background: white; border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,0.12);
+            padding: 8px; opacity: 0; visibility: hidden; transform: translateY(-10px);
+            transition: all 0.2s; z-index: 200;
+        }
+        .user-dropdown.show { opacity: 1; visibility: visible; transform: translateY(0); }
+        .user-info-header { padding: 16px; border-bottom: 1px solid #f0f0f0; margin-bottom: 8px; }
+        .user-info-name { font-size: 15px; font-weight: 600; color: #1a1a1a; margin-bottom: 4px; }
+        .user-info-uid { font-size: 12px; color: #9ca3af; font-family: monospace; }
+        .dropdown-item {
+            display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+            border-radius: 8px; cursor: pointer; transition: background 0.15s;
+            font-size: 14px; color: #333;
+        }
+        .dropdown-item:hover { background: #f5f5f5; }
+        .dropdown-item i { font-size: 18px; color: #667eea; }
+        .dropdown-item.danger { color: #dc2626; }
+        .dropdown-item.danger i { color: #dc2626; }
+        .dropdown-divider { height: 1px; background: #f0f0f0; margin: 8px 0; }
+    </style>

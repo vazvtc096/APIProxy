@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OAuth 2.0 接入验证页（独立演示）</title>
+<style>
+  :root {
+    --bg: #f6f8fa; --card: #ffffff; --border: #d0d7de; --text: #1f2328;
+    --muted: #656d76; --accent: #1f883d; --accent-hover: #1a7f37;
+    --code-bg: #0f172a; --code-fg: #e2e8f0; --err: #cf222e; --ok: #1a7f37;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;
+    background:var(--bg); color:var(--text); line-height:1.6; }
+  .wrap { max-width:840px; margin:0 auto; padding:40px 20px 80px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:24px 28px; margin-bottom:20px; }
+  .brand { display:flex; align-items:center; gap:12px; margin-bottom:4px; }
+  .avatar { width:40px; height:40px; border-radius:50%; background:#eef1f4; display:flex; align-items:center; justify-content:center; color:var(--accent); flex:0 0 auto; }
+  h1 { font-size:22px; margin:0; }
+  h2 { font-size:16px; margin:0 0 12px; }
+  .muted { color:var(--muted); font-size:13px; }
+  .btn { display:inline-block; background:var(--accent); color:#fff; border:none; border-radius:8px;
+    padding:10px 18px; font-size:14px; font-weight:600; cursor:pointer; }
+  .btn:hover { background:var(--accent-hover); }
+  .btn.secondary { background:#eaeef2; color:var(--text); }
+  label { display:block; font-size:13px; color:var(--muted); margin:14px 0 4px; }
+  input[type=text] { width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; font-size:14px; }
+  .scope-line { font-size:13px; background:#eef1f4; border-radius:8px; padding:8px 11px; word-break:break-all; }
+  .grid { display:grid; grid-template-columns:1fr; gap:14px; }
+  .panel { border:1px solid var(--border); border-radius:10px; padding:14px 16px; }
+  .panel .head { display:flex; justify-content:space-between; align-items:center; }
+  .panel .name { font-weight:600; font-size:14px; }
+  .badge { font-size:12px; padding:2px 9px; border-radius:999px; font-weight:600; }
+  .badge.ok { background:#dafbe1; color:var(--ok); }
+  .badge.err { background:#ffebe9; color:var(--err); }
+  .panel .endpoint { font-size:12px; color:var(--muted); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .panel .desc { font-size:12px; color:var(--muted); margin-top:2px; }
+  details { margin-top:10px; }
+  summary { cursor:pointer; font-size:12px; color:var(--accent); }
+  pre { background:var(--code-bg); color:var(--code-fg); padding:12px 14px; border-radius:8px; overflow:auto; font-size:12px; max-height:240px; }
+  .hidden { display:none; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="card">
+    <div class="brand">
+      <div class="avatar"><svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M12 1a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-1V6a5 5 0 0 0-5-5zm3 8H9V6a3 3 0 0 1 6 0v3zm-3 5a2 2 0 0 1 1 3.73V20a1 1 0 0 1-2 0v-2.27A2 2 0 0 1 12 14z"></path></svg></div>
+      <div>
+        <h1>OAuth 2.0 接入验证页</h1>
+        <div class="muted">独立演示页：模拟第三方应用，绑定账号并验证各 scope 功能</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 步骤 1：配置 -->
+  <div class="card" id="setup">
+    <h2>1. 配置</h2>
+    <label>API 代理基地址（你的 APIProxy 服务）</label>
+    <input type="text" id="baseUrl" value="http://127.0.0.1:5000">
+    <label>redirect_uri（默认取本页地址，必须是 http(s) 绝对地址）</label>
+    <input type="text" id="redirectUri" value="">
+    <div style="margin-top:18px">
+      <button class="btn" id="startBtn">开始授权（授权码 + PKCE）</button>
+    </div>
+    <p class="muted" style="margin-top:12px">提示：本页需通过 http(s) 提供（例如在该文件目录执行 <code>python -m http.server 8080</code>，再访问 http://localhost:8080/oauth_demo.html），redirect_uri 才会是合法绝对地址。</p>
+  </div>
+
+  <!-- 步骤 2：结果 -->
+  <div class="card hidden" id="result">
+    <h2>2. 授权结果</h2>
+    <div class="row" style="margin-bottom:8px">
+      <span class="muted">已获授权范围 scope：</span>
+    </div>
+    <div class="scope-line" id="scopeLine">—</div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn secondary" id="testBtn">调用各接口验证功能</button>
+      <button class="btn secondary" id="resetBtn">重置</button>
+    </div>
+  </div>
+
+  <!-- 步骤 3：功能面板 -->
+  <div class="card hidden" id="tests">
+    <h2>3. 功能验证（统一走 <code>/api/oauth/&lt;资源&gt;</code>）</h2>
+    <div class="grid" id="panelList"></div>
+  </div>
+
+</div>
+
+<script>
+const DEFAULT_SCOPES = 'api profile openid email posts:read posts:write friends:read friends:write chat:read chat:write transactions:read transactions:write apikeys:read apikeys:write user:read user:write';
+
+// 全部走 OAuth 专用命名空间 /api/oauth/<资源>：只认 Bearer 令牌，跨域已放行。
+const APIS = [
+  { name:'资源目录', scope:'（任意有效令牌）', endpoint:'GET /api/oauth', desc:'列出所有资源及其所需 scope', path:'/api/oauth' },
+  { name:'账号资料', scope:'profile / openid', endpoint:'GET /api/oauth/userinfo', desc:'读取用户名 / UID / 邮箱', path:'/api/oauth/userinfo' },
+  { name:'帖子列表', scope:'posts:read', endpoint:'GET /api/oauth/posts', desc:'读取已审核帖子', path:'/api/oauth/posts' },
+  { name:'好友列表', scope:'friends:read', endpoint:'GET /api/oauth/friends', desc:'读取好友', path:'/api/oauth/friends' },
+  { name:'会话列表', scope:'chat:read', endpoint:'GET /api/oauth/chat', desc:'读取聊天会话', path:'/api/oauth/chat' },
+  { name:'交易记录', scope:'transactions:read', endpoint:'GET /api/oauth/transactions', desc:'读取余额变动', path:'/api/oauth/transactions' },
+  { name:'API Key', scope:'apikeys:read', endpoint:'GET /api/oauth/apikeys', desc:'读取密钥列表', path:'/api/oauth/apikeys' },
+  { name:'个人设置', scope:'user:read', endpoint:'GET /api/oauth/settings', desc:'读取账户设置', path:'/api/oauth/settings' },
+];
+
+function b64url(bytes){ return btoa(String.fromCharCode(...bytes)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+function bufToB64url(buf){ return b64url(new Uint8Array(buf)); }
+
+async function genPkce(){
+  const verifier = bufToB64url(crypto.getRandomValues(new Uint8Array(32)));
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+  const challenge = bufToB64url(digest);
+  return { verifier, challenge };
+}
+
+function getParam(name){ const p = new URLSearchParams(location.search); return p.get(name); }
+
+function show(id, on){ document.getElementById(id).classList.toggle('hidden', !on); }
+
+async function start(){
+  const base = document.getElementById('baseUrl').value.trim().replace(/\/+$/,'');
+  const redirect = document.getElementById('redirectUri').value.trim() ||
+                   (location.origin + location.pathname);
+  const { verifier, challenge } = await genPkce();
+  sessionStorage.setItem('oauth_demo', JSON.stringify({ verifier, redirect, base }));
+  const url = base + '/oauth/authorize?' + new URLSearchParams({
+    response_type:'code',
+    client_id:'default',
+    code_challenge:challenge,
+    code_challenge_method:'S256',
+    redirect_uri:redirect,
+    scope:DEFAULT_SCOPES,
+    state:'demo'
+  }).toString();
+  location.href = url;
+}
+
+async function exchange(code){
+  const cfg = JSON.parse(sessionStorage.getItem('oauth_demo'));
+  const body = new URLSearchParams({
+    grant_type:'authorization_code',
+    code, code_verifier:cfg.verifier,
+    redirect_uri:cfg.redirect, client_id:'default'
+  });
+  const res = await fetch(cfg.base + '/oauth/token', {
+    method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body
+  });
+  if(!res.ok) throw new Error('token 交换失败: ' + (await res.text()));
+  return { json: await res.json(), base: cfg.base };
+}
+
+async function callApi(base, token, api){
+  const res = await fetch(base + api.path, { headers:{ 'Authorization':'Bearer ' + token } });
+  const text = await res.text();
+  let data = null; try { data = JSON.parse(text); } catch(e) { data = text; }
+  return { status: res.status, data };
+}
+
+async function runTests(token, base){
+  const list = document.getElementById('panelList');
+  list.innerHTML = '';
+  for(const api of APIS){
+    const panel = document.createElement('div');
+    panel.className = 'panel';
+    panel.innerHTML = `<div class="head"><span class="name">${api.name}</span><span class="badge" id="b-${api.name}">…</span></div>
+      <div class="endpoint">${api.endpoint}</div><div class="desc">需要 ${api.scope}</div>`;
+    list.appendChild(panel);
+    const badge = panel.querySelector('.badge');
+    try {
+      const r = await callApi(base, token, api);
+      const ok = r.status >= 200 && r.status < 300;
+      badge.textContent = r.status;
+      badge.className = 'badge ' + (ok ? 'ok' : 'err');
+      const det = document.createElement('details');
+      const sum = document.createElement('summary'); sum.textContent = '查看响应';
+      const pre = document.createElement('pre'); pre.textContent = JSON.stringify(r.data, null, 2);
+      det.appendChild(sum); det.appendChild(pre); panel.appendChild(det);
+    } catch(e){
+      badge.textContent = 'ERR'; badge.className = 'badge err';
+      const det = document.createElement('details');
+      const sum = document.createElement('summary'); sum.textContent = '查看错误';
+      const pre = document.createElement('pre'); pre.textContent = String(e);
+      det.appendChild(sum); det.appendChild(pre); panel.appendChild(det);
+    }
+  }
+}
+
+(async function init(){
+  document.getElementById('redirectUri').value = location.origin + location.pathname;
+  document.getElementById('startBtn').onclick = start;
+  document.getElementById('resetBtn').onclick = () => { sessionStorage.removeItem('oauth_demo'); location.href = location.pathname; };
+  document.getElementById('testBtn').onclick = () => runTests(window.__token, window.__base);
+
+  const code = getParam('code');
+  if(!code){ return; } // 尚未授权，停留在配置页
+
+  show('setup', false); show('result', true); show('tests', true);
+  try {
+    const { json, base } = await exchange(code);
+    window.__token = json.access_token; window.__base = base;
+    document.getElementById('scopeLine').textContent = json.scope || '(无 scope 返回)';
+    // 清掉 URL 里的 code，避免刷新重复交换
+    history.replaceState({}, '', location.pathname);
+  } catch(e){
+    document.getElementById('scopeLine').textContent = '授权失败：' + e.message;
+  }
+})();
+</script>
+</body>
+</html>
