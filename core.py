@@ -12,7 +12,7 @@ import uuid
 import sqlite3
 import os
 from typing import Literal, Dict
-from quart import request, session, jsonify, redirect
+from quart import request, session, jsonify, redirect, g
 from .configs import DB_PATH, SSL_ENABLED, RCON_ENABLED
 from .apikey import APIKey, hash_password, verify_password, generate_uid, _get_user_by_name, _verify_user_password
 from . import upstreams
@@ -50,7 +50,8 @@ __all__ = [
     '_normalize_upstream_payload', '_concat_text_parts', '_responses_input_to_messages',
     '_chat_to_responses', '_sse_response_event', '_oauth_redirect_error',
     '_is_absolute_http_uri', '_oauth_ensure_user', 'OAUTH_API_RESOURCES', '_scope_satisfied',
-    '_ALLOWED_SECTIONS', '_rcon_auth', '_start_rcon_server_thread', '_usage_daily', 'DOCS_DIR',
+    '_ALLOWED_SECTIONS', '_rcon_auth', '_start_rcon_server_thread', '_usage_daily',
+    '_usage_daily_by_model', 'DOCS_DIR',
     '_doc_meta', '_scan_docs', '_load_doc', '_is_rcon_authenticated',
     '_rcon_verify_admin_credentials', 'request', 'session', 'jsonify', 'redirect', 'pricing',
     'oauth', 'upstreams', 'configs', 'DB_PATH', 'SSL_ENABLED', 'RCON_ENABLED', 'APIKey',
@@ -103,12 +104,13 @@ from .core_rcon import (RCON_KEY_LENGTH, _init_rcon_table, _legacy_rcon_config_k
                         _is_rcon_authenticated, _rcon_verify_admin_credentials)
 from .core_oauth import (_oauth_redirect_error, _oauth_ensure_user,
                          OAUTH_API_RESOURCES, _ALLOWED_SECTIONS)
-from .core_docs import (_usage_daily, DOCS_DIR, _doc_meta, _scan_docs, _load_doc)
+from .core_docs import (_usage_daily, _usage_daily_by_model, DOCS_DIR, _doc_meta, _scan_docs, _load_doc)
 
 
 # ---------- CSRF ----------
 EXEMPT_CSRF_METHODS = {'GET', 'HEAD', 'OPTIONS', 'TRACE'}
-EXEMPT_CSRF_PATHS = {'/api/password-reset/request', '/api/password-reset/confirm', '/register', '/login'}
+EXEMPT_CSRF_PATHS = {'/api/password-reset/request', '/api/password-reset/confirm', '/register', '/login',
+                     '/api/recharge/bank/callback'}
 CSRF_TOKEN_LEN = 32
 
 def _get_csrf_token() -> str:
@@ -211,12 +213,12 @@ DEFAULT_MAX_SESSIONS = 1
 # （_get_client_ip / _get_user_agent 已下沉到 core_http.py，见文件顶部重新导入）
 
 
-async def _record_login_log(user_uid, user_name, ip, user_agent, status, reason=''):
+async def _record_login_log(user_uid, user_name, ip, user_agent, status, reason='', ja3_hash=''):
     """记录登录日志"""
     try:
         await async_db_query(
-            "INSERT INTO login_logs (user_uid, user_name, login_ip, user_agent, status, reason) VALUES (?, ?, ?, ?, ?, ?)",
-            (user_uid or '', user_name or '', ip, user_agent, status, reason)
+            "INSERT INTO login_logs (user_uid, user_name, login_ip, user_agent, status, reason, ja3_hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (user_uid or '', user_name or '', ip, user_agent, status, reason, ja3_hash or '')
         )
     except Exception as e:
         logging.error(f"Record login log failed: {e}")
@@ -231,9 +233,28 @@ async def _whitelist_bypass(client_ip: str) -> set:
     类别：blacklist（IP黑名单）、autoban（安全自动封禁）、
           account_ban（账号封禁）、ratelimit（登录限流）。
     bypass 字段为 'all' 时表示绕过全部拦截。
+
+    性能：中间件同一请求内最多 5 处调用本函数（WAF/IDS/web_filter/设备封禁），
+    此处做请求级缓存，一次请求只查一次库（g 在请求结束时自动销毁，无跨请求污染）。
     """
     if not client_ip or client_ip == 'unknown':
         return set()
+    try:
+        cached = getattr(g, '_whitelist_bypass_cache', None)
+    except RuntimeError:
+        cached = None  # 无请求上下文（后台任务/调度器等），直接走查询
+    if cached is not None and client_ip in cached:
+        return set(cached[client_ip])
+
+    result = await _whitelist_bypass_query(client_ip)
+
+    if cached is not None:
+        cached[client_ip] = frozenset(result)
+    return result
+
+
+async def _whitelist_bypass_query(client_ip: str) -> set:
+    """实际查询 ip_whitelist（由 _whitelist_bypass 包裹请求级缓存）。"""
     try:
         rows = await async_db_query("SELECT ip, bypass FROM ip_whitelist")
     except Exception:
@@ -299,3 +320,10 @@ def init_integrations() -> None:
         logging.info("Notifications module initialized")
     except Exception as e:
         logging.error(f"init_notifications failed: {e}")
+
+    try:
+        from . import system_users as _su
+        _su.init_system_users(async_db_query)
+        logging.info("System users module initialized")
+    except Exception as e:
+        logging.error(f"init_system_users failed: {e}")

@@ -5,63 +5,191 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>通知中心 - Cloud LLM API 代理</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
-    <style>
+    <style nonce="{{ csp_nonce }}">
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-               background: #f5f6f8; color: #1a1a1a; }
-        .page-wrap { max-width: 760px; margin: 24px auto; padding: 0 16px; }
-        .page-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-        .page-head h1 { font-size: 20px; }
-        .btn-ghost { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 6px 12px;
-                     font-size: 13px; cursor: pointer; color: #2563eb; }
-        .btn-ghost:hover { background: #f8fafc; }
-        .notif-card { background: #fff; border: 1px solid #eef0f3; border-radius: 12px; overflow: hidden; }
-        .notif-row { padding: 14px 16px; border-bottom: 1px solid #f3f4f6; border-left: 3px solid transparent; cursor: pointer; }
+               background: #f4f5f9; color: #1a1a1a; min-height: 100vh; }
+        .page-wrap { max-width: 780px; margin: 0 auto; padding: 28px 16px 48px; }
+
+        /* 头部横幅 */
+        .hero {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 18px; padding: 24px 26px; color: #fff;
+            display: flex; align-items: center; justify-content: space-between; gap: 16px;
+            box-shadow: 0 12px 32px -8px rgba(102,126,234,.45);
+            margin-bottom: 18px;
+        }
+        .hero-l { display: flex; align-items: center; gap: 14px; }
+        .hero-ico { width: 46px; height: 46px; border-radius: 13px; background: rgba(255,255,255,.18);
+                    display: flex; align-items: center; justify-content: center; font-size: 22px; flex: 0 0 auto; }
+        .hero h1 { font-size: 19px; font-weight: 700; }
+        .hero .sub { font-size: 12.5px; opacity: .85; margin-top: 3px; }
+        .hero-badge { background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.25);
+                      border-radius: 999px; padding: 7px 16px; font-size: 13px; font-weight: 600;
+                      cursor: pointer; white-space: nowrap; transition: background .15s; }
+        .hero-badge:hover { background: rgba(255,255,255,.3); }
+        .hero-badge:disabled { opacity: .55; cursor: default; }
+
+        /* 筛选 tab */
+        .tabs { display: inline-flex; background: #e9ebf2; border-radius: 11px; padding: 4px; gap: 2px; margin-bottom: 14px; }
+        .tab { border: none; background: transparent; padding: 7px 18px; border-radius: 8px;
+               font-size: 13px; font-weight: 600; color: #5b6472; cursor: pointer; transition: all .15s; }
+        .tab.active { background: #fff; color: #111827; box-shadow: 0 1px 4px rgba(15,23,42,.08); }
+        .tab .n { font-size: 11px; background: #ef4444; color: #fff; border-radius: 999px;
+                  padding: 1px 6px; margin-left: 5px; font-weight: 700; }
+
+        /* 列表 */
+        .notif-card { background: #fff; border: 1px solid #eef0f3; border-radius: 16px; overflow: hidden;
+                      box-shadow: 0 1px 3px rgba(15,23,42,.04); }
+        .notif-row { display: flex; gap: 13px; padding: 15px 18px; border-bottom: 1px solid #f3f4f6;
+                     cursor: pointer; transition: background .12s; position: relative; }
         .notif-row:last-child { border-bottom: none; }
-        .notif-row:hover { background: #f9fafb; }
-        .notif-row.unread { background: #f5f8ff; }
-        .notif-row.critical { border-left-color: #ef4444; }
-        .notif-row.warning { border-left-color: #f59e0b; }
-        .notif-row.info { border-left-color: #3b82f6; }
-        .notif-row .t { font-size: 14px; font-weight: 600; margin-bottom: 3px; }
-        .notif-row .b { font-size: 13px; color: #6b7280; line-height: 1.5; white-space: pre-wrap; }
-        .notif-row .time { font-size: 12px; color: #9ca3af; margin-top: 6px; }
-        .empty { padding: 48px 16px; text-align: center; color: #9ca3af; }
+        .notif-row:hover { background: #f8fafc; }
+        .notif-row.unread { background: #f7f9ff; }
+        .notif-row.unread:hover { background: #f1f5ff; }
+        .row-ico { flex: 0 0 38px; width: 38px; height: 38px; border-radius: 11px; margin-top: 1px;
+                   display: flex; align-items: center; justify-content: center; font-size: 17px; }
+        .notif-row.critical .row-ico { background: #fef2f2; color: #ef4444; }
+        .notif-row.warning  .row-ico { background: #fffbeb; color: #f59e0b; }
+        .notif-row.info     .row-ico { background: #eff6ff; color: #3b82f6; }
+        .row-main { flex: 1 1 auto; min-width: 0; }
+        .row-head { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
+        .notif-row .t { font-size: 14px; font-weight: 650; color: #111827; }
+        .unread-dot { width: 8px; height: 8px; border-radius: 50%; background: #4f46e5; flex: 0 0 auto;
+                      display: none; }
+        .notif-row.unread .unread-dot { display: block; }
+        .notif-row .b { font-size: 13px; color: #64748b; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+        .notif-row .time { font-size: 11.5px; color: #a3aab8; margin-top: 6px;
+                           display: flex; align-items: center; gap: 5px; }
+        .row-link { font-size: 11.5px; color: #6366f1; display: inline-flex; align-items: center; gap: 3px; }
+
+        /* 空态 / 加载失败 */
+        .empty { padding: 64px 16px; text-align: center; color: #9ca3af; }
+        .empty i { font-size: 52px; color: #e2e8f0; display: block; margin-bottom: 14px; }
+        .empty .e-t { font-size: 15px; font-weight: 650; color: #64748b; }
+        .empty .e-s { font-size: 12.5px; color: #a3aab8; margin-top: 5px; }
+
+        @media (max-width: 560px) {
+            .hero { padding: 18px; border-radius: 14px; }
+            .hero-badge { padding: 6px 12px; font-size: 12px; }
+            .notif-row { padding: 13px 14px; }
+        }
     </style>
 </head>
 <body>
+    {% include "_navbar_css.html" %}
     {% include "_navbar.html" %}
-    <div class="page-wrap">
-        <div class="page-head">
-            <h1>通知中心</h1>
-            <button class="btn-ghost" id="markAllBtn">全部标记为已读</button>
+    <div class="page-wrap" style="padding-top: 88px;">
+        <div class="hero">
+            <div class="hero-l">
+                <div class="hero-ico"><i class="bi bi-bell-fill"></i></div>
+                <div>
+                    <h1>通知中心</h1>
+                    <div class="sub">公告、系统消息与安全提醒都会汇总在这里</div>
+                </div>
+            </div>
+            <button class="hero-badge" id="markAllBtn"><i class="bi bi-check2-all"></i> 全部已读</button>
         </div>
+
+        <div class="tabs" id="tabs">
+            <button class="tab active" data-filter="all">全部</button>
+            <button class="tab" data-filter="unread">未读<span class="n" id="unreadN" style="display:none">0</span></button>
+        </div>
+
         <div class="notif-card" id="notifContainer">
-            <div class="empty">加载中…</div>
+            <div class="empty"><i class="bi bi-bell"></i><div class="e-t">加载中…</div></div>
         </div>
     </div>
     <script nonce="{{ csp_nonce }}">
-      function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-      async function loadList(){
+      var ALL = [];
+      var FILTER = 'all';
+      function esc(s){
+        return String(s==null?'':s)
+          .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+          .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+      }
+      var LEVEL_ICON = { critical: 'bi-exclamation-octagon', warning: 'bi-exclamation-triangle', info: 'bi-info-circle' };
+      function fmtTime(s){
+        if(!s) return '-';
+        const d = new Date(String(s).replace(' ', 'T'));
+        if(isNaN(d.getTime())) return String(s);
+        var diff = (Date.now() - d.getTime()) / 1000;
+        if (diff < 60) return '刚刚';
+        if (diff < 3600) return Math.floor(diff/60) + ' 分钟前';
+        if (diff < 86400) return Math.floor(diff/3600) + ' 小时前';
+        if (diff < 86400*7) return Math.floor(diff/86400) + ' 天前';
+        return d.toLocaleString('zh-CN', { hour12: false });
+      }
+      async function markRead(id){
         try{
-          const r = await fetch('/api/notifications?limit=50');
-          if(!r.ok) return;
-          const d = await r.json();
-          const c = document.getElementById('notifContainer');
-          const list = d.notifications||[];
-          if(!list.length){ c.innerHTML = '<div class="empty">暂无通知</div>'; return; }
-          c.innerHTML = list.map(function(n){
-            const lvl = n.level||'info';
-            const link = n.link||'/notifications';
-            return '<div class="notif-row '+(n.is_read?'read':'unread')+' '+lvl+'" data-nav="'+esc(link)+'">'+
-                   '<div class="t">'+esc(n.title||'通知')+'</div>'+
-                   '<div class="b">'+esc(n.body||'')+'</div>'+
-                   '<div class="time">'+esc(n.created_at||'')+'</div></div>';
-          }).join('');
+          await fetch('/api/notifications/read',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})});
         }catch(e){}
       }
+      window.openNotif = async function(id, link){
+        await markRead(id);
+        if(link && link!=='/notifications' && link!==''){
+          window.location.href = link;
+        }else{
+          loadList();
+        }
+      };
+      function render(){
+        const c = document.getElementById('notifContainer');
+        const list = FILTER === 'unread' ? ALL.filter(n => !n.is_read) : ALL;
+        if(!list.length){
+          c.innerHTML = '<div class="empty"><i class="bi bi-bell-slash"></i>'
+            + '<div class="e-t">' + (FILTER==='unread' ? '没有未读通知' : '暂无通知') + '</div>'
+            + '<div class="e-s">新的公告与系统消息会出现在这里</div></div>';
+          return;
+        }
+        c.innerHTML = list.map(function(n){
+          const lvl = n.level||'info';
+          const link = n.link||'';
+          const linkTag = link && link !== '/notifications'
+            ? '<span class="row-link"><i class="bi bi-box-arrow-up-right"></i>查看详情</span>' : '';
+          return '<div class="notif-row '+(n.is_read?'read':'unread')+' '+lvl+'" '
+               + 'data-action="openNotif" data-args="'+esc(n.id)+'\u0001'+esc(link)+'">'
+               + '<div class="row-ico"><i class="bi '+(LEVEL_ICON[lvl]||LEVEL_ICON.info)+'"></i></div>'
+               + '<div class="row-main">'
+               +   '<div class="row-head"><span class="unread-dot"></span>'
+               +     '<span class="t">'+esc(n.title||'通知')+'</span></div>'
+               +   '<div class="b">'+esc(n.body||'')+'</div>'
+               +   '<div class="time"><i class="bi bi-clock"></i>'+esc(fmtTime(n.created_at))+linkTag+'</div>'
+               + '</div></div>';
+        }).join('');
+      }
+      function syncMeta(d){
+        const unread = d.unread_count || 0;
+        const n = document.getElementById('unreadN');
+        if(n){ if(unread>0){ n.style.display=''; n.textContent = unread>99?'99+':unread; } else n.style.display='none'; }
+        const btn = document.getElementById('markAllBtn');
+        if(btn) btn.disabled = !(unread>0);
+      }
+      async function loadList(){
+        const c = document.getElementById('notifContainer');
+        try{
+          const r = await fetch('/api/notifications?limit=50');
+          if(!r.ok){ c.innerHTML = '<div class="empty"><i class="bi bi-wifi-off"></i><div class="e-t">加载失败</div><div class="e-s">请刷新重试</div></div>'; return; }
+          const d = await r.json();
+          ALL = d.notifications||[];
+          syncMeta(d);
+          render();
+        }catch(e){
+          c.innerHTML = '<div class="empty"><i class="bi bi-wifi-off"></i><div class="e-t">加载失败</div><div class="e-s">'+esc(e&&e.message?e.message:e)+'</div></div>';
+        }
+      }
+      document.getElementById('tabs').addEventListener('click', function(e){
+        const b = e.target.closest('.tab'); if(!b) return;
+        document.querySelectorAll('#tabs .tab').forEach(t => t.classList.remove('active'));
+        b.classList.add('active');
+        FILTER = b.dataset.filter || 'all';
+        render();
+      });
       document.getElementById('markAllBtn').addEventListener('click', async function(){
-        try{ await fetch('/api/notifications/read',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:'all'})}); await loadList(); }catch(e){}
+        try{
+          await fetch('/api/notifications/read',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:'all'})});
+          await loadList();
+        }catch(e){}
       });
       if(document.readyState!=='loading') loadList(); else document.addEventListener('DOMContentLoaded', loadList);
     </script>

@@ -81,6 +81,51 @@ def _convert_sql(sql: str) -> str:
         r"CURRENT_TIMESTAMP + (\1::interval)", sql, flags=re.IGNORECASE,
     )
 
+    # 1.6 DATE('now') → CURRENT_DATE（SQLite 特有日期函数）
+    sql = re.sub(r"DATE\('now'\)", "CURRENT_DATE", sql, flags=re.IGNORECASE)
+
+    # DATE('now', '-X days') → CURRENT_DATE - INTERVAL 'X days'（静态修饰符）
+    def _date_modifier(m):
+        modifier = m.group(1).strip()
+        sign = "+"
+        rest = modifier
+        if rest.startswith("-"):
+            sign = "-"
+            rest = rest[1:]
+        elif rest.startswith("+"):
+            rest = rest[1:]
+        return f"CURRENT_DATE {sign} INTERVAL '{rest.strip()}'"
+
+    sql = re.sub(
+        r"DATE\('now',\s*'([^']+)'\)", _date_modifier, sql, flags=re.IGNORECASE,
+    )
+
+    # DATE('now', ?) → CURRENT_DATE - (?::interval)（动态修饰符，? 已转 %s）
+    sql = re.sub(
+        r"DATE\('now',\s*(%s)\)",
+        r"CURRENT_DATE - (\1::interval)", sql, flags=re.IGNORECASE,
+    )
+
+    # <col> >= DATE('now', '-' || ? || ' days') → <col>::timestamp >= CURRENT_DATE - (?::int)
+    # （表达式修饰符：图表统计惯用法。列在 PG 里可能是 varchar（SQLite 血统，
+    #   如 users.created_at）也可能是真 timestamp（如 usage_logs.created_at）——
+    #   统一把左值转 timestamp：varchar 的 ISO 文本可显式转换，timestamp 是 no-op）
+    sql = re.sub(
+        r"(\w+)\s*>=\s*DATE\('now',\s*'\-'\s*\|\|\s*(%s|\?)\s*\|\|\s*'\s*days'\)",
+        r"\1::timestamp >= CURRENT_DATE - (\2::int)", sql, flags=re.IGNORECASE,
+    )
+
+    # 兜底：非比较位置的 DATE('now', '-' || ? || ' days') → 文本日期
+    sql = re.sub(
+        r"\bDATE\('now',\s*'\-'\s*\|\|\s*(%s|\?)\s*\|\|\s*'\s*days'\)",
+        r"to_char(CURRENT_DATE - (\1::int), 'YYYY-MM-DD')", sql, flags=re.IGNORECASE,
+    )
+
+    # DATE(column) → to_char(column::date, 'YYYY-MM-DD')（PostgreSQL 日期转换；
+    # 返回文本而非 date 对象——psycopg2 的 date 对象会让 Python 侧
+    # strftime('%Y-%m-%d') 字符串键全部 miss，图表恒为 0）
+    sql = re.sub(r"\bDATE\((\w+)\)", r"to_char(\1::date, 'YYYY-MM-DD')", sql, flags=re.IGNORECASE)
+
     # 2. INSERT OR IGNORE → ON CONFLICT DO NOTHING
     if re.search(r"INSERT\s+OR\s+IGNORE\s+INTO", sql, re.IGNORECASE):
         sql = re.sub(
@@ -227,12 +272,20 @@ class _PgCursor:
 class _PgConnection:
     """psycopg2 连接包装：模拟 sqlite3 的连接接口与事务语义。
 
-    若构造时传入 pool，则退出 with 块时把连接归还池中（而非关闭），实现连接复用。
+    若构造时传入 pool，则退出 with 块或调用 close() 时把连接归还池中
+    （而非真正关闭），实现连接复用。归还是幂等的：多次 close()/with 退出
+    只归还一次，杜绝 double-putconn。
+
+    历史教训：项目里大量代码沿用了「conn = get_conn(); with conn: ...」的
+    SQLite 习惯写法（with 退出只 commit 不归还），在 PG 连接池下等于每次
+    调用泄漏一条连接（启动自检即可耗尽 20 条池上限）。因此这里把归还动作
+    挂到 __exit__ 上：只要离开 with 块，连接必定回池，对调用方零改动。
     """
 
     def __init__(self, conn, pool=None):
         self._conn = conn
         self._pool = pool
+        self._returned = False
 
     def cursor(self):
         import psycopg2.extras
@@ -266,9 +319,12 @@ class _PgConnection:
         if ac is not None:
             self._conn.autocommit = value
 
-    def close(self):
+    def _return_to_pool(self):
+        """把连接归还池（幂等）；无池时直接关闭。"""
+        if self._returned:
+            return
+        self._returned = True
         if self._pool is not None:
-            # 归还到连接池而非真正关闭
             try:
                 self._pool.putconn(self._conn)
             except Exception:
@@ -276,21 +332,33 @@ class _PgConnection:
                     self._conn.close()
                 except Exception:
                     pass
-            return
-        return self._conn.close()
+        else:
+            try:
+                self._conn.close()
+            except Exception:
+                pass
+
+    def close(self):
+        self._return_to_pool()
 
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type is None:
-            try:
-                self._conn.commit()
-            except Exception:
+        if self._returned:
+            return False
+        try:
+            if exc_type is None:
+                try:
+                    self._conn.commit()
+                except Exception:
+                    self._conn.rollback()
+                    raise
+            else:
                 self._conn.rollback()
-                raise
-        else:
-            self._conn.rollback()
+        finally:
+            # 事务收尾后连接必回池：putconn 对非 IDLE 连接会再 rollback 兜底
+            self._return_to_pool()
         return False
 
 
@@ -309,9 +377,13 @@ def _get_pg_pool():
             return _PG_POOL
         import psycopg2
         import psycopg2.pool
-        # 池上限 50：启动自检并发突发下每请求经 web_filter/WAF/device-ban/路由
-        # 多个中间件各取 1 连接，瞬时并发可超 20；PG 默认 max_connections=100 足够
-        _PG_POOL = psycopg2.pool.SimpleConnectionPool(1, 50, DATABASE_URL)
+        # 必须 ThreadedConnectionPool：本项目所有 DB 访问经 asyncio.to_thread 走
+        # 多线程 executor。SimpleConnectionPool 的 _used 字典与 _keys 计数器无锁，
+        # 并发下会分配重复 key → 同一连接被两个线程同时持有 → 双重 putconn →
+        # _used 条目永久卡死 → 启动自检后持续 "connection pool exhausted"。
+        # minconn=8：匹配默认线程池 8 线程（4 逻辑核 + 4），空闲连接全部保留，
+        # 避免每请求 connect/close 握手churn；maxconn=20 为 8 线程的 2.5 倍余量。
+        _PG_POOL = psycopg2.pool.ThreadedConnectionPool(8, 20, DATABASE_URL)
         return _PG_POOL
 
 

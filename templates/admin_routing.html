@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>模型路由 - 管理员后台</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style nonce="{{ csp_nonce }}">
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #fafafa; color: #1a1a1a; min-height: 100vh; }
+        .main-container { display: flex; padding-top: 64px; min-height: 100vh; }
+        .content { flex: 1; margin-left: 240px; padding: 32px; }
+        .page-title { font-size: 24px; font-weight: 700; color: #1a1a1a; }
+        .page-subtitle { font-size: 14px; color: #666; margin-top: 4px; }
+        .btn { padding: 10px 20px; font-size: 14px; font-weight: 500; border-radius: 10px; cursor: pointer; transition: all 0.2s; border: none; display: inline-flex; align-items: center; gap: 8px; text-decoration: none; }
+        .btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; box-shadow: 0 2px 8px rgba(102,126,234,0.3); }
+        .btn-primary:hover { transform: translateY(-1px); }
+        .btn-secondary { background: #f5f5f5; color: #333; }
+        .btn-secondary:hover { background: #eee; }
+        .btn-danger { background: #fef2f2; color: #dc2626; }
+        .btn-danger:hover { background: #fee2e2; }
+        .btn-sm { padding: 6px 12px; font-size: 12px; border-radius: 6px; }
+        .card { background: white; border-radius: 16px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 24px; }
+        .card h3 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+        .card .hint { font-size: 12px; color: #9ca3af; margin-bottom: 16px; }
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; padding: 12px 16px; font-size: 12px; font-weight: 600; color: #666; text-transform: uppercase; letter-spacing: 0.5px; background: #fafafa; border-bottom: 1px solid #f0f0f0; }
+        td { padding: 10px 16px; font-size: 14px; border-bottom: 1px solid #f0f0f0; color: #333; }
+        tr:hover td { background: #fafafa; }
+        .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 500; }
+        .badge-ok { background: #f0fdf4; color: #16a34a; }
+        .badge-off { background: #f5f5f5; color: #9ca3af; }
+        .badge-err { background: #fef2f2; color: #dc2626; }
+        .empty { text-align: center; color: #9ca3af; padding: 32px; font-size: 14px; }
+        .mono { font-family: Consolas, Menlo, monospace; }
+        input[type=text], input[type=number] { padding: 8px 12px; font-size: 14px; border: 1px solid #e5e7eb; border-radius: 8px; outline: none; transition: border-color 0.15s; }
+        input[type=text]:focus, input[type=number]:focus { border-color: #667eea; }
+        .form-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
+        .form-row label { font-size: 13px; color: #666; }
+        .section-gap { margin-top: 20px; padding-top: 16px; border-top: 1px dashed #ececf0; }
+        select { padding: 8px 12px; font-size: 14px; border: 1px solid #e5e7eb; border-radius: 8px; outline: none; background: white; }
+        .toast { position: fixed; top: 80px; right: 24px; background: #1a1a1a; color: white; padding: 12px 20px; border-radius: 10px; font-size: 14px; opacity: 0; transform: translateY(-10px); transition: all 0.25s; z-index: 200; }
+        .toast.show { opacity: 1; transform: translateY(0); }
+        .toast.error { background: #dc2626; }
+        .toast.ok { background: #16a34a; }
+
+        /* 侧边栏基础样式（与 admin_bans 等页统一） */
+        .sidebar { width: 240px; background: white; border-right: 1px solid #f0f0f0; padding: 24px 0; position: fixed; top: 64px; bottom: 0; left: 0; overflow-y: auto; }
+        .sidebar-section { margin-bottom: 24px; }
+        .sidebar-section-title { font-size: 11px; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.5px; padding: 0 20px; margin-bottom: 8px; }
+        .sidebar-item { display: flex; align-items: center; gap: 12px; padding: 10px 20px; cursor: pointer; transition: all 0.15s; font-size: 14px; color: #666; border-left: 3px solid transparent; text-decoration: none; }
+        .sidebar-item:hover { background: #fafafa; color: #1a1a1a; }
+        .sidebar-item.active { background: #f0f2ff; color: #667eea; border-left-color: #667eea; font-weight: 500; }
+        .sidebar-item i { font-size: 18px; width: 20px; text-align: center; }
+    </style>
+</head>
+<body>
+    {% include "_navbar_css.html" %}
+    {% include "_navbar.html" %}
+    <div class="main-container">
+        {% with active_page = 'routing' %}
+        {% include "_sidebar.html" %}
+        {% endwith %}
+
+        <main class="content">
+            <div class="page-title">模型路由</div>
+            <div class="page-subtitle">模型映射 / 上游健康（保存后即时生效，无需重启服务）</div>
+
+            <div class="card">
+                <h3>模型映射</h3>
+                <div class="hint">把请求模型【A】映射到上游【B】的【C】模型。B 为空 = 任意可用上游（按优先级与健康度挑选）；B 多个 = 候选集合。pattern 支持「前缀*」通配，先精确后通配。</div>
+                <table>
+                    <thead>
+                        <tr><th>请求模型 (A)</th><th>上游 (B，逗号分隔，空=任意)</th><th>目标模型 (C)</th><th>状态</th><th style="width:150px;">操作</th></tr>
+                    </thead>
+                    <tbody id="mapTable"><tr><td colspan="5" class="empty">加载中…</td></tr></tbody>
+                </table>
+                <div class="form-row section-gap">
+                    <label>新增映射：</label>
+                    <input type="text" id="map-pattern" placeholder="请求模型 A（支持 前缀*）" style="width:200px;">
+                    <input type="text" id="map-ups" placeholder="上游 B1,B2（留空=任意）" style="width:200px;">
+                    <input type="text" id="map-target" placeholder="目标模型 C" style="width:200px;">
+                    <button class="btn btn-primary btn-sm" data-action="addMapping">添加映射</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>用户组</h3>
+                <div class="hint">所有用户默认属于 default 组（可调全部模型、原价）。组内「可调模型」逗号分隔、留空 = 不限制；支持「前缀*」通配；价格倍率作用于该组全部计费。</div>
+                <table>
+                    <thead>
+                        <tr><th>组名</th><th>可调模型（空=全部）</th><th>价格倍率</th><th>说明</th><th style="width:150px;">操作</th></tr>
+                    </thead>
+                    <tbody id="groupTable"><tr><td colspan="5" class="empty">加载中…</td></tr></tbody>
+                </table>
+                <div class="form-row section-gap">
+                    <label>新增/更新组：</label>
+                    <input type="text" id="g-name" placeholder="组名" style="width:140px;">
+                    <input type="text" id="g-models" placeholder="可调模型 a,b,前缀*（留空=全部）" style="width:260px;">
+                    <input type="number" id="g-mult" step="0.1" value="1.0" style="width:90px;" title="价格倍率">
+                    <input type="text" id="g-note" placeholder="备注" style="width:160px;">
+                    <button class="btn btn-primary btn-sm" data-action="saveGroup">保存组</button>
+                </div>
+                <div class="form-row">
+                    <label>用户划组：</label>
+                    <select id="assign-user" style="width:180px;"></select>
+                    <select id="assign-group" style="width:140px;"></select>
+                    <button class="btn btn-secondary btn-sm" data-action="assignGroup">划入</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>上游健康状态</h3>
+                <div class="hint" id="hc-hint">定时探测配置读取中…</div>
+                <table>
+                    <thead>
+                        <tr><th>上游</th><th>健康</th><th>连续失败</th><th>请求数 / 失败数</th><th>延迟 EMA</th><th>冷却剩余</th></tr>
+                    </thead>
+                    <tbody id="healthTable"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
+                </table>
+            </div>
+        </main>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script nonce="{{ csp_nonce }}">
+        'use strict';
+        function $(id) { return document.getElementById(id); }
+        function toast(msg, cls) {
+            var t = $('toast');
+            t.textContent = msg; t.className = 'toast show ' + (cls || '');
+            setTimeout(function () { t.className = 'toast ' + (cls || ''); }, 2600);
+        }
+        function esc(s) {
+            return String(s).replace(/[&<>"']/g, function (c) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+            });
+        }
+        async function api(url, opts) {
+            var r = await fetch(url, Object.assign({ credentials: 'same-origin' }, opts || {}));
+            var j = await r.json().catch(function () { return {}; });
+            if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+            return j;
+        }
+        function badge(ok, onText, offText) {
+            return '<span class="badge ' + (ok ? 'badge-ok' : 'badge-off') + '">' + (ok ? (onText || '启用') : (offText || '停用')) + '</span>';
+        }
+
+        async function loadMappings() {
+            var j = await api('/api/admin/model-mappings');
+            var rows = j.mappings || [];
+            $('mapTable').innerHTML = rows.length ? rows.map(function (m) {
+                return '<tr>' +
+                    '<td class="mono">' + esc(m.pattern) + '</td>' +
+                    '<td class="mono">' + esc(m.upstreams || '（任意）') + '</td>' +
+                    '<td class="mono">' + esc(m.target_model) + '</td>' +
+                    '<td>' + badge(!!m.enabled) + '</td>' +
+                    '<td><button class="btn btn-secondary btn-sm" data-action="toggleMapping" data-args="' + m.id + '|' + (m.enabled ? 0 : 1) + '">' + (m.enabled ? '停用' : '启用') + '</button> ' +
+                    '<button class="btn btn-danger btn-sm" data-action="delMapping" data-args="' + m.id + '">删除</button></td>' +
+                    '</tr>';
+            }).join('') : '<tr><td colspan="5" class="empty">暂无映射</td></tr>';
+            renderHealth(j.health || {});
+        }
+        function renderHealth(h) {
+            var names = Object.keys(h);
+            $('healthTable').innerHTML = names.length ? names.map(function (n) {
+                var s = h[n];
+                return '<tr>' +
+                    '<td class="mono">' + esc(n) + '</td>' +
+                    '<td>' + (s.healthy ? '<span class="badge badge-ok">健康</span>' : '<span class="badge badge-err">不健康</span>') + '</td>' +
+                    '<td>' + s.consecutive + '</td>' +
+                    '<td>' + s.total + ' / ' + s.fail + '</td>' +
+                    '<td>' + (s.latency_ema ? Math.round(s.latency_ema) + ' ms' : '-') + '</td>' +
+                    '<td>' + (s.cooldown_remaining > 0 ? Math.round(s.cooldown_remaining) + 's' : '-') + '</td>' +
+                    '</tr>';
+            }).join('') : '<tr><td colspan="6" class="empty">尚无探测数据（等待定时探测或真实请求）</td></tr>';
+        }
+        async function addMapping() {
+            var pattern = $('map-pattern').value.trim();
+            var target = $('map-target').value.trim();
+            if (!pattern || !target) { toast('A 与 C 必填', 'error'); return; }
+            var ups = $('map-ups').value.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+            await api('/api/admin/model-mappings', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pattern: pattern, upstreams: ups, target_model: target })
+            });
+            $('map-pattern').value = ''; $('map-ups').value = ''; $('map-target').value = '';
+            toast('映射已添加', 'ok'); loadMappings();
+        }
+        async function toggleMapping(args) {
+            var p = args.split('|');
+            await api('/api/admin/model-mappings/' + p[0], {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled: p[1] === '1' })
+            });
+            loadMappings();
+        }
+        async function delMapping(id) {
+            if (!confirm('确认删除该映射？')) return;
+            await api('/api/admin/model-mappings/' + id, { method: 'DELETE' });
+            toast('已删除', 'ok'); loadMappings();
+        }
+
+        var GROUPS = {};
+        async function loadGroups() {
+            var j = await api('/api/admin/user-groups');
+            GROUPS = j.groups || {};
+            var names = Object.keys(GROUPS);
+            $('groupTable').innerHTML = names.length ? names.map(function (n) {
+                var g = GROUPS[n];
+                return '<tr>' +
+                    '<td class="mono">' + esc(n) + '</td>' +
+                    '<td class="mono">' + esc(g.allowed_models.join(', ') || '（全部）') + '</td>' +
+                    '<td>' + esc(g.price_multiplier) + '</td>' +
+                    '<td>' + esc(g.note || '') + '</td>' +
+                    '<td>' + (n === 'default' ? '<span class="badge badge-off">内置</span>' :
+                        '<button class="btn btn-danger btn-sm" data-action="delGroup" data-args="' + esc(n) + '">删除</button>') + '</td>' +
+                    '</tr>';
+            }).join('') : '<tr><td colspan="5" class="empty">暂无组</td></tr>';
+            var us = $('assign-user');
+            us.innerHTML = (j.users || []).map(function (u) {
+                return '<option value="' + esc(u.user_name) + '">' + esc(u.user_name) + '（' + esc(u.user_group || 'default') + '）</option>';
+            }).join('');
+            $('assign-group').innerHTML = names.map(function (n) { return '<option value="' + esc(n) + '">' + esc(n) + '</option>'; }).join('');
+        }
+        async function saveGroup() {
+            var name = $('g-name').value.trim();
+            if (!name) { toast('组名必填', 'error'); return; }
+            var models = $('g-models').value.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+            await api('/api/admin/user-groups', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: name, allowed_models: models,
+                    price_multiplier: parseFloat($('g-mult').value) || 1.0, note: $('g-note').value.trim() })
+            });
+            toast('组已保存', 'ok'); loadGroups();
+        }
+        async function delGroup(name) {
+            if (!confirm('删除组「' + name + '」？组内用户将回退到 default。')) return;
+            await api('/api/admin/user-groups/' + encodeURIComponent(name), { method: 'DELETE' });
+            toast('已删除', 'ok'); loadGroups();
+        }
+        async function assignGroup() {
+            var u = $('assign-user').value, g = $('assign-group').value;
+            if (!u || !g) { toast('请选择用户与组', 'error'); return; }
+            await api('/api/admin/user-groups/assign', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user: u, group: g })
+            });
+            toast('已把 ' + u + ' 划入 ' + g, 'ok'); loadGroups();
+        }
+        async function loadHealthCfg() {
+            try {
+                var j = await api('/api/admin/upstream-health');
+                var c = j.config || {};
+                $('hc-hint').textContent = '定时探测：' + (c.enabled ? '开启' : '关闭') +
+                    '，间隔 ' + c.interval_seconds + 's，max_tokens ' + c.max_tokens +
+                    '（config.yaml 的 upstream_health 段可改，改后重启生效）';
+            } catch (e) { $('hc-hint').textContent = '配置读取失败：' + e.message; }
+        }
+
+        document.addEventListener('click', function (ev) {
+            var el = ev.target.closest('[data-action]');
+            if (!el) return;
+            var fn = { addMapping: addMapping, toggleMapping: toggleMapping, delMapping: delMapping,
+                       saveGroup: saveGroup, delGroup: delGroup, assignGroup: assignGroup }[el.dataset.action];
+            if (!fn) return;
+            ev.preventDefault();
+            fn(el.dataset.args);
+        });
+
+        loadMappings(); loadGroups(); loadHealthCfg();
+        setInterval(function () { if (!document.hidden) loadMappings(); }, 30000);   // 健康状态随映射表一起 30s 刷新（页面隐藏时暂停）
+    </script>
+</body>
+</html>

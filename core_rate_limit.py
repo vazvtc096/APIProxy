@@ -167,3 +167,5 @@ def _get_rate_limit_retry_after(category: str) -> int:
         return max(1, int(oldest + config['window'] - now))
     except Exception:
         return config['window']
+    finally:
+        conn.close()

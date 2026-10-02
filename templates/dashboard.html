@@ -6,7 +6,24 @@
     <title>Dashboard - Cloud LLM API 代理</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="/static/vendor/chart.umd.min.js"></script>
+    <script nonce="{{ csp_nonce }}">
+    // Chart.js 本地加载失败时降级到 CDN（异步，图表函数已做防御性处理）
+    (function () {
+        if (typeof Chart === 'undefined') {
+            var s = document.createElement('script');
+            s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+            document.head.appendChild(s);
+        }
+    })();
+    // 全局 HTML 转义：任何拼进 innerHTML / HTML 属性（含 data-args）的动态文本都必须过这一层。
+    // 典型用户可控来源：用户名、邮箱、UID、充值备注、模型名、接口返回的 error 文案。
+    function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+    }
+    </script>
     <style nonce="{{ csp_nonce }}">
         * {
             margin: 0;
@@ -1200,7 +1217,7 @@
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
                         <div class="apikey-item" style="cursor: pointer;" data-nav="/dashboard/apikeys">
                             <div class="apikey-icon">
-                                <i class="bi bi-key-fill"></i>
+                                <i class="bi bi-key-fill" style="color: #667eea;"></i>
                             </div>
                             <div class="apikey-info">
                                 <div style="font-weight: 600; margin-bottom: 4px;">管理 API Keys</div>
@@ -1209,8 +1226,8 @@
                             <i class="bi bi-chevron-right" style="color: #ccc;"></i>
                         </div>
                         <div class="apikey-item" style="cursor: pointer;" data-nav="/dashboard/recharge">
-                            <div class="apikey-icon" style="background: #f0fdf4; color: #16a34a;">
-                                <i class="bi bi-plus-circle-fill"></i>
+                            <div class="apikey-icon" style="background: #f0fdf4;">
+                                <i class="bi bi-plus-circle-fill" style="color: #16a34a;"></i>
                             </div>
                             <div class="apikey-info">
                                 <div style="font-weight: 600; margin-bottom: 4px;">充值余额</div>
@@ -1219,8 +1236,8 @@
                             <i class="bi bi-chevron-right" style="color: #ccc;"></i>
                         </div>
                         <div class="apikey-item" style="cursor: pointer;" data-nav="/dashboard/usage">
-                            <div class="apikey-icon" style="background: #eff6ff; color: #2563eb;">
-                                <i class="bi bi-bar-chart-fill"></i>
+                            <div class="apikey-icon" style="background: #eff6ff;">
+                                <i class="bi bi-bar-chart-fill" style="color: #2563eb;"></i>
                             </div>
                             <div class="apikey-info">
                                 <div style="font-weight: 600; margin-bottom: 4px;">查看统计</div>
@@ -1249,6 +1266,28 @@
                     </div>
                     <div class="apikey-list" id="apikeyList">
                         <!-- 动态生成 -->
+                    </div>
+                </div>
+
+                <div class="apikey-card">
+                    <div class="apikey-header">
+                        <h3 class="apikey-title">令牌策略</h3>
+                        <button class="btn btn-primary" id="tokRefreshBtn">刷新</button>
+                    </div>
+                    <p class="page-subtitle" style="margin-bottom:10px;">为每个 Key 单独设置额度上限、过期时间、模型白名单与 IP 白名单（留空 = 不限制）</p>
+                    <div id="tokenPolicyList" style="display:flex; flex-direction:column; gap:12px;">加载中...</div>
+                </div>
+
+                <div class="apikey-card">
+                    <div class="apikey-header">
+                        <h3 class="apikey-title">月度消费预算</h3>
+                        <button class="btn btn-primary" id="budgetSaveBtn">保存</button>
+                    </div>
+                    <p class="page-subtitle" style="margin-bottom:10px;">设置本月消费上限（¥），达到上限后新请求将被拒绝（400）；0 = 不限制。跨月自动清零重新累计。</p>
+                    <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:center;">
+                        <input id="budgetInput" type="number" min="0" step="0.01" placeholder="本月消费上限，如 20.00（0=不限）"
+                               style="flex:1; min-width:220px; padding:8px 10px; border:1px solid #ddd; border-radius:6px;">
+                        <span id="budgetSpentInfo" style="color:#666; font-size:13px;">本月已消费：加载中...</span>
                     </div>
                 </div>
             </div>
@@ -1359,12 +1398,22 @@
                 </div>
 
                 <div class="recharge-card">
-                    <h2 class="recharge-title">快速充值</h2>
-                    <p class="recharge-desc">输入充值金额，提交申请后联系管理员审核</p>
+                    <h2 class="recharge-title">余额充值</h2>
+                    <p class="recharge-desc">提交充值金额，管理员审核通过后余额自动到账</p>
                     <div class="recharge-form">
                         <input type="number" class="recharge-input" id="rechargeAmount" placeholder="输入充值金额（元）" min="1">
                         <button class="recharge-btn" data-action="submitRecharge">提交申请</button>
                     </div>
+                </div>
+
+                <div class="recharge-card">
+                    <h2 class="recharge-title">兑换码充值</h2>
+                    <p class="recharge-desc">输入管理员发放的兑换码，余额即时到账</p>
+                    <div class="recharge-form">
+                        <input type="text" class="recharge-input" id="redeemCode" placeholder="RD-xxxxxxxx-xxxxxxxx" style="flex:1;">
+                        <button class="recharge-btn" id="redeemBtn">兑换</button>
+                    </div>
+                    <p id="redeemMsg" style="margin-top:8px; font-size:13px;"></p>
                 </div>
 
                 <div class="table-card">
@@ -1474,6 +1523,44 @@
                         </tbody>
                     </table>
                 </div>
+
+                <!-- 用户组管理（自模型路由页迁入，归属用户管理） -->
+                <div class="table-card">
+                    <div class="table-header">
+                        <h3 class="table-title">用户组</h3>
+                    </div>
+                    <p style="font-size: 13px; color: #666; margin: 0 0 12px;">
+                        所有用户默认属于 default 组（可调用全部模型，按原价计费）。组内「可调用模型」留空表示不限制，支持「前缀*」通配；价格倍率作用于该组全部计费。
+                    </p>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>组名</th>
+                                <th>可调用模型（空 = 全部）</th>
+                                <th>价格倍率</th>
+                                <th>说明</th>
+                                <th style="width: 150px;">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ugTable">
+                            <tr><td colspan="5" style="text-align: center; color: #999; padding: 24px;">加载中...</td></tr>
+                        </tbody>
+                    </table>
+                    <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-top: 16px; padding-top: 16px; border-top: 1px dashed #ececf0;">
+                        <label style="font-size: 13px; color: #666;">新增 / 更新组：</label>
+                        <input type="text" id="ug-name" placeholder="组名" style="padding:8px 12px; border:1px solid #e5e7eb; border-radius:8px; width:140px;">
+                        <input type="text" id="ug-models" placeholder="可调用模型 a,b,前缀*（留空 = 全部）" style="padding:8px 12px; border:1px solid #e5e7eb; border-radius:8px; width:260px;">
+                        <input type="number" id="ug-mult" step="0.1" value="1.0" title="价格倍率" style="padding:8px 12px; border:1px solid #e5e7eb; border-radius:8px; width:90px;">
+                        <input type="text" id="ug-note" placeholder="备注" style="padding:8px 12px; border:1px solid #e5e7eb; border-radius:8px; width:160px;">
+                        <button class="btn btn-primary btn-sm" data-action="saveUserGroup">保存</button>
+                    </div>
+                    <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-top: 12px;">
+                        <label style="font-size: 13px; color: #666;">用户分组：</label>
+                        <select id="ug-assign-user" style="padding:8px 12px; border:1px solid #e5e7eb; border-radius:8px; width:180px;"></select>
+                        <select id="ug-assign-group" style="padding:8px 12px; border:1px solid #e5e7eb; border-radius:8px; width:140px;"></select>
+                        <button class="btn btn-secondary btn-sm" data-action="assignUserGroup">划入</button>
+                    </div>
+                </div>
             </div>
 
             <!-- 管理员 - 数据统计页 -->
@@ -1539,6 +1626,9 @@
                 <div class="chart-card">
                     <div class="chart-header">
                         <h3 class="chart-title">平台每日费用（近 30 天）</h3>
+                        <div class="chart-tabs">
+                            <a class="chart-tab" href="/api/admin/stats/usage-export?days=30" download>导出 CSV</a>
+                        </div>
                     </div>
                     <div style="height: 300px; position: relative; padding: 20px;">
                         <canvas id="adminUsageDailyChart"></canvas>
@@ -1548,9 +1638,70 @@
                     <div class="chart-header">
                         <h3 class="chart-title">模型用量分布（近 30 天费用）</h3>
                     </div>
-                    <div style="height: 300px; position: relative; padding: 20px;">
+                    <div class="wb-loading" style="height: 300px; position: relative; padding: 20px;">
                         <canvas id="adminModelUsageChart"></canvas>
                     </div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3 class="chart-title">用户用量排行 TOP10（近 30 天，按费用）</h3>
+                    </div>
+                    <table style="width:100%; border-collapse:collapse;">
+                        <thead>
+                            <tr>
+                                <th style="text-align:left; padding:10px 14px; font-size:12px; color:#666; border-bottom:1px solid #f0f0f0;">用户</th>
+                                <th style="text-align:right; padding:10px 14px; font-size:12px; color:#666; border-bottom:1px solid #f0f0f0;">请求数</th>
+                                <th style="text-align:right; padding:10px 14px; font-size:12px; color:#666; border-bottom:1px solid #f0f0f0;">字符量</th>
+                                <th style="text-align:right; padding:10px 14px; font-size:12px; color:#666; border-bottom:1px solid #f0f0f0;">费用 (¥)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="topUsersBody">
+                            <tr><td colspan="4" style="text-align:center; color:#999; padding:24px;">加载中...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3 class="chart-title">上游延迟分位（进程累计，P50 / P95 / P99）</h3>
+                    </div>
+                    <table style="width:100%; border-collapse:collapse;">
+                        <thead>
+                            <tr>
+                                <th style="text-align:left; padding:10px 14px; font-size:12px; color:#666; border-bottom:1px solid #f0f0f0;">模型</th>
+                                <th style="text-align:left; padding:10px 14px; font-size:12px; color:#666; border-bottom:1px solid #f0f0f0;">上游</th>
+                                <th style="text-align:right; padding:10px 14px; font-size:12px; color:#666; border-bottom:1px solid #f0f0f0;">调用数</th>
+                                <th style="text-align:right; padding:10px 14px; font-size:12px; color:#666; border-bottom:1px solid #f0f0f0;">均值</th>
+                                <th style="text-align:right; padding:10px 14px; font-size:12px; color:#666; border-bottom:1px solid #f0f0f0;">P50</th>
+                                <th style="text-align:right; padding:10px 14px; font-size:12px; color:#666; border-bottom:1px solid #f0f0f0;">P95</th>
+                                <th style="text-align:right; padding:10px 14px; font-size:12px; color:#666; border-bottom:1px solid #f0f0f0;">P99</th>
+                            </tr>
+                        </thead>
+                        <tbody id="upstreamLatencyBody">
+                            <tr><td colspan="7" style="text-align:center; color:#999; padding:24px;">加载中...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3 class="chart-title">计费校准（字符估算 vs 上游真实 token，近 30 天）</h3>
+                    </div>
+                    <table style="width:100%; border-collapse:collapse;">
+                        <thead>
+                            <tr>
+                                <th style="text-align:left; padding:10px 14px; font-size:12px; color:#666; border-bottom:1px solid #f0f0f0;">模型</th>
+                                <th style="text-align:right; padding:10px 14px; font-size:12px; color:#666; border-bottom:1px solid #f0f0f0;">请求数</th>
+                                <th style="text-align:right; padding:10px 14px; font-size:12px; color:#666; border-bottom:1px solid #f0f0f0;">估算 token（字符/3）</th>
+                                <th style="text-align:right; padding:10px 14px; font-size:12px; color:#666; border-bottom:1px solid #f0f0f0;">真实 token</th>
+                                <th style="text-align:right; padding:10px 14px; font-size:12px; color:#666; border-bottom:1px solid #f0f0f0;">缓存命中率</th>
+                                <th style="text-align:right; padding:10px 14px; font-size:12px; color:#666; border-bottom:1px solid #f0f0f0;">推理占比</th>
+                                <th style="text-align:right; padding:10px 14px; font-size:12px; color:#666; border-bottom:1px solid #f0f0f0;">偏差率</th>
+                                <th style="text-align:right; padding:10px 14px; font-size:12px; color:#666; border-bottom:1px solid #f0f0f0;">已捕获</th>
+                            </tr>
+                        </thead>
+                        <tbody id="calibrationBody">
+                            <tr><td colspan="6" style="text-align:center; color:#999; padding:24px;">加载中...</td></tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         <!-- 可用模型页 -->
@@ -1598,10 +1749,10 @@
                             d.appendChild(c); d.appendChild(b); el.appendChild(d);
                         });
                     } catch (e) {
-                        el.innerHTML = '<div class="empty">加载失败：' + e + '</div>';
+                        el.innerHTML = '<div class="empty">加载失败：' + esc(e) + '</div>';
                     }
                 }
-                loadModels();
+                // 不再在脚本解析期无条件请求：由 loadSection 按当前页签触发（刷新按钮可直接调用）
             </script>
         </div>
         <!-- 模型价格管理页（公开可查看，管理员可编辑） -->
@@ -1700,7 +1851,7 @@
                                 else { tier = 'standard'; label = '标准价'; }
                                 const si = document.createElement('div'); si.className = 'sched-item';
                                 si.innerHTML = '<span class="tier-tag ' + tier + '">' + label + '</span> '
-                                    + sc.start + ' ~ ' + sc.end + '：输入 <b>' + sc.input + '</b> / 输出 <b>' + sc.output + '</b>';
+                                    + esc(sc.start) + ' ~ ' + esc(sc.end) + '：输入 <b>' + esc(sc.input) + '</b> / 输出 <b>' + esc(sc.output) + '</b>';
                                 if (_isAdmin) {
                                     const del = document.createElement('button'); del.className = 'sched-del'; del.textContent = '删除';
                                     del.onclick = () => deleteSchedule(sc.id, row.model);
@@ -1768,7 +1919,7 @@
                     loadModelPrices();
                 } catch (e) { alert('删除失败：' + e); }
             }
-            loadModelPrices();
+            // 不再在脚本解析期无条件请求：由 loadSection 按当前页签触发（刷新按钮可直接调用）
         </script>
 
         <!-- 上游管理页 -->
@@ -1803,8 +1954,7 @@
         </style>
         <script nonce="{{ csp_nonce }}">
             let _upCache = {};
-            function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-            async function loadUpstreams() {
+        async function loadUpstreams() {
                 const el = document.getElementById('upstreamTable');
                 if (!el) return;
                 el.innerHTML = '<div class="empty">加载中...</div>';
@@ -1825,7 +1975,7 @@
                         d.innerHTML =
                             '<div><b>' + esc(u.name) + '</b></div>' +
                             '<div class="up-key">' + esc(u.base_url) + '</div>' +
-                            '<div class="up-key"><span id="upk-' + esc(u.name) + '">' + esc(u.api_key_masked) + '</span> <i class="bi bi-eye" style="cursor:pointer" data-action="toggleUpstreamKey" data-args="' + esc(u.name) + '" title="显示/隐藏"></i></div>' +
+                            '<div class="up-key"><span id="upk-' + esc(u.name) + '">' + esc(u.api_key_masked) + '</span> <i class="bi bi-eye" style="cursor:pointer" data-action="toggleUpstreamKey" data-args="' + esc(u.name) + '" title="显示/隐藏"></i>' + (u.api_keys && u.api_keys.length ? ' <span style="color:#6366f1; font-size:12px;">+' + u.api_keys.length + ' 备用</span>' : '') + '</div>' +
                             '<div>' + (u.priority != null ? u.priority : '') + '</div>' +
                             '<div>' + status + '</div>' +
                             '<div class="up-actions"><button class="icon-btn" data-action="openUpstreamModal" data-args="' + esc(u.name) + '">编辑</button><button class="icon-btn danger" data-action="deleteUpstream" data-args="' + esc(u.name) + '">删除</button></div>';
@@ -1840,15 +1990,18 @@
             }
             function openUpstreamModal(name) {
                 const u = name ? (_upCache[name] || {}) : {};
+                // 注意：CSP 含 nonce 时 'unsafe-inline' 被忽略，运行时插入的 style="..." 内联属性会被整体丢弃，
+                // 必须插入后再用 CSSOM（el.style.xxx = ...）设置样式，否则弹窗永远 display:none。
                 const html =
-                    '<div class="modal-overlay" id="upModal" style="display:flex;">' +
-                    '<div class="modal" style="width:520px;">' +
+                    '<div class="modal-overlay" id="upModal">' +
+                    '<div class="modal">' +
                     '<div class="modal-header"><h3 class="modal-title">' + (name ? '编辑上游' : '新增上游') + '</h3>' +
                     '<button class="modal-close" data-action="closeUpstreamModal"><i class="bi bi-x-lg"></i></button></div>' +
                     '<div class="modal-body">' +
                     '<div class="modal-field"><label>名称（唯一）</label><input id="up-name" value="' + esc(u.name || '') + '" ' + (name ? 'readonly' : '') + '></div>' +
                     '<div class="modal-field"><label>Base URL</label><input id="up-base" value="' + esc(u.base_url || '') + '"></div>' +
                     '<div class="modal-field"><label>API Key' + (name ? '（留空不修改）' : '') + '</label><input id="up-key" type="password" placeholder="' + (name ? '留空则不修改' : '') + '" value=""></div>' +
+                    '<div class="modal-field"><label>备用 Key 池（逗号分隔，可多把轮换；留空不修改，填空串清空）</label><textarea id="up-keys" rows="2" style="width:100%; padding:8px 10px; border:1px solid #d8dce6; border-radius:8px; font-size:13px; box-sizing:border-box;">' + esc((u.api_keys || []).join(', ')) + '</textarea></div>' +
                     '<div class="modal-field"><label>优先级（数字越小越优先）</label><input id="up-prio" type="number" value="' + (u.priority != null ? u.priority : 100) + '"></div>' +
                     '<div class="modal-field"><label>禁用模型（逗号分隔）</label><input id="up-dm" value="' + esc((u.disabled_models || []).join(', ')) + '"></div>' +
                     '<div class="modal-field"><label><input type="checkbox" id="up-enabled" ' + (u.enabled === false ? '' : 'checked') + '> 启用</label></div>' +
@@ -1858,17 +2011,26 @@
                     '</div></div>';
                 const old = document.getElementById('upModal'); if (old) old.remove();
                 document.body.insertAdjacentHTML('beforeend', html);
+                const m = document.getElementById('upModal');
+                if (m) {
+                    m.style.display = 'flex';
+                    m.style.alignItems = 'center';
+                    m.style.justifyContent = 'center';
+                    const box = m.querySelector('.modal');
+                    if (box) box.style.width = '520px';
+                }
             }
             function closeUpstreamModal() { const m = document.getElementById('upModal'); if (m) m.remove(); }
             async function saveUpstream(origName) {
                 const name = document.getElementById('up-name').value.trim();
                 const base = document.getElementById('up-base').value.trim();
                 const key = document.getElementById('up-key').value;
+                const keys = document.getElementById('up-keys') ? document.getElementById('up-keys').value : '';
                 const prio = parseInt(document.getElementById('up-prio').value || '100', 10);
                 const dm = document.getElementById('up-dm').value;
                 const enabled = document.getElementById('up-enabled').checked;
                 if (!name || !base) { alert('名称和 Base URL 必填'); return; }
-                const payload = { name, base_url: base, priority: prio, enabled, disabled_models: dm };
+                const payload = { name, base_url: base, priority: prio, enabled, disabled_models: dm, api_keys: keys };
                 if (key) payload.api_key = key;
                 try {
                     let r;
@@ -1975,6 +2137,39 @@
             });
         });
 
+        // 当前页签（服务端按 section 渲染，切换页签是整页导航，不存在客户端切页）
+        const _SECTION = {{ section|tojson }};
+
+        // 各页签真正需要的加载器。首屏只拉当前页数据：以前无论停在哪个页签都会把
+        // 充值记录、管理端三个列表、四张图表、模型列表、价格表全部拉一遍（管理员在概览页
+        // 约 10+ 个请求），现在按页签裁剪；手动点「刷新」时由按钮直接调用，不受 _loadedOnce 影响。
+        const _SECTION_LOADERS = {
+            overview:      ['loadApiKeys', 'loadOverviewUsage'],
+            usage:         ['loadUsagePage'],
+            apikeys:       ['loadApiKeys'],
+            recharge:      ['loadRechargeHistory'],
+            admin:         ['loadAdminRequests'],
+            users:         ['loadUserList'],
+            stats:         ['loadAdminStats'],
+            models:        ['loadModels'],
+            'model-prices': ['loadModelPrices'],
+            upstreams:     ['loadUpstreams']
+        };
+        // 需要管理员权限的页签，非管理员直接跳过，避免刷 403
+        const _ADMIN_SECTIONS = new Set(['admin', 'users', 'stats', 'upstreams']);
+        const _loadedOnce = new Set();
+
+        function loadSection(sec, force) {
+            if (_ADMIN_SECTIONS.has(sec) && !(userInfo && userInfo.is_admin)) return;
+            const names = _SECTION_LOADERS[sec] || [];
+            names.forEach(function (n) {
+                if (!force && _loadedOnce.has(n)) return;
+                _loadedOnce.add(n);
+                const fn = window[n];
+                if (typeof fn === 'function') fn();
+            });
+        }
+
         // 加载用户信息
         async function loadUserInfo() {
             try {
@@ -1985,26 +2180,14 @@
                 }
 
                 userInfo = data;
-                
+
                 // 更新 UI
                 updateUserUI();
-                
-                // 加载 API Keys
-                loadApiKeys();
-                
-                // 加载充值记录
-                loadRechargeHistory();
-                
-                // 如果是管理员，加载管理员数据
-                if (userInfo.is_admin) {
-                    showAdminMenu();
-                    loadAdminRequests();
-                    loadUserList();
-                    loadAdminStats();
-                }
 
-                // 默认展示的概览页：加载费用消耗趋势
-                loadOverviewCharts();
+                if (userInfo.is_admin) showAdminMenu();
+
+                // 只加载当前页签需要的数据
+                loadSection(_SECTION);
 
             } catch (e) {
                 console.error('加载用户信息失败:', e);
@@ -2014,14 +2197,16 @@
 
         // 更新用户 UI
         function updateUserUI() {
+            const username = (userInfo && userInfo.username) || '';
+
             // 头像
             const avatarText = document.getElementById('avatarText');
-            avatarText.textContent = userInfo.username.charAt(0).toUpperCase();
-            
+            avatarText.textContent = (username.charAt(0) || '?').toUpperCase();
+
             // 用户名和 UID
-            document.getElementById('userName').textContent = userInfo.username;
-            document.getElementById('userUid').textContent = 'UID: ' + userInfo.uid;
-            
+            document.getElementById('userName').textContent = username;
+            document.getElementById('userUid').textContent = 'UID: ' + (userInfo.uid || '');
+
             // 余额
             const balence = userInfo.balence || 0;
             document.getElementById('balenceAmount').textContent = '¥' + balence.toFixed(2);
@@ -2067,36 +2252,19 @@
             
             // 关闭用户菜单
             document.getElementById('userDropdown').classList.remove('show');
-            
-            // 如果切换到统计页面，重新加载图表（确保在可见状态下渲染）
-            if (pageName === 'stats' && typeof loadChartData === 'function') {
-                setTimeout(loadChartData, 100);
-            }
-            // 概览页 / 用量页：切换时刷新对应图表
-            if (pageName === 'overview' && typeof loadOverviewUsage === 'function') {
-                setTimeout(() => loadOverviewUsage(7), 100);
-            }
-            if (pageName === 'usage' && typeof loadUsagePage === 'function') {
-                setTimeout(() => loadUsagePage(7), 100);
-            }
+
+            // 切到目标页签时按需加载其数据（图表需在容器可见后再渲染）
+            setTimeout(() => loadSection(pageName), 100);
         }
 
-        // 服务端按 section 渲染对应页签（每个页签独立地址，无客户端切换）
-        const _SECTION = {{ section|tojson }};
-        function loadSection(sec) {
-            if (sec === 'usage' && typeof loadUsagePage === 'function') setTimeout(() => loadUsagePage(7), 100);
-            else if (sec === 'stats' && typeof loadChartData === 'function') setTimeout(loadChartData, 100);
-        }
-        loadSection(_SECTION);
-
-        // 加载 API Keys
-        async function loadApiKeys() {
+        // 加载 API Keys（复用已就绪的 userInfo，不再重复调用 getUserInfo）
+        function loadApiKeys() {
             try {
-                const data = await window.getUserInfo();
-                const apikeys = (data && data.apikeys) || [];
-                
+                const apikeys = (userInfo && userInfo.apikeys) || [];
+
                 const list = document.getElementById('apikeyList');
-                
+                if (!list) return;
+
                 if (apikeys.length === 0) {
                     list.innerHTML = `
                         <div style="text-align: center; color: #999; padding: 40px;">
@@ -2113,23 +2281,23 @@
                             <i class="bi bi-key-fill"></i>
                         </div>
                         <div class="apikey-info">
-                            <div class="apikey-value" id="key-${index}">${maskApiKey(key)}</div>
+                            <div class="apikey-value" id="key-${index}">${esc(maskApiKey(key))}</div>
                             <div style="font-size: 12px; color: #999;">创建于: 未知</div>
                         </div>
                         <div class="apikey-actions">
-                            <button class="icon-btn" data-action="toggleKeyVisibility" data-args="${index}\u0001'${key}'" title="显示/隐藏">
+                            <button class="icon-btn" data-action="toggleKeyVisibility" data-args="${index}\u0001'${esc(key)}'" title="显示/隐藏">
                                 <i class="bi bi-eye" id="eye-${index}"></i>
                             </button>
-                            <button class="icon-btn" data-action="copyApiKey" data-args="'${key}'" title="复制">
+                            <button class="icon-btn" data-action="copyApiKey" data-args="'${esc(key)}'" title="复制">
                                 <i class="bi bi-files"></i>
                             </button>
-                            <button class="icon-btn danger" data-action="deleteApiKey" data-args="'${key}'" title="删除">
+                            <button class="icon-btn danger" data-action="deleteApiKey" data-args="'${esc(key)}'" title="删除">
                                 <i class="bi bi-trash"></i>
                             </button>
                         </div>
                     </div>
                 `).join('');
-                
+
             } catch (e) {
                 console.error('加载 API Keys 失败:', e);
             }
@@ -2137,6 +2305,7 @@
 
         // 隐藏 API Key
         function maskApiKey(key) {
+            key = key == null ? '' : String(key);
             if (key.length <= 10) return key;
             return key.substring(0, 8) + '...' + key.substring(key.length - 4);
         }
@@ -2264,14 +2433,14 @@
                 tbody.innerHTML = requests.map(req => `
                     <tr>
                         <td>${formatDate(req.created_at)}</td>
-                        <td style="font-weight: 600;">¥${req.amount.toFixed(2)}</td>
+                        <td style="font-weight: 600;">¥${(Number(req.amount) || 0).toFixed(2)}</td>
                         <td>
-                            <span class="status-badge ${req.status}">
-                                ${getStatusText(req.status)}
+                            <span class="status-badge ${esc(req.status)}">
+                                ${esc(getStatusText(req.status))}
                             </span>
                         </td>
                         <td>${req.processed_at ? formatDate(req.processed_at) : '-'}</td>
-                        <td>${req.admin_remark || '-'}</td>
+                        <td>${req.pay_channel === 'analogbank' ? '[analogBank 在线支付] ' : ''}${esc(req.admin_remark) || '-'}</td>
                     </tr>
                 `).join('');
                 
@@ -2283,9 +2452,10 @@
         // 状态文本
         function getStatusText(status) {
             const statusMap = {
-                'pending': '待审核',
-                'approved': '已通过',
-                'rejected': '已拒绝'
+                'pending': '待支付/待审核',
+                'approved': '已到账',
+                'rejected': '已拒绝',
+                'failed': '下单失败'
             };
             return statusMap[status] || status;
         }
@@ -2338,24 +2508,24 @@
                     `;
                     return;
                 }
-                
+
                 tbody.innerHTML = requests.map(req => `
                     <tr>
                         <td>${formatDate(req.created_at)}</td>
-                        <td style="font-weight: 500;">${req.user_name}</td>
-                        <td style="font-family: monospace; font-size: 12px;">${req.user_uid}</td>
-                        <td style="font-weight: 600;">¥${req.amount.toFixed(2)}</td>
+                        <td style="font-weight: 500;">${esc(req.user_name)}</td>
+                        <td style="font-family: monospace; font-size: 12px;">${esc(req.user_uid)}</td>
+                        <td style="font-weight: 600;">¥${(Number(req.amount) || 0).toFixed(2)}</td>
                         <td>
-                            <span class="status-badge ${req.status}">
-                                ${getStatusText(req.status)}
+                            <span class="status-badge ${esc(req.status)}">
+                                ${esc(getStatusText(req.status))}
                             </span>
                         </td>
                         <td>
                             ${req.status === 'pending' ? `
-                                <button class="btn btn-primary" style="padding: 6px 12px; font-size: 12px;" data-action="approveRequest" data-args="'${req.request_id}'">
+                                <button class="btn btn-primary" style="padding: 6px 12px; font-size: 12px;" data-action="approveRequest" data-args="'${esc(req.request_id)}'">
                                     通过
                                 </button>
-                                <button class="btn btn-danger" style="padding: 6px 12px; font-size: 12px;" data-action="rejectRequest" data-args="'${req.request_id}'">
+                                <button class="btn btn-danger" style="padding: 6px 12px; font-size: 12px;" data-action="rejectRequest" data-args="'${esc(req.request_id)}'">
                                     拒绝
                                 </button>
                             ` : '-'}
@@ -2429,23 +2599,23 @@
                 if (users.length === 0) {
                     tbody.innerHTML = `
                         <tr>
-                            <td colspan="7" style="text-align: center; color: #999; padding: 40px;">
+                            <td colspan="8" style="text-align: center; color: #999; padding: 40px;">
                                 暂无用户
                             </td>
                         </tr>
                     `;
                     return;
                 }
-                
+
                 tbody.innerHTML = users.map(user => `
                     <tr>
-                        <td style="font-family: monospace; font-size: 12px;">${user.uid}</td>
-                        <td style="font-weight: 500;">${user.user_name}</td>
-                        <td style="font-weight: 600;">¥${(user.balence || 0).toFixed(2)}</td>
-                        <td style="color: ${(user.max_overdraft || 0) > 0 ? '#10b981' : '#9ca3af'}; font-weight: 500;">
-                            ${(user.max_overdraft || 0) > 0 ? '¥' + (user.max_overdraft || 0).toFixed(2) : '未开通'}
+                        <td style="font-family: monospace; font-size: 12px;">${esc(user.uid)}</td>
+                        <td style="font-weight: 500;">${esc(user.user_name)}</td>
+                        <td style="font-weight: 600;">¥${(Number(user.balence) || 0).toFixed(2)}</td>
+                        <td style="color: ${(Number(user.max_overdraft) || 0) > 0 ? '#10b981' : '#9ca3af'}; font-weight: 500;">
+                            ${(Number(user.max_overdraft) || 0) > 0 ? '¥' + (Number(user.max_overdraft) || 0).toFixed(2) : '未开通'}
                         </td>
-                        <td>${(user.apikeys || '').split(',').filter(k => k).length}</td>
+                        <td>${(String(user.apikeys || '')).split(',').filter(k => k).length}</td>
                         <td>
                             <span class="status-badge ${user.is_banned ? 'rejected' : 'approved'}">
                                 ${user.is_banned ? '已封禁' : '正常'}
@@ -2453,28 +2623,28 @@
                         </td>
                         <td>${formatDate(user.created_at)}</td>
                         <td>
-                            <button class="icon-btn" data-action="adjustBalance" data-args="'${user.uid}'" title="调整余额">
+                            <button class="icon-btn" data-action="adjustBalance" data-args="'${esc(user.uid)}'" title="调整余额">
                                 <i class="bi bi-wallet2"></i>
                             </button>
-                            <button class="icon-btn" data-action="changeEmail" data-args="'${user.uid}'\u0001'${user.email || ''}'" title="修改邮箱">
+                            <button class="icon-btn" data-action="changeEmail" data-args="'${esc(user.uid)}'\u0001'${esc(user.email)}'" title="修改邮箱">
                                 <i class="bi bi-envelope"></i>
                             </button>
-                            <button class="icon-btn" data-action="changePassword" data-args="'${user.uid}'" title="修改密码">
+                            <button class="icon-btn" data-action="changePassword" data-args="'${esc(user.uid)}'" title="修改密码">
                                 <i class="bi bi-key"></i>
                             </button>
-                            <button class="icon-btn ${(user.max_overdraft || 0) > 0 ? 'success' : ''}" data-action="setOverdraft" data-args="'${user.uid}'\u0001'${user.user_name}'\u0001${user.max_overdraft || 0}" title="设置超支限额">
+                            <button class="icon-btn ${(Number(user.max_overdraft) || 0) > 0 ? 'success' : ''}" data-action="setOverdraft" data-args="'${esc(user.uid)}'\u0001'${esc(user.user_name)}'\u0001${Number(user.max_overdraft) || 0}" title="设置超支限额">
                                 <i class="bi bi-credit-card"></i>
                             </button>
                             ${user.is_banned ? `
-                                <button class="icon-btn" data-action="unbanUser" data-args="'${user.uid}'" title="解封">
+                                <button class="icon-btn" data-action="unbanUser" data-args="'${esc(user.uid)}'" title="解封">
                                     <i class="bi bi-unlock"></i>
                                 </button>
                             ` : `
-                                <button class="icon-btn danger" data-action="banUser" data-args="'${user.uid}'" title="封禁">
+                                <button class="icon-btn danger" data-action="banUser" data-args="'${esc(user.uid)}'" title="封禁">
                                     <i class="bi bi-slash-circle"></i>
                                 </button>
                             `}
-                            <button class="icon-btn danger" data-action="deleteUser" data-args="'${user.uid}'\u0001'${user.user_name}'" title="删除用户">
+                            <button class="icon-btn danger" data-action="deleteUser" data-args="'${esc(user.uid)}'\u0001'${esc(user.user_name)}'" title="删除用户">
                                 <i class="bi bi-trash"></i>
                             </button>
                         </td>
@@ -2605,9 +2775,113 @@
             });
         }
 
+        // ============ 用户组管理（自模型路由页迁入） ============
+        let _ugGroups = {};
+        async function loadUserGroups() {
+            try {
+                const res = await fetch('/api/admin/user-groups');
+                const data = await res.json();
+                if (!res.ok) { showToast(data.error || '用户组加载失败', 'error'); return; }
+                _ugGroups = data.groups || {};
+                const names = Object.keys(_ugGroups);
+                const tbody = document.getElementById('ugTable');
+                if (tbody) {
+                    tbody.innerHTML = names.length ? names.map(n => {
+                        const g = _ugGroups[n];
+                        return '<tr>'
+                            + '<td style="font-family: Consolas, Menlo, monospace;">' + esc(n) + '</td>'
+                            + '<td style="font-family: Consolas, Menlo, monospace;">' + esc((g.allowed_models || []).join(', ') || '（全部）') + '</td>'
+                            + '<td>' + esc(g.price_multiplier) + '</td>'
+                            + '<td>' + esc(g.note || '') + '</td>'
+                            + '<td>' + (n === 'default' ? '<span style="color:#9ca3af; font-size:12px;">内置</span>'
+                                : '<button class="btn btn-secondary" style="padding:4px 10px; font-size:12px;" data-action="deleteUserGroup" data-args="' + esc(n) + '">删除</button>') + '</td>'
+                            + '</tr>';
+                    }).join('') : '<tr><td colspan="5" style="text-align: center; color: #999; padding: 24px;">暂无用户组</td></tr>';
+                }
+                const selU = document.getElementById('ug-assign-user');
+                if (selU) {
+                    selU.innerHTML = (data.users || []).map(u =>
+                        '<option value="' + esc(u.user_name) + '">' + esc(u.user_name) + '（' + esc(u.user_group || 'default') + '）</option>'
+                    ).join('');
+                }
+                const selG = document.getElementById('ug-assign-group');
+                if (selG) {
+                    selG.innerHTML = names.map(n => '<option value="' + esc(n) + '">' + esc(n) + '</option>').join('');
+                }
+            } catch (e) {
+                showToast('网络错误', 'error');
+            }
+        }
+
+        async function saveUserGroup() {
+            const name = document.getElementById('ug-name').value.trim();
+            if (!name) { showToast('请输入组名', 'error'); return; }
+            const models = document.getElementById('ug-models').value.split(',').map(s => s.trim()).filter(Boolean);
+            try {
+                const res = await fetch('/api/admin/user-groups', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: name,
+                        allowed_models: models,
+                        price_multiplier: parseFloat(document.getElementById('ug-mult').value) || 1.0,
+                        note: document.getElementById('ug-note').value.trim()
+                    })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    showToast('用户组已保存', 'success');
+                    loadUserGroups();
+                } else {
+                    showToast(data.error || '保存失败', 'error');
+                }
+            } catch (e) {
+                showToast('网络错误', 'error');
+            }
+        }
+
+        async function deleteUserGroup(name) {
+            showConfirm('删除用户组', `确定要删除用户组「${name}」吗？组内用户将回退到 default 组。`, async () => {
+                try {
+                    const res = await fetch('/api/admin/user-groups/' + encodeURIComponent(name), { method: 'DELETE' });
+                    const data = await res.json();
+                    if (res.ok) {
+                        showToast('用户组已删除', 'success');
+                        loadUserGroups();
+                    } else {
+                        showToast(data.error || '删除失败', 'error');
+                    }
+                } catch (e) {
+                    showToast('网络错误', 'error');
+                }
+            });
+        }
+
+        async function assignUserGroup() {
+            const u = document.getElementById('ug-assign-user').value;
+            const g = document.getElementById('ug-assign-group').value;
+            if (!u || !g) { showToast('请选择用户与用户组', 'error'); return; }
+            try {
+                const res = await fetch('/api/admin/user-groups/assign', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user: u, group: g })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    showToast(`已将 ${u} 划入 ${g}`, 'success');
+                    loadUserGroups();
+                    loadUserList();
+                } else {
+                    showToast(data.error || '操作失败', 'error');
+                }
+            } catch (e) {
+                showToast('网络错误', 'error');
+            }
+        }
+
         // 切换超支权限
-        async function toggleOverdraft(uid, currentState) {
-            const newState = !currentState;
+        async function toggleOverdraft(uid, currentState) {            const newState = !currentState;
             const action = newState ? '开启' : '关闭';
             showConfirm('超支权限', `确定要${action}该用户的超支权限吗？`, async () => {
                 try {
@@ -2619,7 +2893,7 @@
                     const data = await res.json();
                     if (data.success) {
                         showToast(`已${action}超支权限`, 'success');
-                        loadUsers();  // 重新加载用户列表
+                        loadUserList();  // 重新加载用户列表（原为不存在的 loadUsers，会抛 ReferenceError）
                     } else {
                         showToast(data.error || '操作失败', 'error');
                     }
@@ -2800,49 +3074,46 @@
                 document.getElementById('totalBalance').textContent = '¥' + (data.total_balence || 0).toFixed(2);
                 document.getElementById('totalApikeys').textContent = data.total_apikeys || 0;
                 document.getElementById('pendingRequests').textContent = data.pending_requests || 0;
-                
-            // 加载图表
-            loadChartData();
-            loadAdminUsageCharts();
+
+                // 加载图表（原先在 try 内外各调一次，导致每张图都请求两遍）
+                loadChartData();
+                loadAdminUsageCharts();
 
             } catch (e) {
                 console.error('加载统计数据失败:', e);
             }
-
-            // 加载用户增长趋势图
-            loadChartData();
-            loadAdminUsageCharts();
         }
 
         // 图表相关
         let userGrowthChart = null;
         let currentChartPeriod = 7;
 
-        // 切换图表时间范围
+        // 切换图表时间范围（只在统计页自己的 tab 组内切换，避免误改其它页签的激活态）
         function switchChartPeriod(days) {
             currentChartPeriod = days;
-            // 更新 tab 样式
-            document.querySelectorAll('.chart-tab').forEach(tab => {
-                tab.classList.remove('active');
-            });
-            // 找到对应的 tab 并添加 active（简单处理，根据文本匹配）
-            const tabs = document.querySelectorAll('.chart-tab');
-            const labels = {7: '7 天', 30: '30 天', 90: '90 天'};
-            tabs.forEach(tab => {
-                if (tab.textContent.trim() === labels[days]) {
-                    tab.classList.add('active');
-                }
-            });
+            const group = document.querySelector('#page-stats .chart-tabs');
+            if (group) {
+                group.querySelectorAll('.chart-tab').forEach(tab => {
+                    tab.classList.toggle('active', tab.getAttribute('data-args') === String(days));
+                });
+            }
             // 重新加载数据
             loadChartData();
         }
 
         // 加载图表数据
         async function loadChartData() {
+            const _cv = document.getElementById('adminUserGrowthChart');
+            if (window.wbShimmer && _cv) wbShimmer.start(_cv);
+            let _rendered = false;
             try {
                 const canvas = document.getElementById('adminUserGrowthChart');
                 if (!canvas) return;
-                
+                if (typeof Chart === 'undefined') {
+                    console.warn('Chart.js 未加载，跳过图表渲染: adminUserGrowthChart');
+                    return;
+                }
+
                 const response = await fetch(`/api/admin/stats/user-growth?days=${currentChartPeriod}`);
                 const data = await response.json();
                 
@@ -2860,6 +3131,7 @@
                     
                     // 创建新图表
                     const ctx = canvas.getContext('2d');
+                    if (window.wbStepBusy) wbStepBusy(true);
                     userGrowthChart = new Chart(ctx, {
                         type: 'bar',
                         data: {
@@ -2877,6 +3149,10 @@
                         options: {
                             responsive: true,
                             maintainAspectRatio: false,
+                            animation: { onComplete: function () {
+                                if (window.wbStepBusy) wbStepBusy(false);
+                                if (window.wbShimmer) wbShimmer.done(canvas);
+                            } },
                             plugins: {
                                 legend: {
                                     display: false
@@ -2911,9 +3187,12 @@
                             }
                         }
                     });
+                    _rendered = true;
                 }
             } catch (e) {
                 console.error('加载图表数据失败:', e);
+            } finally {
+                if (window.wbShimmer && _cv && !_rendered) wbShimmer.done(_cv);
             }
         }
 
@@ -2931,50 +3210,164 @@
         function renderBarChart(chartVar, canvasId, labels, datasets, yTitle) {
             const canvas = document.getElementById(canvasId);
             if (!canvas) return chartVar;
+            if (typeof Chart === 'undefined') {
+                console.warn('Chart.js 未加载，跳过图表渲染:', canvasId);
+                return chartVar;
+            }
             if (chartVar) { try { chartVar.destroy(); } catch (e) {} }
             const ctx = canvas.getContext('2d');
+            // 任一数据集声明了 yAxisID='y1' 时，追加右侧第二轴（如费用 + 请求量双轴）
+            const needsDual = datasets.some(d => d.yAxisID === 'y1');
+            const scales = {
+                x: { grid: { display: false }, ticks: { color: '#999', maxRotation: 60, minRotation: 0 } },
+                y: { beginAtZero: true, grid: { color: '#f0f0f0' }, ticks: { color: '#999' },
+                     title: { display: !!yTitle, text: yTitle } }
+            };
+            if (needsDual) {
+                scales.y1 = { position: 'right', beginAtZero: true, grid: { drawOnChartArea: false }, ticks: { color: '#999' } };
+            }
+            if (window.wbStepBusy) wbStepBusy(true);   // 入场动画期间占用进度条
             chartVar = new Chart(ctx, {
                 type: 'bar',
                 data: { labels: labels, datasets: datasets },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    animation: { onComplete: function () {
+                        if (window.wbStepBusy) wbStepBusy(false);
+                        if (window.wbShimmer) wbShimmer.done(canvas);
+                    } },
                     plugins: {
                         legend: { display: datasets.length > 1 },
                         tooltip: { backgroundColor: 'rgba(0,0,0,0.8)', titleColor: '#fff', bodyColor: '#fff', padding: 12, cornerRadius: 8 }
                     },
-                    scales: {
-                        x: { grid: { display: false }, ticks: { color: '#999', maxRotation: 60, minRotation: 0 } },
-                        y: { beginAtZero: true, grid: { color: '#f0f0f0' }, ticks: { color: '#999' },
-                             title: { display: !!yTitle, text: yTitle } }
-                    }
+                    scales: scales
                 }
             });
             return chartVar;
         }
 
+        // ---- DeepSeek 风格堆叠柱：一根柱 = 当天各模型费用分段，悬停显示明细 ----
+        const STACK_PALETTE = ['#4f7cff', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#06b6d4', '#64748b'];
+
+        function renderStackedUsageChart(chartVar, canvasId, labels, md, yTitle, maxBar) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return chartVar;
+            if (typeof Chart === 'undefined') {
+                console.warn('Chart.js 未加载，跳过图表渲染:', canvasId);
+                return chartVar;
+            }
+            if (chartVar) { try { chartVar.destroy(); } catch (e) {} }
+            const models = (md && md.models) || [];
+            // 最后一个数据集位于堆叠最顶部，由它负责柱顶圆角
+            const datasets = models.map((m, i) => {
+                const c = STACK_PALETTE[i % STACK_PALETTE.length];
+                const isTop = i === models.length - 1;
+                return {
+                    label: m,
+                    data: (md.costs && md.costs[m]) || [],
+                    _req: (md.requests && md.requests[m]) || [],
+                    _tok: (md.tokens && md.tokens[m]) || [],
+                    backgroundColor: c + 'd9',
+                    borderColor: c,
+                    borderWidth: 1,
+                    borderRadius: isTop ? 3 : 0,
+                    borderSkipped: false,
+                    maxBarThickness: maxBar || 26
+                };
+            });
+            const ctx = canvas.getContext('2d');
+            if (window.wbStepBusy) wbStepBusy(true);   // 入场动画期间占用进度条
+            return new Chart(ctx, {
+                type: 'bar',
+                data: { labels: labels, datasets: datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    animation: { onComplete: function () {
+                        if (window.wbStepBusy) wbStepBusy(false);
+                        if (window.wbShimmer) wbShimmer.done(canvas);
+                    } },
+                    plugins: {
+                        legend: {
+                            display: datasets.length > 1,
+                            position: 'bottom',
+                            labels: { boxWidth: 9, boxHeight: 9, usePointStyle: true, pointStyle: 'rectRounded', padding: 14 }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(0,0,0,0.85)',
+                            titleColor: '#fff', bodyColor: '#e5e7eb', footerColor: '#9ca3af',
+                            padding: 12, cornerRadius: 8,
+                            callbacks: {
+                                label: function (c) {
+                                    const v = c.parsed.y;
+                                    if (!v) return null;   // 当天该模型无用量则不显示
+                                    return ' ' + c.dataset.label + ': ¥' + Number(v).toFixed(4);
+                                },
+                                footer: function (items) {
+                                    if (!items || !items.length) return '';
+                                    const idx = items[0].dataIndex;
+                                    const lines = [];
+                                    let sumReq = 0, sumCost = 0;
+                                    items.forEach(it => {
+                                        const r = (it.dataset._req || [])[idx] || 0;
+                                        const t = (it.dataset._tok || [])[idx] || 0;
+                                        if (r > 0) lines.push(it.dataset.label + ': ' + Number(r).toLocaleString() + ' 次 / ' + Number(t).toLocaleString() + ' tokens');
+                                        sumReq += Number(r) || 0;
+                                        sumCost += Number(it.parsed.y) || 0;
+                                    });
+                                    lines.push('合计: ¥' + sumCost.toFixed(4) + ' · ' + sumReq.toLocaleString() + ' 次请求');
+                                    return lines;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: { stacked: true, grid: { display: false }, ticks: { color: '#999', maxRotation: 60, minRotation: 0 } },
+                        y: { stacked: true, beginAtZero: true, grid: { color: '#f0f0f0' }, ticks: { color: '#999' },
+                             title: { display: !!yTitle, text: yTitle } }
+                    }
+                }
+            });
+        }
+
         // ---- 概览页：费用消耗趋势 ----
         let overviewUsageChart = null;
-        function loadOverviewCharts() { loadOverviewUsage(7); }
         async function loadOverviewUsage(days) {
+            days = days || 7;   // 由 loadSection 无参调用时取默认 7 天
+            const _cv = document.getElementById('overviewUsageChart');
+            if (window.wbShimmer && _cv) wbShimmer.start(_cv);
+            let _rendered = false;
             try {
                 const r = await fetch(`/api/usage/summary?days=${days}`);
                 if (!r.ok) return;
                 const d = await r.json();
                 const labels = (d.daily && d.daily.dates || []).map(x => { const p = x.split('-'); return `${p[1]}-${p[2]}`; });
-                overviewUsageChart = renderBarChart(overviewUsageChart, 'overviewUsageChart', labels, [{
-                    label: '费用 (¥)',
-                    data: (d.daily && d.daily.costs) || [],
-                    backgroundColor: 'rgba(37, 99, 235, 0.65)',
-                    borderColor: '#2563eb', borderWidth: 1, borderRadius: 4, maxBarThickness: 28
-                }], '费用 (¥)');
-            } catch (e) { console.error('loadOverviewUsage failed:', e); }
+                const md = d.models_daily;
+                if (md && md.models && md.models.length) {
+                    overviewUsageChart = renderStackedUsageChart(overviewUsageChart, 'overviewUsageChart', labels, md, '费用 (¥)');
+                } else {
+                    overviewUsageChart = renderBarChart(overviewUsageChart, 'overviewUsageChart', labels, [{
+                        label: '费用 (¥)',
+                        data: (d.daily && d.daily.costs) || [],
+                        backgroundColor: 'rgba(37, 99, 235, 0.65)',
+                        borderColor: '#2563eb', borderWidth: 1, borderRadius: 4, maxBarThickness: 28
+                    }], '费用 (¥)');
+                }
+                _rendered = true;
+            } catch (e) { console.error('loadOverviewUsage failed:', e); } finally {
+                if (window.wbShimmer && _cv && !_rendered) wbShimmer.done(_cv);
+            }
         }
 
         // ---- 用量页 ----
         let usagePageChart = null;
-        function loadUsageCharts() { loadUsagePage(7); }
         async function loadUsagePage(days) {
+            days = days || 7;   // 由 loadSection 无参调用时取默认 7 天
+            const _cv = document.getElementById('usagePageChart');
+            if (window.wbShimmer && _cv) wbShimmer.start(_cv);
+            let _rendered = false;
             try {
                 const r = await fetch(`/api/usage/summary?days=${days}`);
                 if (!r.ok) return;
@@ -2985,13 +3378,21 @@
                 document.getElementById('usageOutputTokens').textContent = (t.output_tokens || 0).toLocaleString();
                 document.getElementById('usageRequests').textContent = (t.requests || 0).toLocaleString();
                 const labels = (d.daily && d.daily.dates || []).map(x => { const p = x.split('-'); return `${p[1]}-${p[2]}`; });
-                usagePageChart = renderBarChart(usagePageChart, 'usagePageChart', labels, [{
-                    label: '费用 (¥)',
-                    data: (d.daily && d.daily.costs) || [],
-                    backgroundColor: 'rgba(16, 163, 127, 0.65)',
-                    borderColor: '#10a37f', borderWidth: 1, borderRadius: 4, maxBarThickness: 28
-                }], '费用 (¥)');
-            } catch (e) { console.error('loadUsagePage failed:', e); }
+                const md = d.models_daily;
+                if (md && md.models && md.models.length) {
+                    usagePageChart = renderStackedUsageChart(usagePageChart, 'usagePageChart', labels, md, '费用 (¥)');
+                } else {
+                    usagePageChart = renderBarChart(usagePageChart, 'usagePageChart', labels, [{
+                        label: '费用 (¥)',
+                        data: (d.daily && d.daily.costs) || [],
+                        backgroundColor: 'rgba(16, 163, 127, 0.65)',
+                        borderColor: '#10a37f', borderWidth: 1, borderRadius: 4, maxBarThickness: 28
+                    }], '费用 (¥)');
+                }
+                _rendered = true;
+            } catch (e) { console.error('loadUsagePage failed:', e); } finally {
+                if (window.wbShimmer && _cv && !_rendered) wbShimmer.done(_cv);
+            }
             loadBillingTier();
         }
 
@@ -3002,7 +3403,7 @@
                 const r = await fetch('/api/pricing/current');
                 if (!r.ok) { el.innerHTML = '<span class="bb-time">当前计费时段：无权限查看</span>'; return; }
                 const j = await r.json();
-                let html = '<span class="bb-time">当前时间 ' + j.now + ' 计费档位：</span>';
+                let html = '<span class="bb-time">当前时间 ' + esc(j.now) + ' 计费档位：</span>';
                 const models = j.models || {};
                 const entries = Object.keys(models);
                 if (!entries.length) {
@@ -3012,7 +3413,8 @@
                         const t = models[m].tier;
                         const cls = t === 'peak' ? 'peak' : (t === 'offpeak' ? 'offpeak' : 'std');
                         const label = t === 'peak' ? '峰价' : (t === 'offpeak' ? '谷价' : '标准');
-                        html += '<span class="tier-pill ' + cls + '" title="' + m + '">' + m + ': ' + label + '</span>';
+                        // 模型名来自上游，可能含尖括号/引号，必须转义后再拼进 title 与文本
+                        html += '<span class="tier-pill ' + cls + '" title="' + esc(m) + '">' + esc(m) + ': ' + label + '</span>';
                     });
                 }
                 el.innerHTML = html;
@@ -3021,21 +3423,31 @@
             }
         }
 
-        // ---- 管理员：平台每日费用 + 模型用量分布 ----
+        // ---- 管理员：平台每日费用 + 模型用量分布 + 用户排行 + 上游延迟 ----
         let adminUsageDailyChart = null;
         let adminModelUsageChart = null;
         async function loadAdminUsageCharts() {
+            const _cvD = document.getElementById('adminUsageDailyChart');
+            const _cvM = document.getElementById('adminModelUsageChart');
+            if (window.wbShimmer) { if (_cvD) wbShimmer.start(_cvD); if (_cvM) wbShimmer.start(_cvM); }
+            let _okD = false, _okM = false;
             try {
                 const rd = await fetch('/api/admin/stats/usage-daily?days=30');
                 if (rd.ok) {
                     const d = await rd.json();
                     const labels = (d.daily && d.daily.dates || []).map(x => { const p = x.split('-'); return `${p[1]}-${p[2]}`; });
-                    adminUsageDailyChart = renderBarChart(adminUsageDailyChart, 'adminUsageDailyChart', labels, [{
-                        label: '平台每日费用 (¥)',
-                        data: (d.daily && d.daily.costs) || [],
-                        backgroundColor: 'rgba(245, 158, 11, 0.65)',
-                        borderColor: '#f59e0b', borderWidth: 1, borderRadius: 4, maxBarThickness: 22
-                    }], '费用 (¥)');
+                    const md = d.models_daily;
+                    if (md && md.models && md.models.length) {
+                        adminUsageDailyChart = renderStackedUsageChart(adminUsageDailyChart, 'adminUsageDailyChart', labels, md, '费用 (¥)', 22);
+                    } else {
+                        adminUsageDailyChart = renderBarChart(adminUsageDailyChart, 'adminUsageDailyChart', labels, [{
+                            label: '平台每日费用 (¥)',
+                            data: (d.daily && d.daily.costs) || [],
+                            backgroundColor: 'rgba(245, 158, 11, 0.65)',
+                            borderColor: '#f59e0b', borderWidth: 1, borderRadius: 4, maxBarThickness: 22
+                        }], '费用 (¥)');
+                    }
+                    _okD = true;
                 }
             } catch (e) { console.error('loadAdminUsageCharts(daily) failed:', e); }
             try {
@@ -3050,8 +3462,80 @@
                         backgroundColor: 'rgba(139, 92, 246, 0.65)',
                         borderColor: '#8b5cf6', borderWidth: 1, borderRadius: 4, maxBarThickness: 28
                     }], '费用 (¥)');
+                    _okM = true;
                 }
             } catch (e) { console.error('loadAdminUsageCharts(model) failed:', e); }
+            await loadAdminStatTables();
+            // 成功路径的 Shimmer 由图表 animation.onComplete 解除（盖住入场动画）；
+            // 这里只兜底失败/无数据路径
+            if (window.wbShimmer) { if (_cvD && !_okD) wbShimmer.done(_cvD); if (_cvM && !_okM) wbShimmer.done(_cvM); }
+        }
+
+        async function loadAdminStatTables() {
+            // 用户用量排行 TOP10
+            const tb = document.getElementById('topUsersBody');
+            if (tb) {
+                try {
+                    const r = await fetch('/api/admin/stats/top-users?days=30&limit=10');
+                    const d = await r.json();
+                    const users = d.users || [];
+                    tb.innerHTML = users.length ? users.map((u, i) => `
+                        <tr>
+                            <td style="padding:10px 14px; font-size:13px; border-bottom:1px solid #f0f0f0;">${i + 1}. <strong>${esc(u.user_name)}</strong></td>
+                            <td style="padding:10px 14px; font-size:13px; text-align:right; border-bottom:1px solid #f0f0f0;">${u.requests}</td>
+                            <td style="padding:10px 14px; font-size:13px; text-align:right; border-bottom:1px solid #f0f0f0;">${u.tokens}</td>
+                            <td style="padding:10px 14px; font-size:13px; text-align:right; border-bottom:1px solid #f0f0f0;">¥${Number(u.cost).toFixed(4)}</td>
+                        </tr>`).join('')
+                        : '<tr><td colspan="4" style="text-align:center; color:#999; padding:24px;">近 30 天暂无调用记录</td></tr>';
+                } catch (e) {
+                    tb.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#c0392b; padding:24px;">加载失败</td></tr>';
+                }
+            }
+            // 上游延迟分位
+            const lb = document.getElementById('upstreamLatencyBody');
+            if (lb) {
+                try {
+                    const r = await fetch('/api/admin/stats/upstream-latency');
+                    const d = await r.json();
+                    const rows = d.latencies || [];
+                    lb.innerHTML = rows.length ? rows.map(x => `
+                        <tr>
+                            <td style="padding:10px 14px; font-size:13px; border-bottom:1px solid #f0f0f0;">${esc(x.model)}</td>
+                            <td style="padding:10px 14px; font-size:13px; border-bottom:1px solid #f0f0f0;">${esc(x.upstream)}</td>
+                            <td style="padding:10px 14px; font-size:13px; text-align:right; border-bottom:1px solid #f0f0f0;">${x.count}</td>
+                            <td style="padding:10px 14px; font-size:13px; text-align:right; border-bottom:1px solid #f0f0f0;">${x.avg_ms} ms</td>
+                            <td style="padding:10px 14px; font-size:13px; text-align:right; border-bottom:1px solid #f0f0f0;">${x.p50_ms} ms</td>
+                            <td style="padding:10px 14px; font-size:13px; text-align:right; border-bottom:1px solid #f0f0f0;"><strong>${x.p95_ms} ms</strong></td>
+                            <td style="padding:10px 14px; font-size:13px; text-align:right; border-bottom:1px solid #f0f0f0;">${x.p99_ms} ms</td>
+                        </tr>`).join('')
+                        : '<tr><td colspan="7" style="text-align:center; color:#999; padding:24px;">服务重启后暂无上游调用</td></tr>';
+                } catch (e) {
+                    lb.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#c0392b; padding:24px;">加载失败</td></tr>';
+                }
+            }
+            // 计费校准（字符估算 vs 真实 token）
+            const cb = document.getElementById('calibrationBody');
+            if (cb) {
+                try {
+                    const r = await fetch('/api/admin/stats/billing-calibration?days=30');
+                    const d = await r.json();
+                    const rows = d.models || [];
+                    cb.innerHTML = rows.length ? rows.map(x => `
+                        <tr>
+                            <td style="padding:10px 14px; font-size:13px; border-bottom:1px solid #f0f0f0;">${esc(x.model)}</td>
+                            <td style="padding:10px 14px; font-size:13px; text-align:right; border-bottom:1px solid #f0f0f0;">${x.requests}</td>
+                            <td style="padding:10px 14px; font-size:13px; text-align:right; border-bottom:1px solid #f0f0f0;">${x.est_tokens}</td>
+                            <td style="padding:10px 14px; font-size:13px; text-align:right; border-bottom:1px solid #f0f0f0;">${x.captured > 0 ? x.real_tokens : '—'}</td>
+                            <td style="padding:10px 14px; font-size:13px; text-align:right; border-bottom:1px solid #f0f0f0;">${x.cache_hit_pct != null ? x.cache_hit_pct + '%' : '—'}</td>
+                            <td style="padding:10px 14px; font-size:13px; text-align:right; border-bottom:1px solid #f0f0f0;">${x.reasoning_pct != null ? x.reasoning_pct + '%' : '—'}</td>
+                            <td style="padding:10px 14px; font-size:13px; text-align:right; border-bottom:1px solid #f0f0f0;">${x.deviation_pct != null ? (x.deviation_pct > 0 ? '+' : '') + x.deviation_pct + '%' : '—'}</td>
+                            <td style="padding:10px 14px; font-size:13px; text-align:right; border-bottom:1px solid #f0f0f0;">${x.captured}/${x.requests}</td>
+                        </tr>`).join('')
+                        : '<tr><td colspan="8" style="text-align:center; color:#999; padding:24px;">近 30 天暂无调用记录</td></tr>';
+                } catch (e) {
+                    cb.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#c0392b; padding:24px;">加载失败</td></tr>';
+                }
+            }
         }
 
         // ========== 通用功能 ==========
@@ -3085,13 +3569,17 @@
             toast.className = 'toast';
             
             const iconClass = type === 'success' ? 'bi-check-lg' : type === 'error' ? 'bi-x-lg' : 'bi-info-lg';
-            
+
+            // message 可能来自接口返回的 error 文案（用户可控），一律用 textContent 写入
             toast.innerHTML = `
-                <div class="toast-icon ${type}">
-                    <i class="bi ${iconClass}"></i>
+                <div class="toast-icon ${esc(type)}">
+                    <i class="bi ${esc(iconClass)}"></i>
                 </div>
-                <div class="toast-message">${message}</div>
             `;
+            const msg = document.createElement('div');
+            msg.className = 'toast-message';
+            msg.textContent = message;
+            toast.appendChild(msg);
             
             container.appendChild(toast);
             
@@ -3153,6 +3641,185 @@
                 } catch (e) { /* ignore */ }
             }, 1500);
         }
+    </script>
+    <script nonce="{{ csp_nonce }}">
+    // ===== 令牌策略 & 兑换码（独立面板，事件直连） =====
+    (function () {
+        'use strict';
+        function esc(s) {
+            return String(s == null ? '' : s).replace(/[&<>"']/g,
+                c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+
+        // ---- 令牌策略面板 ----
+        async function loadTokenPolicies() {
+            const box = document.getElementById('tokenPolicyList');
+            if (!box) return;
+            try {
+                const r = await fetch('/api/tokens');
+                const j = await r.json();
+                const toks = j.tokens || [];
+                if (!toks.length) { box.innerHTML = '<p style="color:#999;">暂无令牌</p>'; return; }
+                box.innerHTML = toks.map(t => `
+                    <div class="token-policy-item" data-tid="${t.id}" style="border:1px solid #e8e8ee; border-radius:10px; padding:12px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+                            <div>
+                                <strong>${esc(t.label || '未命名令牌')}</strong>
+                                <span style="color:#888; font-size:12px; margin-left:6px;">${esc(t.key_hint)}…</span>
+                                ${t.is_active ? '' : '<span style="color:#c0392b; font-size:12px;">已停用</span>'}
+                                ${t.owner_name ? `<span style="color:#888; font-size:12px; margin-left:6px;">@${esc(t.owner_name)}</span>` : ''}
+                            </div>
+                            <div style="display:flex; gap:8px;">
+                                <button class="btn btn-secondary tok-edit" style="padding:4px 10px; font-size:12px;">编辑</button>
+                                <button class="btn btn-secondary tok-toggle" style="padding:4px 10px; font-size:12px;">${t.is_active ? '停用' : '启用'}</button>
+                            </div>
+                        </div>
+                        <div style="font-size:12px; color:#667; margin-top:6px;">
+                            用量 ${Number(t.used || 0).toFixed(4)} / ${t.quota != null ? Number(t.quota).toFixed(4) : '不限'}
+                            · 过期 ${t.expires_at ? esc(t.expires_at) : '永不过期'}
+                            · 模型 ${t.allowed_models || '全部'}
+                            · IP ${t.ip_whitelist || '全部'}
+                            · 限速 ${t.rpm_limit ? t.rpm_limit + ' 次/分' : '不限'} / ${t.tpm_limit ? t.tpm_limit + ' 字符/分' : '不限'}
+                        </div>
+                        <div class="tok-form" style="display:none; margin-top:10px; display:flex; flex-direction:column; gap:6px;">
+                            <input class="tok-label" placeholder="备注名" style="padding:6px 8px; border:1px solid #ddd; border-radius:6px;">
+                            <input class="tok-expires" placeholder="过期时间 YYYY-MM-DD HH:MM:SS（留空=永久）" style="padding:6px 8px; border:1px solid #ddd; border-radius:6px;">
+                            <input class="tok-quota" placeholder="额度上限（元，留空=不限）" style="padding:6px 8px; border:1px solid #ddd; border-radius:6px;">
+                            <input class="tok-models" placeholder="模型白名单，逗号分隔，支持 deepseek-*（留空=不限）" style="padding:6px 8px; border:1px solid #ddd; border-radius:6px;">
+                            <input class="tok-ips" placeholder="IP 白名单，逗号分隔，支持 CIDR（留空=不限）" style="padding:6px 8px; border:1px solid #ddd; border-radius:6px;">
+                            <div style="display:flex; gap:6px;">
+                                <input class="tok-rpm" placeholder="RPM 每分钟请求数上限（0=不限）" style="flex:1; padding:6px 8px; border:1px solid #ddd; border-radius:6px;">
+                                <input class="tok-tpm" placeholder="TPM 每分钟字符量上限（0=不限）" style="flex:1; padding:6px 8px; border:1px solid #ddd; border-radius:6px;">
+                            </div>
+                            <button class="btn btn-primary tok-save" style="align-self:flex-start; padding:6px 14px; font-size:13px;">保存策略</button>
+                        </div>
+                    </div>`).join('');
+                // 预填
+                box.querySelectorAll('.token-policy-item').forEach((el, i) => {
+                    const t = toks[i];
+                    el.querySelector('.tok-label').value = t.label || '';
+                    el.querySelector('.tok-expires').value = t.expires_at || '';
+                    el.querySelector('.tok-quota').value = t.quota != null ? t.quota : '';
+                    el.querySelector('.tok-models').value = t.allowed_models || '';
+                    el.querySelector('.tok-ips').value = t.ip_whitelist || '';
+                    el.querySelector('.tok-rpm').value = t.rpm_limit || 0;
+                    el.querySelector('.tok-tpm').value = t.tpm_limit || 0;
+                });
+            } catch (e) {
+                box.innerHTML = '<p style="color:#c0392b;">加载失败：' + esc(e.message) + '</p>';
+            }
+        }
+
+        const tokBox = document.getElementById('tokenPolicyList');
+        if (tokBox) {
+            tokBox.addEventListener('click', async (ev) => {
+                const item = ev.target.closest('.token-policy-item');
+                if (!item) return;
+                const tid = item.dataset.tid;
+                if (ev.target.classList.contains('tok-edit')) {
+                    const f = item.querySelector('.tok-form');
+                    f.style.display = (f.style.display === 'none') ? 'flex' : 'none';
+                } else if (ev.target.classList.contains('tok-toggle')) {
+                    const active = ev.target.textContent.trim() === '停用' ? 0 : 1;
+                    const r = await fetch(`/api/tokens/${tid}/policy`, {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ is_active: active })
+                    });
+                    const j = await r.json();
+                    if (!r.ok) alert(j.error || '操作失败');
+                    loadTokenPolicies();
+                } else if (ev.target.classList.contains('tok-save')) {
+                    const body = {
+                        label: item.querySelector('.tok-label').value.trim(),
+                        expires_at: item.querySelector('.tok-expires').value.trim(),
+                        quota: item.querySelector('.tok-quota').value.trim() || 0,
+                        allowed_models: item.querySelector('.tok-models').value.trim(),
+                        ip_whitelist: item.querySelector('.tok-ips').value.trim(),
+                        rpm_limit: parseInt(item.querySelector('.tok-rpm').value, 10) || 0,
+                        tpm_limit: parseInt(item.querySelector('.tok-tpm').value, 10) || 0,
+                    };
+                    const r = await fetch(`/api/tokens/${tid}/policy`, {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(body)
+                    });
+                    const j = await r.json();
+                    if (!r.ok) alert(j.error || '保存失败');
+                    else loadTokenPolicies();
+                }
+            });
+            const refreshBtn = document.getElementById('tokRefreshBtn');
+            if (refreshBtn) refreshBtn.addEventListener('click', loadTokenPolicies);
+            if (document.getElementById('page-apikeys') &&
+                document.getElementById('page-apikeys').classList.contains('active')) {
+                loadTokenPolicies();
+            }
+        }
+
+        // ---- 月度消费预算 ----
+        async function loadBudget() {
+            const inp = document.getElementById('budgetInput');
+            const info = document.getElementById('budgetSpentInfo');
+            if (!inp) return;
+            try {
+                const r = await fetch('/api/user/budget');
+                if (!r.ok) { if (info) info.textContent = '本月已消费：加载失败'; return; }
+                const j = await r.json();
+                inp.value = j.monthly_budget || 0;
+                if (info) info.textContent =
+                    `本月已消费：¥${Number(j.budget_spent || 0).toFixed(4)} / ` +
+                    `${j.monthly_budget > 0 ? '¥' + Number(j.monthly_budget).toFixed(2) : '不限'}`;
+            } catch (e) {
+                if (info) info.textContent = '本月已消费：加载失败';
+            }
+        }
+        const budgetSaveBtn = document.getElementById('budgetSaveBtn');
+        if (budgetSaveBtn) {
+            budgetSaveBtn.addEventListener('click', async () => {
+                const inp = document.getElementById('budgetInput');
+                const v = parseFloat(inp.value);
+                if (isNaN(v) || v < 0) { alert('请输入非负数字'); return; }
+                budgetSaveBtn.disabled = true;
+                try {
+                    const r = await fetch('/api/user/budget', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ monthly_budget: v })
+                    });
+                    const j = await r.json();
+                    if (!r.ok) alert(j.error || '保存失败');
+                    loadBudget();
+                } finally { budgetSaveBtn.disabled = false; }
+            });
+            if (document.getElementById('page-apikeys') &&
+                document.getElementById('page-apikeys').classList.contains('active')) {
+                loadBudget();
+            }
+        }
+
+        // ---- 兑换码 ----
+        const redeemBtn = document.getElementById('redeemBtn');
+        if (redeemBtn) {
+            redeemBtn.addEventListener('click', async () => {
+                const msg = document.getElementById('redeemMsg');
+                const code = document.getElementById('redeemCode').value.trim();
+                if (!code) { msg.textContent = '请输入兑换码'; msg.style.color = '#c0392b'; return; }
+                redeemBtn.disabled = true;
+                try {
+                    const r = await fetch('/api/redeem', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ code })
+                    });
+                    const j = await r.json();
+                    msg.textContent = r.ok ? (j.message || '兑换成功') : (j.error || '兑换失败');
+                    msg.style.color = r.ok ? '#1a7f37' : '#c0392b';
+                    if (r.ok) document.getElementById('redeemCode').value = '';
+                } catch (e) {
+                    msg.textContent = '网络错误'; msg.style.color = '#c0392b';
+                } finally {
+                    redeemBtn.disabled = false;
+                }
+            });
+        }
+    })();
     </script>
 </body>
 </html>

@@ -19,11 +19,16 @@ ORIGIN = {"Origin": "http://localhost"}
 
 
 def _admin_uid() -> str:
-    """从测试库读取已注入的管理员 uid（与 conftest 种子一致）。"""
+    """从测试库读取已注入的管理员 uid（与 conftest 种子的 testadmin 会话一致）。
+
+    注意：init_database() 的 Alembic 迁移会额外种一个默认管理员，库里因此存在
+    多个 is_admin=1 的行；必须按 user_name 精确匹配 testadmin，否则 LIMIT 1 可能
+    取到默认管理员，导致通知写入与 admin_client 会话 uid 不一致而测试失败。
+    """
     conn = _core._get_conn()
     try:
         row = conn.execute(
-            "SELECT uid FROM users WHERE is_admin = 1 LIMIT 1"
+            "SELECT uid FROM users WHERE user_name = 'testadmin' LIMIT 1"
         ).fetchone()
         return row[0] if row else None
     finally:

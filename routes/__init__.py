@@ -9,6 +9,9 @@ def register_blueprints(app):
     from .admin import admin_bp
     from .recharge import recharge_bp
     from .chat_proxy import chat_proxy_bp
+    from .openai_extra import openai_extra_bp
+    from .claude_compat import claude_bp
+    from .openai_extra import openai_extra_bp
     from .social import social_bp
     from .oauth_routes import oauth_bp
     from .rcon_routes import rcon_bp
@@ -21,12 +24,15 @@ def register_blueprints(app):
     from .cluster_routes import cluster_bp
     from ..cache_store import cache_bp
     from .notifications_routes import notif_bp
+    from .playground import playground_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(user_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(recharge_bp)
     app.register_blueprint(chat_proxy_bp)
+    app.register_blueprint(openai_extra_bp)
+    app.register_blueprint(claude_bp)
     app.register_blueprint(social_bp)
     app.register_blueprint(oauth_bp)
     app.register_blueprint(rcon_bp)
@@ -39,3 +45,4 @@ def register_blueprints(app):
     app.register_blueprint(cluster_bp)
     app.register_blueprint(cache_bp)
     app.register_blueprint(notif_bp)
+    app.register_blueprint(playground_bp)

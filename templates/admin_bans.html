@@ -220,11 +220,25 @@
         }
         function fmtExp(v) {
             if (!v) return '永久';
-            const d = new Date(v * 1000);
+            let d;
+            const s = String(v).trim();
+            // 纯数字（含小数）= epoch 秒；ISO 字符串直接用 Date 解析
+            if (/^-?\d+(\.\d+)?$/.test(s)) {
+                d = new Date(Number(v) * 1000);
+            } else {
+                d = new Date(v);
+            }
+            if (isNaN(d.getTime())) return s;
             return d.toLocaleString('zh-CN');
         }
         function escapeHtml(s) {
             return (s == null ? '' : String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+        function fmtTime(s) {
+            if (!s) return '-';
+            const d = new Date(String(s).replace(' ', 'T'));
+            if (isNaN(d.getTime())) return String(s);
+            return d.toLocaleString('zh-CN', { hour12: false });
         }
 
         // 选项卡切换
@@ -335,7 +349,7 @@
             const sevBadge = s => ({safe:'badge-ok',warn:'badge-warn',restrict:'badge-danger',ban:'badge-danger'}[s] || 'badge-info');
             tb.innerHTML = list.map(e => `
                 <tr>
-                    <td>${escapeHtml(e.created_at || '')}</td>
+                    <td>${escapeHtml(fmtTime(e.created_at))}</td>
                     <td>${escapeHtml(e.user_name || '')}</td>
                     <td>${escapeHtml(e.event_type || '')}</td>
                     <td><span class="badge ${sevBadge(e.severity)}">${escapeHtml(e.severity || '')}</span></td>
@@ -372,7 +386,7 @@
                 else {
                     et.innerHTML = list.map(e => `
                         <tr>
-                            <td>${escapeHtml(e.created_at || '')}</td>
+                            <td>${escapeHtml(fmtTime(e.created_at))}</td>
                             <td><span class="badge ${e.event_type === 'behavior_ban' ? 'badge-danger' : 'badge-warn'}">${escapeHtml(e.event_type || '')}</span></td>
                             <td>${escapeHtml(e.client_ip || '')}</td>
                             <td>${e.risk_score != null ? e.risk_score : ''}</td>

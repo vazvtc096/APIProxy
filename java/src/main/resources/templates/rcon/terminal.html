@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RCON 终端 - 远程控制台</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <style nonce="{{ csp_nonce }}">
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        /* 顶部导航栏 */
+        .navbar {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 0 32px;
+            height: 64px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 2px 20px rgba(0, 0, 0, 0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .navbar-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 20px;
+            font-weight: 700;
+            color: #1a1a2e;
+        }
+        
+        .navbar-brand i {
+            font-size: 24px;
+            color: #667eea;
+        }
+        
+        .navbar-user {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 6px 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        .user-info i {
+            font-size: 16px;
+        }
+        
+        .logout-btn {
+            padding: 8px 16px;
+            background: #f0f0f0;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            color: #333;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .logout-btn:hover {
+            background: #e0e0e0;
+        }
+        
+        /* 主内容区 */
+        .main-content {
+            flex: 1;
+            padding: 32px;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        /* 快捷按钮栏 */
+        .quick-actions {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .quick-btn {
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.9);
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            color: #333;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        .quick-btn:hover {
+            background: white;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+        }
+        
+        .quick-btn i {
+            font-size: 16px;
+            color: #667eea;
+        }
+        
+        .quick-btn.danger i {
+            color: #e74c3c;
+        }
+        
+        /* 终端容器 */
+        .terminal-container {
+            flex: 1;
+            background: #1a1a2e;
+            border-radius: 16px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            min-height: 500px;
+        }
+        
+        /* 终端标题栏 */
+        .terminal-header {
+            background: #16213e;
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid #2a2a4a;
+        }
+        
+        .terminal-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: #e0e0e0;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        .terminal-title i {
+            color: #4ade80;
+            font-size: 12px;
+        }
+        
+        .terminal-controls {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .control-btn {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+        }
+        
+        .control-btn.close {
+            background: #ff5f56;
+        }
+        
+        .control-btn.minimize {
+            background: #ffbd2e;
+        }
+        
+        .control-btn.maximize {
+            background: #27c93f;
+        }
+        
+        /* 终端内容区 */
+        .terminal-body {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            color: #e0e0e0;
+        }
+        
+        .terminal-body::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        .terminal-body::-webkit-scrollbar-track {
+            background: #1a1a2e;
+        }
+        
+        .terminal-body::-webkit-scrollbar-thumb {
+            background: #3a3a5a;
+            border-radius: 4px;
+        }
+        
+        .terminal-body::-webkit-scrollbar-thumb:hover {
+            background: #4a4a6a;
+        }
+        
+        /* 输出行 */
+        .output-line {
+            margin-bottom: 4px;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        
+        .output-line.system {
+            color: #667eea;
+        }
+        
+        .output-line.error {
+            color: #ff6b6b;
+        }
+        
+        .output-line.success {
+            color: #4ade80;
+        }
+        
+        .output-line.warning {
+            color: #fbbf24;
+        }
+        
+        /* 命令输入行 */
+        .input-line {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 8px;
+        }
+        
+        .prompt {
+            color: #4ade80;
+            font-weight: 500;
+            flex-shrink: 0;
+        }
+        
+        .prompt-symbol {
+            color: #667eea;
+        }
+        
+        #command-input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: #e0e0e0;
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            font-size: 14px;
+            caret-color: #4ade80;
+        }
+        
+        /* 状态信息 */
+        .status-bar {
+            background: #16213e;
+            padding: 8px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+            color: #888;
+            border-top: 1px solid #2a2a4a;
+        }
+        
+        .status-left, .status-right {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .status-item i {
+            font-size: 12px;
+        }
+        
+        .status-item.connected i {
+            color: #4ade80;
+        }
+        
+        .status-item.encryption i {
+            color: #667eea;
+        }
+        
+        /* 加载动画 */
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #3a3a5a;
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-left: 8px;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        /* 响应式 */
+        @media (max-width: 768px) {
+            .navbar {
+                padding: 0 16px;
+            }
+            
+            .main-content {
+                padding: 16px;
+            }
+            
+            .quick-actions {
+                gap: 8px;
+            }
+            
+            .quick-btn {
+                padding: 8px 12px;
+                font-size: 12px;
+            }
+            
+            .quick-btn span {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- 顶部导航栏 -->
+    <nav class="navbar">
+        <div class="navbar-brand">
+            <i class="bi bi-terminal-fill"></i>
+            <span>RCON 远程控制台</span>
+        </div>
+        <div class="navbar-user">
+            <div class="user-info">
+                <i class="bi bi-shield-lock-fill"></i>
+                <span id="username-display">管理员</span>
+            </div>
+            <button class="logout-btn" data-action="logout">
+                <i class="bi bi-box-arrow-right"></i>
+                退出
+            </button>
+        </div>
+    </nav>
+    
+    <!-- 主内容区 -->
+    <div class="main-content">
+        <!-- 快捷按钮栏 -->
+        <div class="quick-actions">
+            <button class="quick-btn" data-action="runCommand" data-args="'help'">
+                <i class="bi bi-question-circle"></i>
+                <span>帮助</span>
+            </button>
+            <button class="quick-btn" data-action="runCommand" data-args="'status'">
+                <i class="bi bi-bar-chart"></i>
+                <span>状态</span>
+            </button>
+            <button class="quick-btn" data-action="runCommand" data-args="'user list'">
+                <i class="bi bi-people"></i>
+                <span>用户列表</span>
+            </button>
+            <button class="quick-btn" data-action="runCommand" data-args="'session list admin'">
+                <i class="bi bi-diagram-3"></i>
+                <span>会话列表</span>
+            </button>
+            <button class="quick-btn" data-action="runCommand" data-args="'cleanup'">
+                <i class="bi bi-brush"></i>
+                <span>清理会话</span>
+            </button>
+            <button class="quick-btn danger" data-action="runCommand" data-args="'key refresh'">
+                <i class="bi bi-key-fill"></i>
+                <span>刷新密钥</span>
+            </button>
+            <button class="quick-btn" data-action="clearTerminal">
+                <i class="bi bi-trash"></i>
+                <span>清屏</span>
+            </button>
+        </div>
+        
+        <!-- 终端容器 -->
+        <div class="terminal-container">
+            <div class="terminal-header">
+                <div class="terminal-title">
+                    <i class="bi bi-circle-fill"></i>
+                    <span>RCON Terminal - 双重认证</span>
+                </div>
+                <div class="terminal-controls">
+                    <button class="control-btn close" data-action="clearTerminal"></button>
+                    <button class="control-btn minimize"></button>
+                    <button class="control-btn maximize"></button>
+                </div>
+            </div>
+            
+            <div class="terminal-body" id="terminal-body">
+                <div class="output-line system">╔══════════════════════════════════════════════════════════════╗</div>
+                <div class="output-line system">║           RCON 远程控制台 v2.0 - 最高权限 (SYSTEM/root)        ║</div>
+                <div class="output-line system">╠══════════════════════════════════════════════════════════════╣</div>
+                <div class="output-line system">║  认证方式: 管理员账号 + RCON 密钥 双重认证                     ║</div>
+                <div class="output-line system">║  注意: 此控制台拥有最高权限，请谨慎操作！                       ║</div>
+                <div class="output-line system">╚══════════════════════════════════════════════════════════════╝</div>
+                <div class="output-line">&nbsp;</div>
+                <div class="output-line success">✓ 已连接到 RCON 服务器</div>
+                <div class="output-line">输入 <span style="color: #667eea;">help</span> 查看可用命令</div>
+                <div class="output-line">&nbsp;</div>
+            </div>
+            
+            <div class="status-bar">
+                <div class="status-left">
+                    <div class="status-item connected">
+                        <i class="bi bi-link-45deg"></i>
+                        <span>已连接</span>
+                    </div>
+                    <div class="status-item encryption">
+                        <i class="bi bi-lock-fill"></i>
+                        <span>HTTPS 加密传输</span>
+                    </div>
+                </div>
+                <div class="status-right">
+                    <div class="status-item">
+                        <i class="bi bi-clock"></i>
+                        <span id="current-time">--:--:--</span>
+                    </div>
+                    <div class="status-item">
+                        <i class="bi bi-terminal"></i>
+                        <span id="command-count">0 条命令</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 隐藏的输入框（用于捕获键盘输入） -->
+    <input type="text" id="command-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+    
+    <script nonce="{{ csp_nonce }}">
+        // 状态变量
+        let commandHistory = [];
+        let historyIndex = -1;
+        let commandCount = 0;
+        let isProcessing = false;
+        
+        // DOM 元素
+        const terminalBody = document.getElementById('terminal-body');
+        const commandInput = document.getElementById('command-input');
+        const commandCountEl = document.getElementById('command-count');
+        const currentTimeEl = document.getElementById('current-time');
+        const usernameDisplay = document.getElementById('username-display');
+        
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            // 检查登录状态
+            checkAuth();
+            
+            // 更新时间
+            updateTime();
+            setInterval(updateTime, 1000);
+            
+            // 聚焦输入框
+            focusInput();
+            
+            // 点击终端区域聚焦输入框
+            terminalBody.addEventListener('click', focusInput);
+        });
+        
+        // 检查认证状态
+        function checkAuth() {
+            fetch('/rcon/api/auth-check')
+                .then(response => response.json())
+                .then(data => {
+                    if (!data.authenticated) {
+                        window.location.href = '/rcon/login';
+                    } else if (data.username) {
+                        usernameDisplay.textContent = data.username;
+                    }
+                })
+                .catch(() => {
+                    window.location.href = '/rcon/login';
+                });
+        }
+        
+        // 更新时间
+        function updateTime() {
+            const now = new Date();
+            currentTimeEl.textContent = now.toLocaleTimeString('zh-CN');
+        }
+        
+        // 聚焦输入框
+        function focusInput() {
+            commandInput.focus();
+        }
+        
+        // 键盘事件处理
+        document.addEventListener('keydown', function(e) {
+            // 如果不是在输入框中，且按下了可打印字符，聚焦到输入框
+            if (document.activeElement !== commandInput && e.key.length === 1) {
+                focusInput();
+                return;
+            }
+            
+            if (document.activeElement === commandInput) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    executeCommand();
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    navigateHistory(-1);
+                } else if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    navigateHistory(1);
+                } else if (e.key === 'Tab') {
+                    e.preventDefault();
+                    // 简单的自动补全
+                    autocomplete();
+                } else if (e.key === 'l' && e.ctrlKey) {
+                    e.preventDefault();
+                    clearTerminal();
+                }
+            }
+        });
+        
+        // 导航历史记录
+        function navigateHistory(direction) {
+            if (commandHistory.length === 0) return;
+            
+            if (direction === -1) {
+                // 上一条
+                if (historyIndex < commandHistory.length - 1) {
+                    historyIndex++;
+                    commandInput.value = commandHistory[commandHistory.length - 1 - historyIndex];
+                }
+            } else {
+                // 下一条
+                if (historyIndex > 0) {
+                    historyIndex--;
+                    commandInput.value = commandHistory[commandHistory.length - 1 - historyIndex];
+                } else if (historyIndex === 0) {
+                    historyIndex = -1;
+                    commandInput.value = '';
+                }
+            }
+            
+            // 移动光标到末尾
+            commandInput.setSelectionRange(commandInput.value.length, commandInput.value.length);
+        }
+        
+        // 简单的自动补全
+        function autocomplete() {
+            const commands = [
+                'help', 'status', 'stats', 'user', 'session', 'key', 'cleanup', 'exit', 'quit'
+            ];
+            const subCommands = {
+                'user': ['list', 'info', 'create', 'delete', 'password', 'email', 'admin', 'balence', 'ban', 'unban', 'clear'],
+                'session': ['list', 'kick', 'kickall'],
+                'key': ['refresh']
+            };
+            
+            const input = commandInput.value.trim();
+            const parts = input.split(' ');
+            
+            if (parts.length === 1) {
+                // 补全主命令
+                const matches = commands.filter(cmd => cmd.startsWith(parts[0]));
+                if (matches.length === 1) {
+                    commandInput.value = matches[0] + ' ';
+                }
+            } else if (parts.length === 2 && subCommands[parts[0]]) {
+                // 补全子命令
+                const matches = subCommands[parts[0]].filter(cmd => cmd.startsWith(parts[1]));
+                if (matches.length === 1) {
+                    commandInput.value = parts[0] + ' ' + matches[0] + ' ';
+                }
+            }
+        }
+        
+        // 执行命令
+        function executeCommand() {
+            const command = commandInput.value.trim();
+            
+            if (!command) {
+                // 空命令，只显示提示符
+                addInputLine('');
+                commandInput.value = '';
+                return;
+            }
+            
+            if (isProcessing) return;
+            
+            // 添加到历史记录
+            commandHistory.push(command);
+            historyIndex = -1;
+            commandCount++;
+            commandCountEl.textContent = commandCount + ' 条命令';
+            
+            // 显示输入的命令
+            addInputLine(command);
+            
+            // 清空输入框
+            commandInput.value = '';
+            
+            // 特殊命令处理
+            if (command.toLowerCase() === 'clear' || command.toLowerCase() === 'cls') {
+                clearTerminal();
+                return;
+            }
+            
+            if (command.toLowerCase() === 'exit' || command.toLowerCase() === 'quit') {
+                addOutputLine('再见！', 'system');
+                logout();
+                return;
+            }
+            
+            // 发送命令到后端
+            isProcessing = true;
+            const loadingId = addLoadingLine();
+            
+            fetch('/rcon/execute', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ command: command })
+            })
+            .then(response => response.json())
+            .then(data => {
+                removeLoadingLine(loadingId);
+                isProcessing = false;
+                
+                if (data.success) {
+                    addOutputLine(data.output || '', '');
+                } else {
+                    addOutputLine('错误: ' + (data.error || '未知错误'), 'error');
+                }
+                
+                // 滚动到底部
+                scrollToBottom();
+            })
+            .catch(error => {
+                removeLoadingLine(loadingId);
+                isProcessing = false;
+                addOutputLine('连接错误: ' + error.message, 'error');
+                scrollToBottom();
+            });
+        }
+        
+        // 快捷运行命令
+        function runCommand(command) {
+            commandInput.value = command;
+            executeCommand();
+        }
+        
+        // 添加输入行
+        function addInputLine(command) {
+            const line = document.createElement('div');
+            line.className = 'input-line';
+            line.innerHTML = `
+                <span class="prompt">rcon</span>
+                <span class="prompt-symbol">@</span>
+                <span class="prompt">server</span>
+                <span class="prompt-symbol">:</span>
+                <span style="color: #667eea;">~</span>
+                <span class="prompt-symbol">$</span>
+                <span style="margin-left: 8px;">${escapeHtml(command)}</span>
+            `;
+            terminalBody.appendChild(line);
+            scrollToBottom();
+        }
+        
+        // 添加输出行
+        function addOutputLine(text, type = '') {
+            const line = document.createElement('div');
+            line.className = 'output-line ' + type;
+            line.textContent = text;
+            terminalBody.appendChild(line);
+            scrollToBottom();
+        }
+        
+        // 添加加载行
+        function addLoadingLine() {
+            const id = 'loading-' + Date.now();
+            const line = document.createElement('div');
+            line.id = id;
+            line.className = 'output-line';
+            line.innerHTML = `执行中... <span class="loading"></span>`;
+            terminalBody.appendChild(line);
+            scrollToBottom();
+            return id;
+        }
+        
+        // 移除加载行
+        function removeLoadingLine(id) {
+            const el = document.getElementById(id);
+            if (el) {
+                el.remove();
+            }
+        }
+        
+        // 清空终端
+        function clearTerminal() {
+            terminalBody.innerHTML = '';
+            addOutputLine('终端已清空', 'system');
+            addOutputLine('');
+        }
+        
+        // 滚动到底部
+        function scrollToBottom() {
+            terminalBody.scrollTop = terminalBody.scrollHeight;
+        }
+        
+        // 退出登录
+        function logout() {
+            fetch('/rcon/logout', { method: 'POST' })
+                .then(() => {
+                    window.location.href = '/rcon/login';
+                })
+                .catch(() => {
+                    window.location.href = '/rcon/login';
+                });
+        }
+        
+        // HTML 转义
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

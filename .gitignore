@@ -79,3 +79,22 @@ coverage.xml
 archive/
 *.tar.gz
 *.tar
+
+# analogBank 商户凭据（密码/密钥，仅本机）
+_bank_merchant_creds*.json
+
+# --- 调试/临时与项目运行数据（非源码，不纳入版本库）---
+.workbuddy/
+backups/
+users.db*
+java/target/
+*.selfsigned-bak
+_*.txt
+_*.py
+.dbg_*.py
+seq_anomaly.json
+login_screenshot.png
+*.png
+*.jpg
+*.jpeg
+*.gif

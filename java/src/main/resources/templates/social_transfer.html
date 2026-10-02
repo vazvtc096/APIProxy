@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>转账/红包 - 社区</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style nonce="{{ csp_nonce }}">
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #fafafa;
+            color: #1a1a1a;
+            min-height: 100vh;
+        }
+        .navbar {
+            position: fixed; top: 0; left: 0; right: 0; height: 64px;
+            background: white; border-bottom: 1px solid #f0f0f0;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 24px; z-index: 100;
+        }
+        .navbar-left { display: flex; align-items: center; gap: 12px; }
+        .logo {
+            width: 36px; height: 36px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px; display: flex; align-items: center; justify-content: center;
+        }
+        .logo svg { width: 20px; height: 20px; color: white; }
+        .logo-text { font-size: 18px; font-weight: 700; color: #1a1a1a; }
+        .navbar-right { display: flex; align-items: center; gap: 16px; }
+        .balence-display {
+            display: flex; align-items: center; gap: 8px;
+            background: #f0f2ff; padding: 8px 16px; border-radius: 20px;
+        }
+        .balence-icon { color: #667eea; font-size: 16px; }
+        .balence-amount { font-size: 14px; font-weight: 600; color: #667eea; }
+        .user-avatar {
+            width: 40px; height: 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            color: white; font-weight: 600; font-size: 16px; cursor: pointer;
+        }
+        .main-container { display: flex; padding-top: 64px; min-height: 100vh; }
+        .sidebar {
+            width: 240px; background: white; border-right: 1px solid #f0f0f0;
+            padding: 24px 0; position: fixed; top: 64px; bottom: 0; left: 0; overflow-y: auto;
+        }
+        .sidebar-section { margin-bottom: 24px; }
+        .sidebar-section-title {
+            font-size: 11px; font-weight: 600; color: #9ca3af;
+            text-transform: uppercase; letter-spacing: 0.5px;
+            padding: 0 20px; margin-bottom: 8px;
+        }
+        .sidebar-item {
+            display: flex; align-items: center; gap: 12px;
+            padding: 10px 20px; cursor: pointer; transition: all 0.15s;
+            font-size: 14px; color: #666; border-left: 3px solid transparent;
+            text-decoration: none;
+        }
+        .sidebar-item:hover { background: #fafafa; color: #1a1a1a; }
+        .sidebar-item.active {
+            background: #f0f2ff; color: #667eea; border-left-color: #667eea; font-weight: 500;
+        }
+        .sidebar-item i { font-size: 18px; width: 20px; text-align: center; }
+        .content { flex: 1; margin-left: 240px; padding: 32px; }
+        .page-header { margin-bottom: 24px; }
+        .page-title { font-size: 24px; font-weight: 700; color: #1a1a1a; }
+        .page-subtitle { font-size: 14px; color: #666; margin-top: 4px; }
+        .balence-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 16px;
+            padding: 32px;
+            margin-bottom: 24px;
+            box-shadow: 0 8px 32px rgba(102, 126, 234, 0.3);
+        }
+        .balence-label { font-size: 14px; opacity: 0.9; margin-bottom: 8px; }
+        .balence-value { font-size: 36px; font-weight: 700; }
+        .balence-value span { font-size: 20px; font-weight: 500; }
+        .tabs {
+            display: flex; gap: 8px; margin-bottom: 24px;
+            background: white;
+            padding: 8px;
+            border-radius: 12px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+            width: fit-content;
+        }
+        .tab {
+            padding: 10px 24px;
+            font-size: 14px;
+            font-weight: 500;
+            color: #666;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: all 0.15s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .tab:hover { color: #1a1a1a; }
+        .tab.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .card {
+            background: white;
+            border-radius: 16px;
+            padding: 32px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+            max-width: 500px;
+        }
+        .form-group { margin-bottom: 20px; }
+        .form-label {
+            font-size: 13px;
+            font-weight: 500;
+            color: #374151;
+            margin-bottom: 8px;
+            display: block;
+        }
+        .form-input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1.5px solid #e5e7eb;
+            border-radius: 10px;
+            font-size: 14px;
+            font-family: inherit;
+            background: #fafafa;
+            transition: all 0.2s;
+        }
+        .form-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            background: white;
+        }
+        .amount-input-wrapper {
+            position: relative;
+        }
+        .amount-prefix {
+            position: absolute;
+            left: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 20px;
+            font-weight: 700;
+            color: #1a1a1a;
+        }
+        .amount-input {
+            padding-left: 40px;
+            font-size: 24px;
+            font-weight: 700;
+            height: 60px;
+        }
+        .friend-select {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1.5px solid #e5e7eb;
+            border-radius: 10px;
+            font-size: 14px;
+            font-family: inherit;
+            background: #fafafa;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .friend-select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            background: white;
+        }
+        .btn {
+            padding: 14px 28px;
+            font-size: 15px;
+            font-weight: 600;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4); }
+        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .btn-transfer {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+        }
+        .btn-transfer:hover { box-shadow: 0 6px 16px rgba(16, 185, 129, 0.4); }
+        .btn-redpacket {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+        }
+        .btn-redpacket:hover { box-shadow: 0 6px 16px rgba(245, 158, 11, 0.4); }
+        .hint {
+            font-size: 12px;
+            color: #9ca3af;
+            margin-top: 8px;
+        }
+        .toast {
+            position: fixed; top: 80px; right: 24px;
+            padding: 12px 20px; border-radius: 10px;
+            font-size: 14px; font-weight: 500;
+            z-index: 2000;
+            transform: translateX(120%);
+            transition: transform 0.3s ease;
+        }
+        .toast.show { transform: translateX(0); }
+        .toast.success { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+        .toast.error { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+    </style>
+{% include "_navbar_css.html" %}
+</head>
+<body>
+    <!-- 导航栏 -->
+    {% include "_navbar.html" %}
+
+    <div class="main-container">
+        {% with active_page = 'transfer' %}
+        {% include "_sidebar.html" %}
+        {% endwith %}
+
+        <!-- 主内容区 -->
+        <main class="content">
+            <div class="page-header">
+                <h1 class="page-title">转账 / 红包</h1>
+                <p class="page-subtitle">给好友转账或发红包</p>
+            </div>
+
+            <div class="balence-card">
+                <div class="balence-label">当前余额</div>
+                <div class="balence-value"><span>¥</span><span id="currentBalance">0.00</span></div>
+            </div>
+
+            <div class="tabs">
+                <div class="tab active" data-action="switchTab" data-args="'transfer'">
+                    <i class="bi bi-send"></i>
+                    转账
+                </div>
+                <div class="tab" data-action="switchTab" data-args="'redpacket'">
+                    <i class="bi bi-gift"></i>
+                    红包
+                </div>
+            </div>
+
+            <div class="card" id="transferForm">
+                <div class="form-group">
+                    <label class="form-label">选择好友</label>
+                    <select class="friend-select" id="transferFriend">
+                        <option value="">请选择好友</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">转账金额</label>
+                    <div class="amount-input-wrapper">
+                        <span class="amount-prefix">¥</span>
+                        <input type="number" class="form-input amount-input" id="transferAmount" placeholder="0.00" step="0.01" min="0.01">
+                    </div>
+                    <div class="hint">最低转账金额 0.01 元</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">备注（可选）</label>
+                    <input type="text" class="form-input" id="transferRemark" placeholder="转账备注">
+                </div>
+                <button class="btn btn-primary btn-transfer" data-action="sendTransfer">
+                    <i class="bi bi-send"></i>
+                    确认转账
+                </button>
+            </div>
+
+            <div class="card" id="redpacketForm" style="display: none;">
+                <div class="form-group">
+                    <label class="form-label">选择好友</label>
+                    <select class="friend-select" id="redpacketFriend">
+                        <option value="">请选择好友</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">红包金额</label>
+                    <div class="amount-input-wrapper">
+                        <span class="amount-prefix">¥</span>
+                        <input type="number" class="form-input amount-input" id="redpacketAmount" placeholder="0.00" step="0.01" min="0.01">
+                    </div>
+                    <div class="hint">最低红包金额 0.01 元</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">祝福语（可选）</label>
+                    <input type="text" class="form-input" id="redpacketMessage" placeholder="恭喜发财，大吉大利">
+                </div>
+                <button class="btn btn-primary btn-redpacket" data-action="sendRedpacket">
+                    <i class="bi bi-gift"></i>
+                    塞钱进红包
+                </button>
+            </div>
+        </main>
+    </div>
+
+    <!-- Toast 提示 -->
+    <div class="toast" id="toast"></div>
+
+    <script nonce="{{ csp_nonce }}">
+        let currentTab = 'transfer';
+        let friends = [];
+
+        // 页面加载
+        document.addEventListener('DOMContentLoaded', function() {
+            loadUserInfo();
+            loadFriends();
+            
+            // 检查 URL 参数
+            const urlParams = new URLSearchParams(window.location.search);
+            const type = urlParams.get('type');
+            const friendUid = urlParams.get('friend');
+            if (type === 'redpacket') {
+                switchTab('redpacket');
+            }
+            if (friendUid) {
+                // 延迟一下，等好友列表加载完再设置
+                setTimeout(() => {
+                    document.getElementById('transferFriend').value = friendUid;
+                    document.getElementById('redpacketFriend').value = friendUid;
+                }, 500);
+            }
+        });
+
+        // 加载用户信息
+        async function loadUserInfo() {
+            try {
+                const data = await window.getUserInfo();
+                if (data) {
+                    const balence = parseFloat(data.balence || 0);
+                    document.getElementById('balenceAmount').textContent = '¥' + balence.toFixed(2);
+                    document.getElementById('currentBalance').textContent = balence.toFixed(2);
+                    document.getElementById('userAvatar').textContent = data.user_name.charAt(0).toUpperCase();
+                }
+            } catch (e) {
+                console.error('加载用户信息失败:', e);
+            }
+        }
+
+        // 加载好友列表
+        async function loadFriends() {
+            try {
+                const res = await fetch('/api/friends');
+                const data = await res.json();
+                if (data.friends) {
+                    friends = data.friends;
+                    renderFriendOptions();
+                }
+            } catch (e) {
+                console.error('加载好友列表失败:', e);
+            }
+        }
+
+        // 渲染好友选项
+        function renderFriendOptions() {
+            const transferSelect = document.getElementById('transferFriend');
+            const redpacketSelect = document.getElementById('redpacketFriend');
+            
+            const options = friends.map(f => 
+                `<option value="${f.uid}">${f.user_name} (${f.uid})</option>`
+            ).join('');
+            
+            transferSelect.innerHTML = '<option value="">请选择好友</option>' + options;
+            redpacketSelect.innerHTML = '<option value="">请选择好友</option>' + options;
+        }
+
+        // 切换标签
+        function switchTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+            
+            if (tab === 'transfer') {
+                document.getElementById('transferForm').style.display = 'block';
+                document.getElementById('redpacketForm').style.display = 'none';
+            } else {
+                document.getElementById('transferForm').style.display = 'none';
+                document.getElementById('redpacketForm').style.display = 'block';
+            }
+        }
+
+        // 发送转账
+        async function sendTransfer() {
+            const friendUid = document.getElementById('transferFriend').value;
+            const amount = parseFloat(document.getElementById('transferAmount').value);
+            const remark = document.getElementById('transferRemark').value;
+            
+            if (!friendUid) {
+                showToast('请选择好友', 'error');
+                return;
+            }
+            if (!amount || amount <= 0) {
+                showToast('请输入有效金额', 'error');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/chat/transfer', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        to_uid: friendUid,
+                        amount: amount,
+                        remark: remark
+                    })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    showToast('转账成功', 'success');
+                    document.getElementById('transferAmount').value = '';
+                    document.getElementById('transferRemark').value = '';
+                    await loadUserInfo();
+                } else {
+                    showToast(data.error || '转账失败', 'error');
+                }
+            } catch (e) {
+                showToast('转账失败，请重试', 'error');
+            }
+        }
+
+        // 发送红包
+        async function sendRedpacket() {
+            const friendUid = document.getElementById('redpacketFriend').value;
+            const amount = parseFloat(document.getElementById('redpacketAmount').value);
+            const message = document.getElementById('redpacketMessage').value;
+            
+            if (!friendUid) {
+                showToast('请选择好友', 'error');
+                return;
+            }
+            if (!amount || amount <= 0) {
+                showToast('请输入有效金额', 'error');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/chat/redpacket', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        to_uid: friendUid,
+                        amount: amount,
+                        message: message
+                    })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    showToast('红包发送成功', 'success');
+                    document.getElementById('redpacketAmount').value = '';
+                    document.getElementById('redpacketMessage').value = '';
+                    await loadUserInfo();
+                } else {
+                    showToast(data.error || '发送失败', 'error');
+                }
+            } catch (e) {
+                showToast('发送失败，请重试', 'error');
+            }
+        }
+
+        // 显示 Toast
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = 'toast ' + type + ' show';
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

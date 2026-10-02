@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>授权成功</title>
+<style nonce="{{ csp_nonce }}">
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; background:#f6f8fa; color:#1f2328; min-height:100vh; display:flex; align-items:flex-start; justify-content:center; padding-top:10vh; }
+  .wrap { width:380px; }
+  .card { background:#fff; border:1px solid #d0d7de; border-radius:6px; padding:32px 24px; text-align:center; }
+  .check { width:56px; height:56px; border-radius:50%; background:#1f883d; color:#fff; display:flex; align-items:center; justify-content:center; margin:0 auto 16px; font-size:28px; }
+  h1 { font-size:18px; font-weight:600; margin-bottom:8px; }
+  .sub { color:#656d76; font-size:14px; line-height:1.6; }
+  .err { background:#ffebe9; color:#cf222e; border:1px solid rgba(207,34,46,.4); padding:12px; border-radius:6px; font-size:13px; text-align:left; margin-top:12px; }
+  .token { margin-top:16px; text-align:left; }
+  .token summary { cursor:pointer; color:#0969da; font-size:13px; }
+  .token pre { margin-top:8px; background:#0d1117; color:#e6edf3; padding:12px; border-radius:6px; font-size:12px; overflow:auto; word-break:break-all; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card" id="card">
+      <div class="check">✓</div>
+      <h1>正在完成授权…</h1>
+      <p class="sub">正在用授权码换取访问令牌。</p>
+    </div>
+  </div>
+<script nonce="{{ csp_nonce }}">
+(async function () {
+  const card = document.getElementById('card');
+  const params = new URLSearchParams(location.search);
+  const code = params.get('code');
+  const state = params.get('state') || '';
+  // 发起授权前由调用方存入 sessionStorage：{ verifier, redirect_uri }
+  let pkce = null;
+  try { pkce = JSON.parse(sessionStorage.getItem('oauth_pkce') || 'null'); } catch (e) {}
+  if (!code) {
+    card.innerHTML = '<div class="err">缺少授权码 code，授权未完成。</div>';
+    return;
+  }
+  if (!pkce || !pkce.verifier) {
+    card.innerHTML = '<div class="err">缺少 PKCE verifier（发起授权时需将 code_verifier 与 redirect_uri 存入 sessionStorage 键 oauth_pkce）。无法换取令牌。</div>';
+    return;
+  }
+  try {
+    const body = new URLSearchParams({
+      grant_type: 'authorization_code',
+      code: code,
+      code_verifier: pkce.verifier,
+      redirect_uri: pkce.redirect_uri || (location.origin + '/oauth/callback'),
+      client_id: 'default'
+    });
+    const resp = await fetch('/oauth/token', { method: 'POST', headers: {'Content-Type':'application/x-www-form-urlencoded'}, body: body.toString() });
+    const data = await resp.json();
+    if (!resp.ok) {
+      card.innerHTML = '<div class="err">换取令牌失败：' + (data.error_description || data.error || resp.status) + '</div>';
+      return;
+    }
+    // 不主动展示 token；如需调试可展开
+    card.innerHTML =
+      '<div class="check">✓</div>' +
+      '<h1>授权成功</h1>' +
+      '<p class="sub">你已成功授权，访问令牌已通过 OAuth 2.0 授权码 + PKCE 流程获取。</p>' +
+      '<details class="token"><summary>查看访问令牌（调试用）</summary>' +
+      '<pre>' + escapeHtml(JSON.stringify(data, null, 2)) + '</pre></details>';
+  } catch (e) {
+    card.innerHTML = '<div class="err">请求异常：' + e.message + '</div>';
+  }
+  function escapeHtml(s){ return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+})();
+</script>
+</body>
+</html>

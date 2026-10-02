@@ -165,8 +165,20 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 
 def generate_uid() -> str:
-    """生成用户 UID（短 UUID 格式，8 位十六进制）"""
-    return uuid.uuid4().hex[:12]
+    """生成用户 UID（短 UUID 格式，12 位十六进制）
+
+    UID 池 000000000000 ~ 00000000000f 为系统虚拟用户保留段（system_users），
+    生成时防御式避让——真实用户永不占用系统 UID。
+    """
+    while True:
+        uid = uuid.uuid4().hex[:12]
+        try:
+            from .system_users import is_system_uid
+            if is_system_uid(uid):
+                continue
+        except ImportError:
+            pass
+        return uid
 
 
 # ---------- 用户查询辅助函数 ----------

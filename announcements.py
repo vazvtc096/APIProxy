@@ -113,8 +113,14 @@ async def broadcast_announcement(title: str, content: str, level: str = 'info',
 
     admin = await _get_admin()
     if not sender_uid:
-        sender_uid = admin['uid'] if admin else 'system'
-        sender_name = admin['user_name'] if admin else '系统'
+        # 发件人兜底：优先 admin，其次系统虚拟用户 0x0「系统」（恒定 UID，可进聊天）
+        try:
+            from .system_users import FALLBACK_UID, get_system_user
+            sys_name = get_system_user(FALLBACK_UID)[1]
+        except Exception:
+            FALLBACK_UID, sys_name = '000000000000', '系统'
+        sender_uid = admin['uid'] if admin else FALLBACK_UID
+        sender_name = admin['user_name'] if admin else sys_name
 
     # 解析收件人
     if target == 'custom':
@@ -138,6 +144,13 @@ async def broadcast_announcement(title: str, content: str, level: str = 'info',
         recipients = await db(
             "SELECT uid, user_name FROM users WHERE uid IS NOT NULL AND uid != ''"
         ) or []
+
+    # 排除系统虚拟用户（UID 池 0~15）：系统不给自己/其他系统投递公告副本
+    try:
+        from .system_users import is_system_uid as _is_sys
+        recipients = [r for r in recipients if not _is_sys(r['uid'])]
+    except Exception:
+        pass
 
     announcement_id = 'ann_' + uuid.uuid4().hex[:12]
     await db(

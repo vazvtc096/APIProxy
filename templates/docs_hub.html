@@ -34,7 +34,7 @@
     <div class="doc-nav-title">文档</div>
     <a class="doc-nav-link active" href="/docs">文档中心</a>
     {% for d in docs %}
-    <a class="doc-nav-link" href="/docs/{{ d.slug }}">{{ d.title }}</a>
+    <a class="doc-nav-link" href="/docs/{{ d.slug }}" target="_blank" rel="noopener">{{ d.title }}</a>
     {% endfor %}
   </aside>
   <main class="doc-main">
@@ -43,7 +43,7 @@
       <p class="sub">本站提供的文档如下：</p>
       <div class="grid">
         {% for d in docs %}
-        <a class="card" href="/docs/{{ d.slug }}">
+        <a class="card" href="/docs/{{ d.slug }}" target="_blank" rel="noopener">
           <span class="tag">公开</span>
           <h2>{{ d.title }}</h2>
           <p>{{ d.intro or '点击查看文档。' }}</p>

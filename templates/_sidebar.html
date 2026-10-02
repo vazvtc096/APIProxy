@@ -32,6 +32,14 @@
     .sidebar-pw-banner a { color: #dc2626; font-weight: 600; text-decoration: underline; }
     /* 文件夹式分组：标题行（可点击）+ 可折叠主体 */
     .sidebar-group-title {
+        /* 重置 <button> 默认样式 */
+        background: none;
+        border: none;
+        outline: none;
+        font: inherit;
+        text-align: left;
+        width: 100%;
+        /* 原有样式 */
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -46,6 +54,11 @@
         transition: color 0.15s;
     }
     .sidebar-group-title:hover { color: #667eea; }
+    .sidebar-group-title:focus-visible {
+        outline: 2px solid #667eea;
+        outline-offset: -2px;
+        border-radius: 6px;
+    }
     .sidebar-group-title .group-arrow {
         font-size: 10px;
         transition: transform 0.2s;
@@ -73,17 +86,20 @@
         <a href="/dashboard/recharge" class="sidebar-item {% if active_page == 'recharge' %}active{% endif %}" data-page="recharge">
             <i class="bi bi-credit-card"></i><span>充值</span>
         </a>
+        <a href="/playground" class="sidebar-item {% if active_page == 'playground' %}active{% endif %}">
+            <i class="bi bi-robot"></i><span>调用模型</span>
+        </a>
     </div>
 
     <!-- 可折叠组：社交 -->
     <div class="sidebar-section sidebar-group" data-group="social">
-        <div class="sidebar-group-title" data-action="toggleSidebarGroup" data-args="social">
+        <button type="button" class="sidebar-group-title" data-action="toggleSidebarGroup" data-args="social">
             <span>社交</span><i class="bi bi-chevron-down group-arrow"></i>
-        </div>
+        </button>
         <div class="sidebar-group-body">
-            <a href="/social" class="sidebar-item {% if active_page == 'social' %}active{% endif %}">
-                <i class="bi bi-grid"></i><span>社区广场</span>
-            </a>
+        <a href="/social" class="sidebar-item {% if active_page == 'social' %}active{% endif %}">
+            <i class="bi bi-grid"></i><span>帖子广场</span>
+        </a>
             <a href="/social/collections" class="sidebar-item {% if active_page == 'collections' %}active{% endif %}">
                 <i class="bi bi-bookmark"></i><span>收藏</span>
             </a>
@@ -110,9 +126,9 @@
 
     <!-- 可折叠组：管理（仅管理员可见） -->
     <div class="sidebar-section sidebar-group" id="adminSection" data-group="admin" style="display:none;">
-        <div class="sidebar-group-title" data-action="toggleSidebarGroup" data-args="admin">
+        <button type="button" class="sidebar-group-title" data-action="toggleSidebarGroup" data-args="admin">
             <span>管理</span><i class="bi bi-chevron-down group-arrow"></i>
-        </div>
+        </button>
         <div class="sidebar-group-body">
             <a href="/dashboard/admin" class="sidebar-item {% if active_page == 'admin' %}active{% endif %}" data-page="admin">
                 <i class="bi bi-shield-check"></i><span>充值审核</span>
@@ -127,14 +143,35 @@
             <a href="/dashboard/stats" class="sidebar-item {% if active_page == 'stats' %}active{% endif %}" data-page="stats">
                 <i class="bi bi-graph-up"></i><span>数据统计</span>
             </a>
+            <a href="/admin/pricing" class="sidebar-item {% if active_page == 'pricing' %}active{% endif %}">
+                <i class="bi bi-cash-coin"></i><span>计费规则</span>
+            </a>
+            <a href="/admin/redeem" class="sidebar-item {% if active_page == 'redeem' %}active{% endif %}">
+                <i class="bi bi-ticket-perforated"></i><span>兑换码</span>
+            </a>
+            <a href="/admin/playground" class="sidebar-item {% if active_page == 'playground-builder' %}active{% endif %}">
+                <i class="bi bi-braces"></i><span>请求构建器</span>
+            </a>
+            <a href="/dashboard/routing" class="sidebar-item {% if active_page == 'routing' %}active{% endif %}" data-page="routing">
+                <i class="bi bi-diagram-3"></i><span>模型路由</span>
+            </a>
             <a href="/admin/bans" class="sidebar-item {% if active_page == 'bans' %}active{% endif %}">
                 <i class="bi bi-slash-circle"></i><span>封禁管理</span>
+            </a>
+            <a href="/admin/ip-audit" class="sidebar-item {% if active_page == 'ip-audit' %}active{% endif %}">
+                <i class="bi bi-shield-lock"></i><span>IP 访问审计</span>
             </a>
             <a href="/admin/announcements" class="sidebar-item {% if active_page == 'announcements' %}active{% endif %}">
                 <i class="bi bi-megaphone"></i><span>公告管理</span>
             </a>
             <a href="/admin/hooks" class="sidebar-item {% if active_page == 'hooks' %}active{% endif %}">
                 <i class="bi bi-link-45deg"></i><span>钩子管理</span>
+            </a>
+            <a href="/admin/settings" class="sidebar-item {% if active_page == 'ops-settings' %}active{% endif %}">
+                <i class="bi bi-sliders"></i><span>系统设置</span>
+            </a>
+            <a href="/admin/audit" class="sidebar-item {% if active_page == 'audit' %}active{% endif %}">
+                <i class="bi bi-journal-text"></i><span>审计日志</span>
             </a>
             <a href="/admin/tasks" class="sidebar-item {% if active_page == 'tasks' %}active{% endif %}">
                 <i class="bi bi-clock-history"></i><span>定时任务</span>
@@ -147,14 +184,14 @@
 
     <!-- 可折叠组：其他 -->
     <div class="sidebar-section sidebar-group" data-group="other">
-        <div class="sidebar-group-title" data-action="toggleSidebarGroup" data-args="other">
+        <button type="button" class="sidebar-group-title" data-action="toggleSidebarGroup" data-args="other">
             <span>其他</span><i class="bi bi-chevron-down group-arrow"></i>
-        </div>
+        </button>
         <div class="sidebar-group-body">
             <a href="/dashboard/model-prices" class="sidebar-item {% if active_page == 'model-prices' %}active{% endif %}" data-page="model-prices">
                 <i class="bi bi-tags"></i><span>模型价格</span>
             </a>
-            <a href="/docs/api" class="sidebar-item">
+            <a href="/docs/api" class="sidebar-item" target="_blank" rel="noopener">
                 <i class="bi bi-book"></i><span>API 文档</span>
             </a>
             <a href="/settings" class="sidebar-item {% if active_page == 'settings' %}active{% endif %}">
@@ -217,8 +254,17 @@
             window.__unreadSSEAlive = true;
             try {
                 const d = JSON.parse(ev.data);
+                // 完整性校验：缺关键字段的快照不消费，避免把残缺数据写进 window.userInfo
+                if (!d || !d.username) return;
                 window.userInfo = d;
                 document.dispatchEvent(new CustomEvent('userinfo-update', { detail: d }));
+            } catch (e) { /* ignore */ }
+        });
+        es.addEventListener('notifications', function (ev) {
+            window.__unreadSSEAlive = true;
+            try {
+                const d = JSON.parse(ev.data);
+                document.dispatchEvent(new CustomEvent('notifications-update', { detail: d }));
             } catch (e) { /* ignore */ }
         });
         es.onerror = function () {
@@ -253,9 +299,11 @@
                     const r = await fetch('/userinfo');
                     if (r.ok) {
                         const d = await r.json();
-                        window.userInfo = d;
-                        finish(d);
-                        return;
+                        if (d && d.username) {
+                            window.userInfo = d;
+                            finish(d);
+                            return;
+                        }
                     }
                 } catch (e) { /* ignore */ }
                 finish(null);
@@ -318,7 +366,8 @@
         try { saved = localStorage.getItem(_GROUP_KEY); } catch (e) {}
         var activeItem = document.querySelector('.sidebar-group .sidebar-item.active');
         var activeGroup = activeItem ? activeItem.closest('.sidebar-group') : null;
-        var target = (saved && saved !== '') ? saved : (activeGroup ? activeGroup.getAttribute('data-group') : '');
+        // 当前页 active 项所在组优先于上次保存的组（否则从其他分组页面跳转过来时，高亮项所在组不展开）
+        var target = activeGroup ? activeGroup.getAttribute('data-group') : ((saved && saved !== '') ? saved : '');
         var groups = Array.prototype.slice.call(document.querySelectorAll('.sidebar-group'));
         // 若目标组不可见（如非管理员时保存的是 admin），回退到第一个可见组
         var visibleGroups = groups.filter(function (g) { return g.style.display !== 'none'; });
@@ -346,6 +395,79 @@
             const p = parseInt(sessionStorage.getItem(KEY) || '0', 10);
             if (p > 0) sb.scrollTop = p;
         } catch (e) {}
+    })();
+
+    // ========================================================================
+    // data-action 事件委托（兜底实现）
+    // 权威实现由 security_middleware 注入到每个 HTML 响应的 body 结束标签前，并置
+    // window.__actionDelegationInstalled = true。本实现仅在其缺失时（如响应未被注入）
+    // 接管；检测到标记时直接跳过，避免同一次点击被两套委托各执行一次。
+    //
+    // 注意两套实现的参数顺序不同：权威实现为 fn(...args, el)，本兜底实现为 fn(el, ...args)。
+    // 既有模板（如 community.html 的 toggleFavorite(postId, btn)）按权威实现的顺序编写，
+    // 因此新代码一律以「权威实现」为准，不要依赖本兜底的顺序。
+    // ========================================================================
+    (function () {
+        function _parseArgs(str) {
+            if (!str) return [];
+            try {
+                const p = JSON.parse(str);
+                return Array.isArray(p) ? p : [p];
+            } catch (e) {
+                let parts;
+                if (str.indexOf('\u0001') !== -1) {
+                    parts = str.split('\u0001');
+                } else if (str.indexOf(',') !== -1) {
+                    parts = str.split(',');
+                } else {
+                    parts = [str];
+                }
+                return parts.map(function (s) {
+                    s = s.trim();
+                    if (s.length >= 2 && s.charAt(0) === "'" && s.charAt(s.length - 1) === "'") {
+                        s = s.slice(1, -1);
+                    }
+                    return s;
+                });
+            }
+        }
+        function _handle(e) {
+            // 权威委托已安装（正常情况）：本兜底直接让位，避免重复执行
+            if (window.__actionDelegationInstalled) return;
+            if (!e.target || typeof e.target.closest !== 'function') return;
+            const el = e.target.closest('[data-action]');
+            if (!el) return;
+            const action = el.getAttribute('data-action');
+            if (!action) return;
+            const onEvent = el.getAttribute('data-on') || 'click';
+            if (e.type !== onEvent) return;
+            if (el.hasAttribute('data-stop')) e.stopPropagation();
+            // 仅对链接/按钮/表单元素阻止默认行为，避免干扰 div 等普通元素
+            if (el.tagName === 'A' || el.tagName === 'BUTTON' || el.tagName === 'INPUT' || el.tagName === 'FORM' || el.closest('form')) {
+                e.preventDefault();
+            }
+            let args = [];
+            if (el.hasAttribute('data-arg-this')) args.push(el);
+            const rawArgs = el.getAttribute('data-args');
+            if (rawArgs) args = args.concat(_parseArgs(rawArgs));
+            const fn = window[action];
+            if (typeof fn !== 'function') {
+                console.warn('[data-action] 函数不存在:', action);
+                return;
+            }
+            const result = fn.apply(el, args);
+            const thenAction = el.getAttribute('data-then');
+            if (thenAction && typeof window[thenAction] === 'function') {
+                const thenArgs = _parseArgs(el.getAttribute('data-then-args') || '');
+                if (result && typeof result.then === 'function') {
+                    result.then(function () { window[thenAction].apply(el, thenArgs); });
+                } else {
+                    window[thenAction].apply(el, thenArgs);
+                }
+            }
+        }
+        document.addEventListener('click', _handle);
+        document.addEventListener('input', _handle);
     })();
 
     function _sidebarInit() {

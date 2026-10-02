@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>好友列表 - 社区</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style nonce="{{ csp_nonce }}">
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #fafafa;
+            color: #1a1a1a;
+            min-height: 100vh;
+        }
+        .navbar {
+            position: fixed; top: 0; left: 0; right: 0; height: 64px;
+            background: white; border-bottom: 1px solid #f0f0f0;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 24px; z-index: 100;
+        }
+        .navbar-left { display: flex; align-items: center; gap: 12px; }
+        .logo {
+            width: 36px; height: 36px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px; display: flex; align-items: center; justify-content: center;
+        }
+        .logo svg { width: 20px; height: 20px; color: white; }
+        .logo-text { font-size: 18px; font-weight: 700; color: #1a1a1a; }
+        .navbar-right { display: flex; align-items: center; gap: 16px; }
+        .balence-display {
+            display: flex; align-items: center; gap: 8px;
+            background: #f0f2ff; padding: 8px 16px; border-radius: 20px;
+        }
+        .balence-icon { color: #667eea; font-size: 16px; }
+        .balence-amount { font-size: 14px; font-weight: 600; color: #667eea; }
+        .user-avatar {
+            width: 40px; height: 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            color: white; font-weight: 600; font-size: 16px; cursor: pointer;
+        }
+        .main-container { display: flex; padding-top: 64px; min-height: 100vh; }
+        .sidebar {
+            width: 240px; background: white; border-right: 1px solid #f0f0f0;
+            padding: 24px 0; position: fixed; top: 64px; bottom: 0; left: 0; overflow-y: auto;
+        }
+        .sidebar-section { margin-bottom: 24px; }
+        .sidebar-section-title {
+            font-size: 11px; font-weight: 600; color: #9ca3af;
+            text-transform: uppercase; letter-spacing: 0.5px;
+            padding: 0 20px; margin-bottom: 8px;
+        }
+        .sidebar-item {
+            display: flex; align-items: center; gap: 12px;
+            padding: 10px 20px; cursor: pointer; transition: all 0.15s;
+            font-size: 14px; color: #666; border-left: 3px solid transparent;
+            text-decoration: none;
+        }
+        .sidebar-item:hover { background: #fafafa; color: #1a1a1a; }
+        .sidebar-item.active {
+            background: #f0f2ff; color: #667eea; border-left-color: #667eea; font-weight: 500;
+        }
+        .sidebar-item i { font-size: 18px; width: 20px; text-align: center; }
+        .sidebar-badge {
+            margin-left: auto;
+            background: #fef3c7;
+            color: #d97706;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 10px;
+        }
+        .content { flex: 1; margin-left: 240px; padding: 32px; }
+        .page-header { margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; }
+        .page-title { font-size: 24px; font-weight: 700; color: #1a1a1a; }
+        .page-subtitle { font-size: 14px; color: #666; margin-top: 4px; }
+        .btn {
+            padding: 10px 20px; font-size: 14px; font-weight: 500;
+            border-radius: 10px; cursor: pointer; transition: all 0.2s;
+            border: none; display: inline-flex; align-items: center; gap: 8px;
+            text-decoration: none;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4); }
+        .btn-secondary {
+            background: #f3f4f6; color: #374151;
+        }
+        .btn-secondary:hover { background: #e5e7eb; }
+        .btn-danger {
+            background: #fef2f2; color: #dc2626;
+        }
+        .btn-danger:hover { background: #fee2e2; }
+        .btn-sm { padding: 6px 12px; font-size: 13px; }
+        .card {
+            background: white; border-radius: 16px; padding: 24px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+            margin-bottom: 20px;
+        }
+        .friend-item {
+            display: flex; align-items: center; gap: 16px;
+            padding: 16px; border-radius: 12px;
+            transition: all 0.15s; cursor: pointer;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .friend-item:last-child { border-bottom: none; }
+        .friend-item:hover { background: #fafafa; }
+        .friend-avatar {
+            width: 48px; height: 48px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            color: white; font-weight: 600; font-size: 18px;
+            flex-shrink: 0;
+        }
+        .friend-info { flex: 1; min-width: 0; }
+        .friend-name { font-size: 15px; font-weight: 600; color: #1a1a1a; margin-bottom: 4px; }
+        .friend-last-msg { font-size: 13px; color: #9ca3af; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .friend-actions { display: flex; gap: 8px; }
+        .unread-badge {
+            background: #ef4444; color: white;
+            font-size: 12px; font-weight: 600;
+            min-width: 20px; height: 20px;
+            border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            padding: 0 6px;
+        }
+        .search-box {
+            display: flex; gap: 12px; margin-bottom: 20px;
+        }
+        .input {
+            flex: 1; padding: 10px 16px;
+            border: 1.5px solid #e5e7eb;
+            border-radius: 10px;
+            font-size: 14px;
+            font-family: inherit;
+            background: #fafafa;
+            transition: all 0.2s;
+        }
+        .input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            background: white;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #9ca3af;
+        }
+        .empty-state i { font-size: 48px; margin-bottom: 16px; opacity: 0.5; }
+        .empty-state p { font-size: 14px; }
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: none; align-items: center; justify-content: center;
+            z-index: 1000;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal {
+            background: white; border-radius: 16px;
+            padding: 24px; width: 100%; max-width: 400px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+        .modal-title { font-size: 18px; font-weight: 700; margin-bottom: 20px; }
+        .modal-actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 20px; }
+        .toast {
+            position: fixed; top: 80px; right: 24px;
+            padding: 12px 20px; border-radius: 10px;
+            font-size: 14px; font-weight: 500;
+            z-index: 2000;
+            transform: translateX(120%);
+            transition: transform 0.3s ease;
+        }
+        .toast.show { transform: translateX(0); }
+        .toast.success { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+        .toast.error { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+    </style>
+{% include "_navbar_css.html" %}
+</head>
+<body>
+    <!-- 导航栏 -->
+    {% include "_navbar.html" %}
+
+    <div class="main-container">
+        {% with active_page = 'friends' %}
+        {% include "_sidebar.html" %}
+        {% endwith %}
+
+        <!-- 主内容区 -->
+        <main class="content">
+            <div class="page-header">
+                <div>
+                    <h1 class="page-title">好友列表</h1>
+                    <p class="page-subtitle">管理你的好友和聊天</p>
+                </div>
+                <button class="btn btn-primary" data-action="showAddFriendModal">
+                    <i class="bi bi-person-plus"></i>
+                    添加好友
+                </button>
+            </div>
+
+            <div class="card">
+                <div class="search-box">
+                    <input type="text" class="input" id="searchInput" placeholder="搜索好友..." data-action="searchFriends" data-on="input">
+                </div>
+                <div id="friendList">
+                    <div class="empty-state">
+                        <i class="bi bi-people"></i>
+                        <p>加载中...</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 添加好友弹窗 -->
+    <div class="modal-overlay" id="addFriendModal">
+        <div class="modal">
+            <h3 class="modal-title">添加好友</h3>
+            <input type="text" class="input" id="friendUidInput" placeholder="输入好友 UID">
+            <div class="modal-actions">
+                <button class="btn btn-secondary" data-action="hideAddFriendModal">取消</button>
+                <button class="btn btn-primary" data-action="sendFriendRequest">发送请求</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast 提示 -->
+    <div class="toast" id="toast"></div>
+
+    <script nonce="{{ csp_nonce }}">
+        let allFriends = [];
+
+        // 页面加载
+        document.addEventListener('DOMContentLoaded', function() {
+            loadUserInfo();
+            loadFriends();
+            loadFriendRequests();
+        });
+
+        // 加载用户信息
+        async function loadUserInfo() {
+            try {
+                const data = await window.getUserInfo();
+                if (data) {
+                    document.getElementById('balenceAmount').textContent = '¥' + parseFloat(data.balence || 0).toFixed(2);
+                    document.getElementById('userAvatar').textContent = data.user_name.charAt(0).toUpperCase();
+                }
+            } catch (e) {
+                console.error('加载用户信息失败:', e);
+            }
+        }
+
+        // 加载好友列表
+        async function loadFriends() {
+            try {
+                const res = await fetch('/api/friends');
+                const data = await res.json();
+                if (data.friends) {
+                    allFriends = data.friends;
+                    renderFriends(allFriends);
+                }
+            } catch (e) {
+                console.error('加载好友列表失败:', e);
+                document.getElementById('friendList').innerHTML = `
+                    <div class="empty-state">
+                        <i class="bi bi-exclamation-circle"></i>
+                        <p>加载失败，请刷新重试</p>
+                    </div>
+                `;
+            }
+        }
+
+        // 渲染好友列表
+        function renderFriends(friends) {
+            const container = document.getElementById('friendList');
+            if (friends.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <i class="bi bi-people"></i>
+                        <p>还没有好友，快去添加吧</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = friends.map(friend => {
+                const lastMsg = friend.last_message;
+                const lastMsgText = lastMsg ? (lastMsg.type === 'text' ? lastMsg.content : 
+                    lastMsg.type === 'transfer' ? '[转账]' : 
+                    lastMsg.type === 'redpacket' ? '[红包]' : '[系统消息]') : '暂无消息';
+                const unread = friend.unread_count || 0;
+                
+                return `
+                    <div class="friend-item" data-action="goChat" data-args="'${friend.uid}'">
+                        <div class="friend-avatar">${friend.user_name.charAt(0).toUpperCase()}</div>
+                        <div class="friend-info">
+                            <div class="friend-name">${friend.user_name}</div>
+                            <div class="friend-last-msg">${lastMsgText}</div>
+                        </div>
+                        ${unread > 0 ? `<div class="unread-badge">${unread}</div>` : ''}
+                        <div class="friend-actions" data-stop>
+                            <button class="btn btn-danger btn-sm" data-action="deleteFriend" data-args="'${friend.uid}'\u0001'${friend.user_name}'">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // 搜索好友
+        function searchFriends() {
+            const query = document.getElementById('searchInput').value.toLowerCase();
+            const filtered = allFriends.filter(f => 
+                f.user_name.toLowerCase().includes(query) ||
+                f.uid.toLowerCase().includes(query)
+            );
+            renderFriends(filtered);
+        }
+
+        // 加载好友请求数量
+        async function loadFriendRequests() {
+            try {
+                const res = await fetch('/api/friends/requests');
+                const data = await res.json();
+                if (data.received) {
+                    const count = data.received.length;
+                    const badge = document.getElementById('requestBadge');
+                    badge.textContent = count;
+                    badge.style.display = count > 0 ? 'flex' : 'none';
+                }
+            } catch (e) {
+                console.error('加载好友请求失败:', e);
+            }
+        }
+
+        // 跳转到聊天
+        function goChat(friendUid) {
+            window.location.href = '/social/chat?friend=' + friendUid;
+        }
+
+        // 显示添加好友弹窗
+        function showAddFriendModal() {
+            document.getElementById('addFriendModal').classList.add('active');
+            document.getElementById('friendUidInput').value = '';
+            document.getElementById('friendUidInput').focus();
+        }
+
+        // 隐藏添加好友弹窗
+        function hideAddFriendModal() {
+            document.getElementById('addFriendModal').classList.remove('active');
+        }
+
+        // 发送好友请求
+        async function sendFriendRequest() {
+            const uid = document.getElementById('friendUidInput').value.trim();
+            if (!uid) {
+                showToast('请输入好友 UID 或用户名', 'error');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/friends/request', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ friend_uid: uid })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    showToast('好友请求已发送', 'success');
+                    hideAddFriendModal();
+                    loadFriendRequests();
+                } else {
+                    showToast(data.error || '发送失败', 'error');
+                }
+            } catch (e) {
+                showToast('发送失败，请重试', 'error');
+            }
+        }
+
+        // 删除好友
+        async function deleteFriend(uid, name) {
+            if (!confirm(`确定要删除好友 ${name} 吗？`)) {
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/friends/' + uid, {
+                    method: 'DELETE'
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    showToast('已删除好友', 'success');
+                    loadFriends();
+                } else {
+                    showToast(data.error || '删除失败', 'error');
+                }
+            } catch (e) {
+                showToast('删除失败，请重试', 'error');
+            }
+        }
+
+        // 显示 Toast
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = 'toast ' + type + ' show';
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        // 点击弹窗外部关闭
+        document.getElementById('addFriendModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                hideAddFriendModal();
+            }
+        });
+    </script>
+</body>
+</html>

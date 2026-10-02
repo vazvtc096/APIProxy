@@ -1,5 +1,5 @@
 """前端页面路由"""
-from quart import Blueprint, request, session, jsonify, Response, render_template, redirect, url_for
+from quart import Blueprint, request, session, jsonify, Response, render_template, redirect, url_for, send_file
 from ..app import app
 from ..core import *
 from .. import social, oauth, upstreams, pricing
@@ -13,6 +13,29 @@ from ..cloudflare import get_client_ip as _cf_get_client_ip
 from .. import waf as _waf
 
 pages_bp = Blueprint('pages', __name__)
+
+
+# ---------- 站点图标 ----------
+import os as _os
+# pages.py 位于 APIProxy/routes/ 下：上溯两级即 APIProxy 包根，static 在其下
+_STATIC_DIR = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "static")
+
+
+@pages_bp.route('/favicon.ico', methods=['GET'])
+async def favicon_ico():
+    """站点图标（浏览器默认请求路径），无会话要求，长缓存。"""
+    return await send_file(_os.path.join(_STATIC_DIR, "favicon.ico"),
+                           mimetype="image/x-icon",
+                           cache_timeout=86400)
+
+
+@pages_bp.route('/favicon.svg', methods=['GET'])
+async def favicon_svg():
+    """站点图标矢量版（现代浏览器优先使用）。"""
+    return await send_file(_os.path.join(_STATIC_DIR, "favicon.svg"),
+                           mimetype="image/svg+xml",
+                           cache_timeout=86400)
+
 
 @pages_bp.route('/api/rcon', methods=['POST'])
 async def rcon_execute():
@@ -108,6 +131,14 @@ async def chat():
 @pages_bp.route('/social')
 async def social_home():
     """社交首页 - 帖子广场"""
+    if 'user' not in session:
+        return redirect(url_for('login_page'))
+    return await render_template('social_posts.html')
+
+
+@pages_bp.route('/social/posts')
+async def social_posts_plaza():
+    """帖子广场（与 /social 等价，供帖子详情页「返回帖子广场」回退）"""
     if 'user' not in session:
         return redirect(url_for('login_page'))
     return await render_template('social_posts.html')

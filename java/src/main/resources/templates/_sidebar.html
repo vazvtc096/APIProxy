@@ -1,0 +1,361 @@
+<!-- 全站统一侧边栏（单文件来源）：文件夹式手风琴（主要功能固定展开，其余分组可折叠，每次仅展开一组） -->
+<style nonce="{{ csp_nonce }}">
+    .sidebar-badge {
+        margin-left: auto;
+        min-width: 18px;
+        height: 18px;
+        padding: 0 5px;
+        background: #ef4444;
+        color: #fff;
+        font-size: 11px;
+        font-weight: 600;
+        border-radius: 9px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        line-height: 18px;
+    }
+    /* 统一兜底：侧边栏项是 <a> 链接，默认带下划线，全站强制去掉（各页颜色/尺寸仍由各自 CSS 控制） */
+    .sidebar-item { text-decoration: none; }
+    /* 强制改密引导横幅（仅当用户被标记需改密时显示） */
+    .sidebar-pw-banner {
+        margin: 0 14px 16px;
+        padding: 10px 12px;
+        background: #fef2f2;
+        border: 1px solid #fecaca;
+        border-radius: 8px;
+        font-size: 12px;
+        line-height: 1.6;
+        color: #b91c1c;
+        display: none;
+    }
+    .sidebar-pw-banner a { color: #dc2626; font-weight: 600; text-decoration: underline; }
+    /* 文件夹式分组：标题行（可点击）+ 可折叠主体 */
+    .sidebar-group-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 20px;
+        font-size: 11px;
+        font-weight: 600;
+        color: #9ca3af;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        cursor: pointer;
+        user-select: none;
+        transition: color 0.15s;
+    }
+    .sidebar-group-title:hover { color: #667eea; }
+    .sidebar-group-title .group-arrow {
+        font-size: 10px;
+        transition: transform 0.2s;
+    }
+    .sidebar-group-body { display: none; }
+    .sidebar-group.open .sidebar-group-body { display: block; }
+    .sidebar-group-body .sidebar-item { padding-left: 24px; }
+</style>
+<aside class="sidebar">
+    <div class="sidebar-pw-banner" id="pwBanner">
+        出于安全考虑，请先<a href="/settings?pw=1">修改初始密码</a>后再继续操作。
+    </div>
+    <!-- 固定区：主要功能（不折叠） -->
+    <div class="sidebar-section sidebar-pinned">
+        <div class="sidebar-section-title">主菜单</div>
+        <a href="/dashboard" class="sidebar-item {% if active_page == 'dashboard' %}active{% endif %}" data-page="overview">
+            <i class="bi bi-speedometer2"></i><span>概览</span>
+        </a>
+        <a href="/dashboard/apikeys" class="sidebar-item {% if active_page == 'apikeys' %}active{% endif %}" data-page="apikeys">
+            <i class="bi bi-key"></i><span>API Keys</span>
+        </a>
+        <a href="/dashboard/usage" class="sidebar-item {% if active_page == 'usage' %}active{% endif %}" data-page="usage">
+            <i class="bi bi-bar-chart"></i><span>使用统计</span>
+        </a>
+        <a href="/dashboard/recharge" class="sidebar-item {% if active_page == 'recharge' %}active{% endif %}" data-page="recharge">
+            <i class="bi bi-credit-card"></i><span>充值</span>
+        </a>
+    </div>
+
+    <!-- 可折叠组：社交 -->
+    <div class="sidebar-section sidebar-group" data-group="social">
+        <div class="sidebar-group-title" data-action="toggleSidebarGroup" data-args="social">
+            <span>社交</span><i class="bi bi-chevron-down group-arrow"></i>
+        </div>
+        <div class="sidebar-group-body">
+            <a href="/social" class="sidebar-item {% if active_page == 'social' %}active{% endif %}">
+                <i class="bi bi-grid"></i><span>社区广场</span>
+            </a>
+            <a href="/social/collections" class="sidebar-item {% if active_page == 'collections' %}active{% endif %}">
+                <i class="bi bi-bookmark"></i><span>收藏</span>
+            </a>
+            <a href="/social/friends" class="sidebar-item {% if active_page == 'friends' %}active{% endif %}">
+                <i class="bi bi-people"></i><span>好友</span>
+                <span class="sidebar-badge" data-unread="friends" style="display:none;">0</span>
+            </a>
+            <a href="/social/friends/requests" class="sidebar-item {% if active_page == 'friend_requests' %}active{% endif %}">
+                <i class="bi bi-person-plus"></i><span>好友请求</span>
+                <span class="sidebar-badge" data-unread="friends" style="display:none;">0</span>
+            </a>
+            <a href="/social/chat" class="sidebar-item {% if active_page == 'chat' %}active{% endif %}">
+                <i class="bi bi-chat-dots"></i><span>消息</span>
+                <span class="sidebar-badge" data-unread="chat" style="display:none;">0</span>
+            </a>
+            <a href="/social/transfer" class="sidebar-item {% if active_page == 'transfer' %}active{% endif %}">
+                <i class="bi bi-arrow-left-right"></i><span>转账</span>
+            </a>
+            <a href="/social/transactions" class="sidebar-item {% if active_page == 'transactions' %}active{% endif %}">
+                <i class="bi bi-receipt"></i><span>交易记录</span>
+            </a>
+        </div>
+    </div>
+
+    <!-- 可折叠组：管理（仅管理员可见） -->
+    <div class="sidebar-section sidebar-group" id="adminSection" data-group="admin" style="display:none;">
+        <div class="sidebar-group-title" data-action="toggleSidebarGroup" data-args="admin">
+            <span>管理</span><i class="bi bi-chevron-down group-arrow"></i>
+        </div>
+        <div class="sidebar-group-body">
+            <a href="/dashboard/admin" class="sidebar-item {% if active_page == 'admin' %}active{% endif %}" data-page="admin">
+                <i class="bi bi-shield-check"></i><span>充值审核</span>
+                <span class="sidebar-badge" id="pendingCount" style="display:none;">0</span>
+            </a>
+            <a href="/admin/posts" class="sidebar-item {% if active_page == 'posts' %}active{% endif %}">
+                <i class="bi bi-file-post"></i><span>帖子审核</span>
+            </a>
+            <a href="/dashboard/users" class="sidebar-item {% if active_page == 'users' %}active{% endif %}" data-page="users">
+                <i class="bi bi-people"></i><span>用户管理</span>
+            </a>
+            <a href="/dashboard/stats" class="sidebar-item {% if active_page == 'stats' %}active{% endif %}" data-page="stats">
+                <i class="bi bi-graph-up"></i><span>数据统计</span>
+            </a>
+            <a href="/admin/bans" class="sidebar-item {% if active_page == 'bans' %}active{% endif %}">
+                <i class="bi bi-slash-circle"></i><span>封禁管理</span>
+            </a>
+            <a href="/admin/announcements" class="sidebar-item {% if active_page == 'announcements' %}active{% endif %}">
+                <i class="bi bi-megaphone"></i><span>公告管理</span>
+            </a>
+            <a href="/admin/hooks" class="sidebar-item {% if active_page == 'hooks' %}active{% endif %}">
+                <i class="bi bi-link-45deg"></i><span>钩子管理</span>
+            </a>
+            <a href="/admin/tasks" class="sidebar-item {% if active_page == 'tasks' %}active{% endif %}">
+                <i class="bi bi-clock-history"></i><span>定时任务</span>
+            </a>
+            <a href="/dashboard/upstreams" class="sidebar-item {% if active_page == 'upstreams' %}active{% endif %}" data-page="upstreams">
+                <i class="bi bi-hdd-network"></i><span>上游管理</span>
+            </a>
+        </div>
+    </div>
+
+    <!-- 可折叠组：其他 -->
+    <div class="sidebar-section sidebar-group" data-group="other">
+        <div class="sidebar-group-title" data-action="toggleSidebarGroup" data-args="other">
+            <span>其他</span><i class="bi bi-chevron-down group-arrow"></i>
+        </div>
+        <div class="sidebar-group-body">
+            <a href="/dashboard/model-prices" class="sidebar-item {% if active_page == 'model-prices' %}active{% endif %}" data-page="model-prices">
+                <i class="bi bi-tags"></i><span>模型价格</span>
+            </a>
+            <a href="/docs/api" class="sidebar-item">
+                <i class="bi bi-book"></i><span>API 文档</span>
+            </a>
+            <a href="/settings" class="sidebar-item {% if active_page == 'settings' %}active{% endif %}">
+                <i class="bi bi-gear"></i><span>设置</span>
+            </a>
+            <a href="/dashboard/models" class="sidebar-item {% if active_page == 'models' %}active{% endif %}" data-page="models">
+                <i class="bi bi-cpu"></i><span>可用模型</span>
+            </a>
+        </div>
+    </div>
+</aside>
+<script nonce="{{ csp_nonce }}">
+    // 未读红点（聊天未读 + 公告未读、待处理好友请求）——全站统一，单一数据来源
+    async function refreshUnread() {
+        try {
+            const r = await fetch('/api/chat/unread');
+            if (!r.ok) return;
+            const d = await r.json();
+            applyUnread(d);
+        } catch (e) { /* ignore */ }
+    }
+
+    // 把未读快照应用到红点（同时供 SSE 与轮询复用）
+    function applyUnread(d) {
+        if (!d) return;
+        const chat = (d.unread_count || 0) + (d.announcement_unread || 0);
+        const friends = d.friend_requests || 0;
+        document.querySelectorAll('[data-unread="chat"]').forEach(el => {
+            if (chat > 0) { el.style.display = 'inline-flex'; el.textContent = chat > 99 ? '99+' : String(chat); }
+            else el.style.display = 'none';
+        });
+        document.querySelectorAll('[data-unread="friends"]').forEach(el => {
+            if (friends > 0) { el.style.display = 'inline-flex'; el.textContent = friends > 99 ? '99+' : String(friends); }
+            else el.style.display = 'none';
+        });
+        // 广播给其它页面模块（如聊天页）做实时刷新
+        document.dispatchEvent(new CustomEvent('unread-update', { detail: d }));
+    }
+
+    // 通过统一 SSE 长连接接收未读 + 用户信息（替代每 15s 轮询 /api/chat/unread 与每页 fetch /userinfo）
+    function connectUnreadStream() {
+        if (typeof EventSource === 'undefined') {
+            refreshUnread();
+            setInterval(refreshUnread, 15000);
+            // 无 SSE 能力时，用户信息回退一次性拉取
+            if (!window.__userinfoFallback) {
+                window.__userinfoFallback = true;
+                fetch('/userinfo').then(r => r.ok ? r.json() : null).then(d => {
+                    if (d) { window.userInfo = d; document.dispatchEvent(new CustomEvent('userinfo-update', { detail: d })); }
+                }).catch(() => {});
+            }
+            return;
+        }
+        const es = new EventSource('/api/stream');
+        es.addEventListener('unread', function (ev) {
+            window.__unreadSSEAlive = true;
+            try { applyUnread(JSON.parse(ev.data)); } catch (e) { /* ignore */ }
+        });
+        es.addEventListener('userinfo', function (ev) {
+            window.__unreadSSEAlive = true;
+            try {
+                const d = JSON.parse(ev.data);
+                window.userInfo = d;
+                document.dispatchEvent(new CustomEvent('userinfo-update', { detail: d }));
+            } catch (e) { /* ignore */ }
+        });
+        es.onerror = function () {
+            window.__unreadSSEAlive = false;
+            es.close();
+            // SSE 不可用时降级为轮询
+            refreshUnread();
+            setInterval(refreshUnread, 15000);
+        };
+    }
+
+    // 全局：等待用户信息就绪。优先消费 SSE 推送的 window.userInfo；SSE 未连上时兜底拉一次 /userinfo。
+    // 供各页面替代原先的 fetch('/userinfo')，消除每页一次的请求噪音。
+    // 并发调用共享同一 in-flight Promise，避免导航栏 + 多个页面脚本同时兜底拉取造成重复请求。
+    window.getUserInfo = function () {
+        if (window.userInfo) return Promise.resolve(window.userInfo);
+        if (window.__userInfoPromise) return window.__userInfoPromise;
+        window.__userInfoPromise = new Promise((resolve) => {
+            let done = false;
+            const finish = (d) => {
+                if (done) return;
+                done = true;
+                document.removeEventListener('userinfo-update', handler);
+                resolve(d);
+            };
+            const handler = (e) => finish(e.detail);
+            document.addEventListener('userinfo-update', handler);
+            // SSE 不可用兜底：1.5s 内仍未收到则直接拉取
+            setTimeout(async () => {
+                if (done) return;
+                try {
+                    const r = await fetch('/userinfo');
+                    if (r.ok) {
+                        const d = await r.json();
+                        window.userInfo = d;
+                        finish(d);
+                        return;
+                    }
+                } catch (e) { /* ignore */ }
+                finish(null);
+            }, 1500);
+        });
+        return window.__userInfoPromise;
+    };
+
+    // 管理员分区：根据登录态统一显隐（所有页面一致）
+    async function revealAdminSection() {
+        let isAdmin = window.userInfo && window.userInfo.is_admin;
+        let mustPw = window.userInfo && window.userInfo.must_change_password;
+        if (isAdmin === undefined || isAdmin === null || mustPw === undefined) {
+            // 优先消费统一 SSE 推送的 window.userInfo（兜底由 getUserInfo 内部一次性拉取）
+            try {
+                const d = await window.getUserInfo();
+                if (d) { isAdmin = d.is_admin; mustPw = d.must_change_password; }
+            } catch (e) { /* ignore */ }
+        }
+        if (isAdmin) {
+            const s = document.getElementById('adminSection');
+            if (s) s.style.display = 'block';
+        }
+        // 强制改密引导横幅
+        if (mustPw) {
+            const b = document.getElementById('pwBanner');
+            if (b) b.style.display = 'block';
+        }
+        // 等管理员分区显隐确定后，再决定展开哪个分组
+        setTimeout(initSidebarGroups, 0);
+    }
+
+    // ---------- 文件夹式分组（手风琴） ----------
+    var _GROUP_KEY = 'apiproxy_sidebar_group';
+    // 展开/折叠某个组：每次只展开一个组
+    function toggleSidebarGroup(name) {
+        // 事件委托传入的 data-args 是原始字符串（不会当 JS 字面量求值），
+        // 若调用处误带引号（如 'social'），去掉首尾引号以保证与 data-group 精确匹配。
+        name = String(name == null ? '' : name).replace(/^['"]|['"]$/g, '');
+        var groups = document.querySelectorAll('.sidebar-group');
+        var targetOpen = true;
+        groups.forEach(function (g) {
+            var isTarget = g.getAttribute('data-group') === name;
+            // 目标组若非管理员可见则忽略
+            if (isTarget && g.style.display === 'none') { targetOpen = false; return; }
+            if (isTarget) targetOpen = !g.classList.contains('open');
+        });
+        groups.forEach(function (g) {
+            var isTarget = g.getAttribute('data-group') === name;
+            var open = isTarget ? targetOpen : false;
+            g.classList.toggle('open', open);
+            var arrow = g.querySelector('.group-arrow');
+            if (arrow) arrow.style.transform = open ? 'rotate(0deg)' : 'rotate(-90deg)';
+        });
+        try { localStorage.setItem(_GROUP_KEY, targetOpen ? name : ''); } catch (e) {}
+    }
+    // 初始化：展开上次保存的组；无保存记录时展开当前 active 项所在组（active 在固定区则展开第一个可见组）
+    function initSidebarGroups() {
+        var saved = null;
+        try { saved = localStorage.getItem(_GROUP_KEY); } catch (e) {}
+        var activeItem = document.querySelector('.sidebar-group .sidebar-item.active');
+        var activeGroup = activeItem ? activeItem.closest('.sidebar-group') : null;
+        var target = (saved && saved !== '') ? saved : (activeGroup ? activeGroup.getAttribute('data-group') : '');
+        var groups = Array.prototype.slice.call(document.querySelectorAll('.sidebar-group'));
+        // 若目标组不可见（如非管理员时保存的是 admin），回退到第一个可见组
+        var visibleGroups = groups.filter(function (g) { return g.style.display !== 'none'; });
+        if (!visibleGroups.length) return;
+        var targetVisible = groups.some(function (g) { return g.getAttribute('data-group') === target && g.style.display !== 'none'; });
+        if (!target || !targetVisible) target = visibleGroups[0].getAttribute('data-group');
+        groups.forEach(function (g) {
+            var open = g.getAttribute('data-group') === target;
+            g.classList.toggle('open', open);
+            var arrow = g.querySelector('.group-arrow');
+            if (arrow) arrow.style.transform = open ? 'rotate(0deg)' : 'rotate(-90deg)';
+        });
+    }
+
+    // 侧边栏滚动位置持久化：切换页签（整页重载）后保持原滚动位置
+    (function () {
+        const sb = document.querySelector('.sidebar');
+        if (!sb) return;
+        const KEY = 'apiproxy_sidebar_scroll';
+        const save = () => { try { sessionStorage.setItem(KEY, String(sb.scrollTop)); } catch (e) {} };
+        sb.addEventListener('scroll', save, { passive: true });
+        sb.addEventListener('click', save);
+        window.addEventListener('beforeunload', save);
+        try {
+            const p = parseInt(sessionStorage.getItem(KEY) || '0', 10);
+            if (p > 0) sb.scrollTop = p;
+        } catch (e) {}
+    })();
+
+    function _sidebarInit() {
+        initSidebarGroups();          // 直接初始化分组展开状态（不依赖 /userinfo 请求结果）
+        connectUnreadStream();
+        revealAdminSection();
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', _sidebarInit);
+    } else {
+        _sidebarInit();
+    }
+</script>

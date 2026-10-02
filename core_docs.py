@@ -41,6 +41,80 @@ async def _usage_daily(user_name: str = '', days: int = 7) -> dict:
     return {'dates': dates, 'costs': costs, 'requests': requests, 'tokens': tokens}
 
 
+async def _usage_daily_by_model(user_name: str = '', days: int = 7, top_n: int = 6) -> dict:
+    """按 天 x 模型 交叉聚合用量（供 DeepSeek 风格堆叠柱状图）。
+
+    返回与 _usage_daily 相同的日期轴，外加每个模型的每日 cost/requests/tokens 序列：
+    {'dates': [...], 'models': ['m1', 'm2', '其他'],
+     'costs': {'m1': [..], ...}, 'requests': {...}, 'tokens': {...}}
+    模型按区间总费用取 top_n，其余（若超出）合并进 '其他'。
+    """
+    clauses = []
+    args: list = []
+    if user_name:
+        clauses.append('user_name = ?')
+        args.append(user_name)
+    clauses.append("created_at >= DATE('now', '-' || ? || ' days')")
+    args.append(days)
+    where = ('WHERE ' + ' AND '.join(clauses)) if clauses else ''
+    sql = f"""
+        SELECT DATE(created_at) as date,
+               COALESCE(model, '未知模型') as model,
+               COALESCE(SUM(cost), 0) as cost,
+               COUNT(*) as requests,
+               COALESCE(SUM(total_tokens), 0) as tokens
+        FROM usage_logs
+        {where}
+        GROUP BY DATE(created_at), model
+    """
+    rows = await async_db_query(sql, tuple(args)) or []
+    from datetime import datetime, timedelta
+    end = datetime.now().date()
+
+    # 模型按区间总费用排序取 top_n；超出部分合并为 '其他'
+    totals: dict = {}
+    for r in rows:
+        t = totals.setdefault(r['model'], [0.0, 0, 0])
+        t[0] += float(r['cost'] or 0)
+        t[1] += r['requests']
+        t[2] += r['tokens']
+    ordered = sorted(totals.items(), key=lambda kv: kv[1][0], reverse=True)
+    top = [m for m, _ in ordered[:top_n]]
+    has_other = len(ordered) > top_n
+    if has_other:
+        top.append('其他')
+
+    def bucket(model: str):
+        if model in top:
+            return model
+        return '其他' if has_other else None
+
+    date_idx: dict = {}
+    dates = []
+    for i in range(days - 1, -1, -1):
+        d = (end - timedelta(days=i)).strftime('%Y-%m-%d')
+        date_idx[d] = days - 1 - i
+        dates.append(d)
+
+    costs = {m: [0.0] * days for m in top}
+    requests = {m: [0] * days for m in top}
+    tokens = {m: [0] * days for m in top}
+    for r in rows:
+        di = date_idx.get(r['date'])
+        if di is None:
+            continue
+        b = bucket(r['model'])
+        if b is None:
+            continue  # 模型数量未超 top_n 时理论上不会走到这里
+        costs[b][di] += float(r['cost'] or 0)
+        requests[b][di] += r['requests']
+        tokens[b][di] += r['tokens']
+    for m in top:
+        costs[m] = [round(v, 6) for v in costs[m]]
+    return {'dates': dates, 'models': top, 'costs': costs,
+            'requests': requests, 'tokens': tokens}
+
+
 DOCS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'docs')
 
 

@@ -14,6 +14,12 @@ _TEST_DIR = tempfile.mkdtemp(prefix="apiproxy_test_")
 _TEST_DB = os.path.join(_TEST_DIR, "test_users.db")
 os.environ["DB_PATH"] = _TEST_DB
 
+# 1.1 测试默认走隔离 sqlite，避免依赖 config.yaml 里 DB_TYPE=postgres 的
+#     占位 DATABASE_URL（<PG_PASSWORD>）去连本机不存在/无密码的 PG 实例。
+#     需要真实 PG 自测时，可在调用 pytest 前显式 export DB_TYPE=postgres。
+os.environ.setdefault("DB_TYPE", "sqlite")
+os.environ.setdefault("DATABASE_URL", "")
+
 # 2. 提供 JWT 密钥，避免 fail-closed 预检拒绝启动
 os.environ["APIPROXY_OAUTH_JWT_SECRET"] = "test-oauth-jwt-secret-0123456789abcdef"
 

@@ -12,8 +12,148 @@ from .. import db
 from ..constants import CHAR_PRICE_LOOKUP, UNEXCEPT_CHAR, MONEY_PER_MILLION_TOKENS, UNEXCEPT_MODEL, MAX_OVERDRAFT
 from ..cloudflare import get_client_ip as _cf_get_client_ip
 from .. import waf as _waf
+from .. import cache_store
+import re
+import asyncio
+from .. import tokenpolicy as tokenpolicy_mod
+from .. import redeem as redeem_mod
+import json
+import datetime
 
 admin_bp = Blueprint('admin', __name__)
+
+
+# ---------- 管理员操作审计（blueprint 级 after_request 自动落库）----------
+
+# 噪音端点不落库（playground 的测试请求等）
+_AUDIT_SKIP_PREFIXES = ('/api/admin/playground', '/api/admin/health-probe-test')
+_AUDIT_REDACT_SUBSTR = ('password', 'secret', 'token', 'key', 'credential', 'pass')
+
+
+def _redact_json(obj, _depth=0):
+    """递归脱敏：键名含敏感字样的字段值替换为 [redacted]（防嵌套泄漏）。"""
+    if _depth > 4:
+        return '...'
+    if isinstance(obj, dict):
+        out = {}
+        for k, v in obj.items():
+            kl = str(k).lower()
+            out[k] = ('[redacted]' if any(s in kl for s in _AUDIT_REDACT_SUBSTR)
+                      else _redact_json(v, _depth + 1))
+        return out
+    if isinstance(obj, (list, tuple)):
+        return [_redact_json(x, _depth + 1) for x in obj[:20]]
+    return obj
+
+
+@admin_bp.after_request
+async def _audit_admin_write(response):
+    """对 admin 蓝图的非 GET API 请求自动写 audit_log（category=admin）。
+
+    event_type 取 "<METHOD> <path>"；请求体做脱敏摘要（含 password/secret/
+    token/key/credential 字样的字段值替换为 [redacted]）；2xx 为 low，
+    4xx/5xx 为 medium（失败的管理操作同样值得留痕）。任何异常不影响响应。
+    """
+    try:
+        if request.method in ('GET', 'HEAD', 'OPTIONS'):
+            return response
+        p = request.path or ''
+        if not p.startswith('/api/'):
+            return response  # 页面渲染不算操作
+        if any(p.startswith(x) for x in _AUDIT_SKIP_PREFIXES):
+            return response
+        from .. import audit_server
+        summary = ''
+        try:
+            j = await request.get_json(silent=True)
+            if isinstance(j, dict):
+                summary = json.dumps(_redact_json(j), ensure_ascii=False, default=str)[:600]
+        except Exception:
+            pass
+        sev = 'low' if response.status_code < 400 else 'medium'
+        await audit_server.audit_log(
+            'admin', f"{request.method} {p}", sev,
+            f"status={response.status_code} body={summary}",
+            user_name=session.get('user', '') or '',
+            client_ip=_cf_get_client_ip() or '',
+        )
+    except Exception as e:
+        logging.error(f"admin audit hook failed: {e}")
+    return response
+
+
+@admin_bp.route('/api/admin/audit', methods=['GET'])
+async def api_admin_audit_query():
+    """管理员会话查询审计日志（audit_server.query 收口）。fmt=csv 可导出。"""
+    err = await _require_admin()
+    if err:
+        return err
+    from .. import audit_server
+
+    def _i(name, d=0):
+        try:
+            return int(request.args.get(name, d))
+        except (TypeError, ValueError):
+            return d
+    rows = await audit_server.query(
+        limit=max(1, min(_i('limit', 100), 5000)),
+        category=request.args.get('category', ''),
+        event_type=request.args.get('event_type', ''),
+        severity=request.args.get('severity', ''),
+        client_ip=request.args.get('client_ip', ''),
+        user=request.args.get('user', ''),
+        days=_i('days', 0),
+    )
+    fmt = (request.args.get('fmt', '') or '').lower()
+    if fmt == 'csv':
+        text = audit_server.export_rows(rows, 'csv')
+        return Response(text, mimetype='text/csv',
+                        headers={'Content-Disposition': 'attachment; filename=admin_audit.csv'})
+    return jsonify({'events': rows, 'count': len(rows)}), 200
+
+
+@admin_bp.route('/api/admin/audit-stats', methods=['GET'])
+async def api_admin_audit_stats():
+    err = await _require_admin()
+    if err:
+        return err
+    from .. import audit_server
+    days = request.args.get('days', 7, type=int)
+    return jsonify({'stats': await audit_server.stats(max(1, min(days, 365)))}), 200
+
+
+@admin_bp.route('/admin/audit', methods=['GET'])
+async def admin_audit_page():
+    if 'user' not in session:
+        return redirect(url_for('login_page'))
+    if not await _is_admin():
+        return redirect(url_for('dashboard'))
+    return await render_template('admin_audit.html')
+
+
+_RE_EPOCH = re.compile(r'^-?\d+(\.\d+)?$')
+
+
+def _ban_expire_to_epoch(exp):
+    """将 ip_blacklist.ban_expire_at 统一成 epoch 秒级浮点。
+
+    兼容两种历史存储：秒级浮点（规范格式）与 ISO 字符串（早版本 ban_ip_auto 误写）。
+    无法解析时返回 None（视为永久封禁）。
+    """
+    if exp is None or exp == '':
+        return None
+    if isinstance(exp, (int, float)):
+        return float(exp)
+    s = str(exp).strip()
+    if _RE_EPOCH.match(s):
+        try:
+            return float(s)
+        except ValueError:
+            return None
+    try:
+        return datetime.datetime.fromisoformat(s).timestamp()
+    except Exception:
+        return None
 
 @admin_bp.route('/api/admin/recharge-requests', methods=['GET'])
 async def admin_recharge_requests():
@@ -163,11 +303,13 @@ async def admin_approve_recharge(request_id):
             conn.commit()
             logging.info(f"Recharge approved: {request_id}, amount: {req_dict['amount']}, user: {req_dict['user_name']}")
             return True, 'Approved', req_dict
-            
+
         except Exception as e:
             conn.rollback()
             logging.error(f"Approve recharge error: {e}")
             return False, str(e), None
+        finally:
+            conn.close()
 
     success, msg, req_info = await asyncio.to_thread(_process_approve)
 
@@ -423,12 +565,13 @@ async def admin_list_ip_bans():
     for r in (rows or []):
         r = dict(r)
         exp = r.get('ban_expire_at')
-        active = (exp is None) or (exp == '') or (float(exp) > now)
+        epoch = _ban_expire_to_epoch(exp)
+        active = (epoch is None) or (epoch > now)
         result.append({
             'id': r['id'],
             'ip': r['ip'],
             'reason': r.get('reason') or '',
-            'ban_expire_at': exp,
+            'ban_expire_at': epoch,
             'created_at': r.get('created_at'),
             'active': bool(active),
         })
@@ -560,8 +703,9 @@ async def admin_list_users():
     limit = min(int(request.args.get('limit', 50)), 200)
     offset = int(request.args.get('offset', 0))
     
-    # 构建查询
-    sql = "SELECT id, uid, user_name, email, balence, is_admin, is_banned, ban_reason, ban_expire_at, created_at, max_overdraft FROM users WHERE 1=1"
+    # 构建查询（系统虚拟用户 UID 池 0~15 不属于可管理用户，列表排除）
+    _sys_filter = " AND (uid IS NULL OR uid = '' OR LENGTH(uid) != 12 OR SUBSTR(uid, 1, 11) != '00000000000')"
+    sql = "SELECT id, uid, user_name, email, balence, is_admin, is_banned, ban_reason, ban_expire_at, created_at, max_overdraft FROM users WHERE 1=1" + _sys_filter
     args = []
     
     if search:
@@ -581,8 +725,8 @@ async def admin_list_users():
     
     users = await async_db_query(sql, args)
     
-    # 获取总数
-    count_sql = "SELECT COUNT(*) as cnt FROM users WHERE 1=1"
+    # 获取总数（与列表同口径排除系统虚拟用户）
+    count_sql = "SELECT COUNT(*) as cnt FROM users WHERE 1=1" + _sys_filter
     count_args = []
     if search:
         count_sql += " AND (user_name LIKE ? OR uid LIKE ?)"
@@ -612,7 +756,12 @@ async def admin_stats():
     err = await _require_admin()
     if err:
         return err
-    
+
+    # 统计为读多写少的全局聚合，短缓存（默认 15s）削减打开统计页的多段 COUNT/SUM 扫描。
+    cached = cache_store.cache_get_json('admin:stats')
+    if cached is not None:
+        return jsonify(cached)
+
     # 用户总数
     total_users_result = await async_db_query("SELECT COUNT(*) as cnt FROM users")
     total_users = total_users_result[0]['cnt'] if total_users_result else 0
@@ -644,7 +793,7 @@ async def admin_stats():
         if row['apikeys']:
             total_apikeys += len([k for k in row['apikeys'].split(',') if k.strip()])
     
-    return jsonify({
+    payload = {
         'total_users': total_users,
         'admin_users': admin_users,
         'banned_users': banned_users,
@@ -652,7 +801,9 @@ async def admin_stats():
         'total_recharge': total_recharge,
         'total_balence': total_balence,
         'total_apikeys': total_apikeys
-    })
+    }
+    cache_store.cache_set_json('admin:stats', payload, ttl=15)
+    return jsonify(payload)
 
 
 
@@ -888,7 +1039,12 @@ async def admin_delete_user(uid):
     user = await _get_user_by_uid(uid)
     if not user:
         return jsonify({'error': 'User not found'}), 404
-    
+
+    # 系统虚拟用户不可删除（UID 池 0~15）
+    from ..system_users import is_system_uid as _is_sys_uid
+    if _is_sys_uid(uid):
+        return jsonify({'error': '系统虚拟用户不可删除'}), 403
+
     # 不能删除自己
     if user['user_name'] == session['user']:
         return jsonify({'error': 'Cannot delete yourself'}), 400
@@ -921,7 +1077,12 @@ async def admin_set_password(uid):
     user = await _get_user_by_uid(uid)
     if not user:
         return jsonify({'error': 'User not found'}), 404
-    
+
+    # 系统虚拟用户不可改密（防止被赋密码后登录）
+    from ..system_users import is_system_uid as _is_sys_uid2
+    if _is_sys_uid2(uid):
+        return jsonify({'error': '系统虚拟用户不可修改密码'}), 403
+
     # 密码强度检查
     if len(new_password) < 6:
         return jsonify({'error': 'Password must be at least 6 characters'}), 400
@@ -973,6 +1134,33 @@ async def admin_set_user_overdraft(uid):
         return jsonify({'error': 'User not found'}), 404
     
     return jsonify({'success': True, 'message': '超支限额设置成功', 'max_overdraft': max_overdraft})
+
+
+@admin_bp.route('/api/admin/user/<uid>/budget', methods=['POST'])
+async def admin_set_user_budget(uid):
+    """管理员设置用户月度消费预算（0 = 不限；同时可重置本月累计）"""
+    err = await _require_admin()
+    if err:
+        return err
+    data = await request.get_json() or {}
+    if 'monthly_budget' not in data:
+        return jsonify({'error': 'monthly_budget is required'}), 400
+    user = await _get_user_by_uid(uid)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    from .. import budget as _budget
+    ok, e = await asyncio.to_thread(_budget.set_budget, user['user_name'],
+                                    data.get('monthly_budget'))
+    if not ok:
+        return jsonify({'error': e}), 400
+    reset = bool(data.get('reset_spent'))
+    if reset:
+        await async_db_query(
+            "UPDATE users SET budget_spent = 0, budget_month = ? WHERE uid = ?",
+            (_budget.current_month(), uid))
+    return jsonify({'success': True, 'message': '月度预算设置成功',
+                    'monthly_budget': float(data.get('monthly_budget') or 0),
+                    'reset_spent': reset})
 
 
 
@@ -1226,13 +1414,39 @@ async def api_admin_list_schedules():
     if err:
         return err
     rows = await async_db_query(
-        'SELECT id, model, "start", "end", input, output, enabled FROM pricing_schedules ORDER BY model ASC, "start" ASC'
+        'SELECT id, model, "start", "end", input, output, enabled, days FROM pricing_schedules ORDER BY model ASC, "start" ASC'
     )
-    return jsonify({'schedules': [
-        {'id': r['id'], 'model': r['model'], 'start': r['start'], 'end': r['end'],
-         'input': r['input'], 'output': r['output'], 'enabled': bool(r['enabled'])}
-        for r in rows
-    ]})
+    out = []
+    for r in rows:
+        days = None
+        try:
+            raw = r['days']
+            if raw:
+                d = json.loads(raw) if isinstance(raw, str) else raw
+                if isinstance(d, list):
+                    days = sorted({int(x) for x in d if 0 <= int(x) <= 6}) or None
+        except (ValueError, TypeError, KeyError):
+            days = None
+        out.append({'id': r['id'], 'model': r['model'], 'start': r['start'], 'end': r['end'],
+                    'input': r['input'], 'output': r['output'], 'enabled': bool(r['enabled']),
+                    'days': days})
+    return jsonify({'schedules': out})
+
+
+def _parse_schedule_days(data):
+    """解析请求里的 days（生效星期列表 0=周一..6=周日）。返回 (json_str, error)。"""
+    days = data.get('days')
+    if days in (None, []):
+        return None, None
+    if not isinstance(days, list):
+        return None, 'days must be a list'
+    try:
+        dl = sorted({int(d) for d in days})
+    except (TypeError, ValueError):
+        return None, 'days must be integers'
+    if any(d < 0 or d > 6 for d in dl):
+        return None, 'days out of range 0-6'
+    return json.dumps(dl), None
 
 
 
@@ -1254,9 +1468,12 @@ async def api_admin_create_schedule():
         out = float(data.get('output', 0))
     except (TypeError, ValueError):
         return jsonify({'error': 'input/output must be numbers'}), 400
+    days_json, derr = _parse_schedule_days(data)
+    if derr:
+        return jsonify({'error': derr}), 400
     await async_db_query(
-        'INSERT OR IGNORE INTO pricing_schedules (model, "start", "end", input, output, enabled) VALUES (?, ?, ?, ?, ?, 1)',
-        (model, start, end, inp, out),
+        'INSERT OR IGNORE INTO pricing_schedules (model, "start", "end", input, output, enabled, days) VALUES (?, ?, ?, ?, ?, 1, ?)',
+        (model, start, end, inp, out, days_json),
     )
     await asyncio.to_thread(pricing.reload_pricing_from_db)
     return jsonify({'ok': True, 'model': model, 'start': start, 'end': end, 'input': inp, 'output': out})
@@ -1282,9 +1499,12 @@ async def api_admin_update_schedule(sid):
     except (TypeError, ValueError):
         return jsonify({'error': 'input/output must be numbers'}), 400
     enabled = 1 if data.get('enabled', True) else 0
+    days_json, derr = _parse_schedule_days(data)
+    if derr:
+        return jsonify({'error': derr}), 400
     await async_db_query(
-        'UPDATE pricing_schedules SET model=?, "start"=?, "end"=?, input=?, output=?, enabled=? WHERE id=?',
-        (model, start, end, inp, out, enabled, sid),
+        'UPDATE pricing_schedules SET model=?, "start"=?, "end"=?, input=?, output=?, enabled=?, days=? WHERE id=?',
+        (model, start, end, inp, out, enabled, days_json, sid),
     )
     await asyncio.to_thread(pricing.reload_pricing_from_db)
     return jsonify({'ok': True, 'id': sid})
@@ -1301,6 +1521,379 @@ async def api_admin_delete_schedule(sid):
     return jsonify({'ok': True, 'id': sid})
 
 
+# ---------- 节假日（命中当天全天谷价；DB 为准）----------
+
+@admin_bp.route('/api/admin/pricing-holidays', methods=['GET'])
+async def api_admin_list_holidays():
+    err = await _require_admin()
+    if err:
+        return err
+    rows = await async_db_query("SELECT day FROM pricing_holidays ORDER BY day ASC")
+    return jsonify({'holidays': [r['day'] for r in rows]})
+
+
+@admin_bp.route('/api/admin/pricing-holidays', methods=['PUT'])
+async def api_admin_set_holidays():
+    err = await _require_admin()
+    if err:
+        return err
+    data = await request.get_json() or {}
+    days = data.get('holidays', [])
+    if not isinstance(days, list):
+        return jsonify({'error': 'holidays must be a list'}), 400
+    clean = []
+    for d in days:
+        d = str(d).strip()
+        if not d:
+            continue
+        if not (re.fullmatch(r'\d{4}-\d{2}-\d{2}', d) or re.fullmatch(r'\d{2}-\d{2}', d)):
+            return jsonify({'error': f'格式错误（需 YYYY-MM-DD 或 MM-DD）：{d}'}), 400
+        clean.append(d)
+    clean = sorted(set(clean))
+    await async_db_query("DELETE FROM pricing_holidays")
+    for d in clean:
+        await async_db_query("INSERT INTO pricing_holidays (day) VALUES (?)", (d,))
+    await asyncio.to_thread(pricing.reload_pricing_from_db)
+    return jsonify({'ok': True, 'holidays': clean})
+
+
+# ---------- 模型映射 / 用户组 / 上游健康 ----------
+
+@admin_bp.route('/api/admin/model-mappings', methods=['GET'])
+async def api_admin_list_mappings():
+    err = await _require_admin()
+    if err:
+        return err
+    rows = await async_db_query(
+        "SELECT id, pattern, upstreams, target_model, enabled FROM model_mappings ORDER BY id ASC")
+    from .. import routing as _rt
+    return jsonify({'mappings': [dict(r) for r in (rows or [])],
+                    'health': _rt.health_snapshot()})
+
+
+@admin_bp.route('/api/admin/model-mappings', methods=['POST'])
+async def api_admin_create_mapping():
+    err = await _require_admin()
+    if err:
+        return err
+    data = await request.get_json() or {}
+    pattern = str(data.get('pattern') or '').strip()
+    target = str(data.get('target_model') or '').strip()
+    if not pattern or not target:
+        return jsonify({'error': 'pattern 与 target_model 均必填'}), 400
+    ups = data.get('upstreams') or []
+    if not isinstance(ups, list):
+        return jsonify({'error': 'upstreams 必须是列表（空列表=任意上游）'}), 400
+    await async_db_query(
+        "INSERT INTO model_mappings (pattern, upstreams, target_model, enabled) VALUES (?, ?, ?, ?)",
+        (pattern, ','.join(str(u).strip() for u in ups if str(u).strip()),
+         target, 1 if data.get('enabled', True) else 0))
+    from .. import routing as _rt
+    await asyncio.to_thread(_rt.invalidate_mapping_cache)
+    return jsonify({'ok': True})
+
+
+@admin_bp.route('/api/admin/model-mappings/<int:mid>', methods=['PUT'])
+async def api_admin_update_mapping(mid):
+    err = await _require_admin()
+    if err:
+        return err
+    data = await request.get_json() or {}
+    fields, args = [], []
+    if 'pattern' in data:
+        if not str(data['pattern']).strip():
+            return jsonify({'error': 'pattern 不能为空'}), 400
+        fields.append('pattern = ?'); args.append(str(data['pattern']).strip())
+    if 'upstreams' in data:
+        ups = data['upstreams']
+        if not isinstance(ups, list):
+            return jsonify({'error': 'upstreams 必须是列表'}), 400
+        fields.append('upstreams = ?')
+        args.append(','.join(str(u).strip() for u in ups if str(u).strip()))
+    if 'target_model' in data:
+        if not str(data['target_model']).strip():
+            return jsonify({'error': 'target_model 不能为空'}), 400
+        fields.append('target_model = ?'); args.append(str(data['target_model']).strip())
+    if 'enabled' in data:
+        fields.append('enabled = ?'); args.append(1 if data['enabled'] else 0)
+    if not fields:
+        return jsonify({'error': 'no fields to update'}), 400
+    args.append(mid)
+    await async_db_query(f"UPDATE model_mappings SET {', '.join(fields)} WHERE id = ?", tuple(args))
+    from .. import routing as _rt
+    await asyncio.to_thread(_rt.invalidate_mapping_cache)
+    return jsonify({'ok': True})
+
+
+@admin_bp.route('/api/admin/model-mappings/<int:mid>', methods=['DELETE'])
+async def api_admin_delete_mapping(mid):
+    err = await _require_admin()
+    if err:
+        return err
+    await async_db_query("DELETE FROM model_mappings WHERE id = ?", (mid,))
+    from .. import routing as _rt
+    await asyncio.to_thread(_rt.invalidate_mapping_cache)
+    return jsonify({'ok': True})
+
+
+@admin_bp.route('/api/admin/user-groups', methods=['GET'])
+async def api_admin_list_groups():
+    err = await _require_admin()
+    if err:
+        return err
+    from .. import user_groups as _ug
+    groups = await asyncio.to_thread(_ug.list_groups)
+    users = await async_db_query("SELECT user_name, user_group FROM users ORDER BY user_name")
+    return jsonify({'groups': groups,
+                    'users': [dict(r) for r in (users or [])]})
+
+
+@admin_bp.route('/api/admin/user-groups', methods=['POST'])
+async def api_admin_save_group():
+    """创建/更新组。body: {name, allowed_models?: [..], price_multiplier?, note?}"""
+    err = await _require_admin()
+    if err:
+        return err
+    data = await request.get_json() or {}
+    name = str(data.get('name') or '').strip()
+    if not name:
+        return jsonify({'error': 'name 必填'}), 400
+    from .. import user_groups as _ug
+    try:
+        await asyncio.to_thread(
+            _ug.upsert_group, name,
+            data.get('allowed_models'),
+            float(data['price_multiplier']) if data.get('price_multiplier') is not None else None,
+            data.get('note'))
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    return jsonify({'ok': True})
+
+
+@admin_bp.route('/api/admin/user-groups/<gname>', methods=['DELETE'])
+async def api_admin_delete_group(gname):
+    err = await _require_admin()
+    if err:
+        return err
+    from .. import user_groups as _ug
+    try:
+        await asyncio.to_thread(_ug.delete_group, gname)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    return jsonify({'ok': True})
+
+
+@admin_bp.route('/api/admin/user-groups/assign', methods=['POST'])
+async def api_admin_assign_group():
+    """把用户划入组。body: {user, group}"""
+    err = await _require_admin()
+    if err:
+        return err
+    data = await request.get_json() or {}
+    user = str(data.get('user') or '').strip()
+    group = str(data.get('group') or '').strip()
+    if not user or not group:
+        return jsonify({'error': 'user 与 group 必填'}), 400
+    from .. import user_groups as _ug
+    try:
+        ok = await asyncio.to_thread(_ug.set_user_group, user, group)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    if not ok:
+        return jsonify({'error': 'user not found'}), 404
+    return jsonify({'ok': True})
+
+
+@admin_bp.route('/api/admin/upstream-health', methods=['GET'])
+async def api_admin_upstream_health():
+    err = await _require_admin()
+    if err:
+        return err
+    from .. import routing as _rt
+    from .. import configs as _cfg
+    return jsonify({'health': _rt.health_snapshot(),
+                    'config': _cfg.UPSTREAM_HEALTH})
+
+
+@admin_bp.route('/api/admin/playground', methods=['POST'])
+async def api_admin_playground():
+    """内置测试：管理员会话直接发起一次代理请求（照常计费，走映射/负载均衡全链路）。
+
+    body: {endpoint: 'chat'|'completions'|'embeddings', body: {...}}
+    """
+    err = await _require_admin()
+    if err:
+        return err
+    data = await request.get_json() or {}
+    endpoint = data.get('endpoint', 'chat')
+    payload = data.get('body') or {}
+    if not isinstance(payload, dict) or not payload.get('model'):
+        return jsonify({'error': 'body.model 必填'}), 400
+    owner = session.get('user')
+    from .. import user_groups as _ug
+    allowed, reason, mult = _ug.check_model_access(owner, payload['model'])
+    if not allowed:
+        return jsonify({'error': reason}), 403
+    kind = {'chat': 'chat', 'completions': 'completions',
+            'embeddings': 'embeddings'}.get(endpoint)
+    if kind is None:
+        return jsonify({'error': f'unsupported endpoint: {endpoint}'}), 400
+    sess_key = type('SessKey', (), {'owner': owner, 'oauth': True})()
+    from .openai_extra import _submit as _pg_submit
+    if kind == 'chat':
+        # chat 走 req_data 结构（messages 必须存在）
+        payload.setdefault('messages', [{'role': 'user', 'content': 'ping'}])
+        payload.pop('stream', None)
+        queue = await task_manager.get_queue(owner)
+        future = asyncio.Future()
+        task_data = {'stream': False, 'future': future, 'apikey_obj': sess_key,
+                     'req_data': payload, 'price_multiplier': mult}
+        await queue.put(task_data)
+        try:
+            result = await future
+        except ValueError as e:
+            return jsonify({'error': str(e)}), 400
+        except Exception as e:
+            logging.error(f"playground chat error for {owner}: {e}")
+            return jsonify({'error': 'Service temporarily unavailable'}), 500
+    else:
+        result, perr = await _pg_submit(payload, kind, sess_key, mult)
+        if perr:
+            return perr
+    # 取最近一条用量日志展示计费明细
+    log = await async_db_query(
+        "SELECT model, input_tokens, output_tokens, cost, upstream FROM usage_logs "
+        "WHERE user_name = ? ORDER BY created_at DESC LIMIT 1", (owner,))
+    return jsonify({'result': result, 'last_usage': dict(log[0]) if log else None})
+
+
+# ---------- 令牌级管控（管理端） ----------
+@admin_bp.route('/api/admin/tokens', methods=['GET'])
+async def admin_list_tokens():
+    """列出全部用户的令牌策略（管理端）"""
+    if 'user' not in session:
+        return jsonify({'error': 'Not logged in'}), 401
+    if not await _is_admin():
+        return jsonify({'error': 'Forbidden'}), 403
+    owner = request.args.get('owner')
+    try:
+        rows = await asyncio.to_thread(tokenpolicy_mod.list_policies, owner)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    return jsonify({'tokens': rows})
+
+
+@admin_bp.route('/api/admin/tokens/<int:key_id>/policy', methods=['POST'])
+async def admin_set_token_policy(key_id: int):
+    """管理员修改任意令牌策略"""
+    if 'user' not in session:
+        return jsonify({'error': 'Not logged in'}), 401
+    if not await _is_admin():
+        return jsonify({'error': 'Forbidden'}), 403
+    data = await request.get_json() or {}
+    ok, err = await asyncio.to_thread(
+        tokenpolicy_mod.set_policy, key_id, None, True,
+        label=data.get('label'),
+        expires_at=data.get('expires_at'),
+        quota=data.get('quota'),
+        allowed_models=data.get('allowed_models'),
+        ip_whitelist=data.get('ip_whitelist'),
+        is_active=data.get('is_active'),
+        rpm_limit=data.get('rpm_limit'),
+        tpm_limit=data.get('tpm_limit'),
+    )
+    return (jsonify({'ok': True}) if ok else (jsonify({'error': err}), 400))
+
+
+# ---------- 兑换码（管理端） ----------
+@admin_bp.route('/api/admin/redeem-codes/generate', methods=['POST'])
+async def admin_generate_redeem_codes():
+    if 'user' not in session:
+        return jsonify({'error': 'Not logged in'}), 401
+    if not await _is_admin():
+        return jsonify({'error': 'Forbidden'}), 403
+    data = await request.get_json() or {}
+    try:
+        count = int(data.get('count') or 1)
+        amount = float(data.get('amount') or 0)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'count/amount must be numeric'}), 400
+    try:
+        codes = await asyncio.to_thread(
+            redeem_mod.generate_codes, count, amount, session['user'],
+            data.get('note') or '')
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    return jsonify({'ok': True, 'codes': codes, 'count': len(codes),
+                    'amount': round(amount, 6)}), 201
+
+
+@admin_bp.route('/api/admin/redeem-codes', methods=['GET'])
+async def admin_list_redeem_codes():
+    if 'user' not in session:
+        return jsonify({'error': 'Not logged in'}), 401
+    if not await _is_admin():
+        return jsonify({'error': 'Forbidden'}), 403
+    status = request.args.get('status', 'all')
+    try:
+        rows = await asyncio.to_thread(redeem_mod.list_codes, status)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    return jsonify({'codes': rows})
+
+
+@admin_bp.route('/api/admin/redeem-codes/<int:code_id>', methods=['DELETE'])
+async def admin_delete_redeem_code(code_id: int):
+    if 'user' not in session:
+        return jsonify({'error': 'Not logged in'}), 401
+    if not await _is_admin():
+        return jsonify({'error': 'Forbidden'}), 403
+    ok, err = await asyncio.to_thread(redeem_mod.delete_code, code_id)
+    return (jsonify({'ok': True}) if ok else (jsonify({'error': err}), 400))
+
+
+# ---------- 计费规则管理页 ----------
+
+@admin_bp.route('/admin/redeem')
+async def admin_redeem_page():
+    """管理员兑换码管理页"""
+    if 'user' not in session:
+        return redirect(url_for('login_page'))
+    if not await _is_admin():
+        return redirect(url_for('dashboard'))
+    return await render_template('admin_redeem.html', active_page='redeem')
+
+
+@admin_bp.route('/admin/pricing')
+async def admin_pricing_page():
+    """管理员计费规则管理页：基础单价 / 时段峰谷计费 / 节假日"""
+    if 'user' not in session:
+        return redirect(url_for('login_page'))
+    if not await _is_admin():
+        return redirect(url_for('dashboard'))
+    return await render_template('admin_pricing.html')
+
+
+@admin_bp.route('/admin/playground')
+async def admin_playground_page():
+    """内置测试页：网页直接发起代理请求"""
+    if 'user' not in session:
+        return redirect(url_for('login_page'))
+    if not await _is_admin():
+        return redirect(url_for('dashboard'))
+    return await render_template('admin_playground.html')
+
+
+@admin_bp.route('/dashboard/routing')
+async def admin_routing_page():
+    """模型路由管理页：模型映射 / 用户组 / 上游健康"""
+    if 'user' not in session:
+        return redirect(url_for('login_page'))
+    if not await _is_admin():
+        return redirect(url_for('dashboard'))
+    return await render_template('admin_routing.html')
+
+
 # ---------- 上游 Key 管理（替代直接改 config.yaml）----------
 
 @admin_bp.route('/api/admin/upstreams', methods=['GET'])
@@ -1309,17 +1902,25 @@ async def api_admin_list_upstreams():
     if err:
         return err
     rows = await async_db_query(
-        "SELECT name, base_url, api_key, priority, enabled, disabled_models FROM upstreams ORDER BY priority ASC, name ASC"
+        "SELECT name, base_url, api_key, api_keys, priority, enabled, disabled_models FROM upstreams ORDER BY priority ASC, name ASC"
     )
     out = []
     for r in (rows or []):
         key = r['api_key'] or ''
         masked = key if len(key) <= 8 else (key[:6] + '*' * (len(key) - 10) + key[-4:])
+
+        def _mask(k):
+            k = k or ''
+            return k if len(k) <= 8 else (k[:6] + '*' * (len(k) - 10) + k[-4:])
+        extra = r['api_keys'] if 'api_keys' in r.keys() else ''
+        extra_list = [x.strip() for x in (extra or '').replace('\n', ',').split(',') if x.strip()]
         out.append({
             'name': r['name'],
             'base_url': r['base_url'],
             'api_key': key,
             'api_key_masked': masked,
+            'api_keys': extra_list,
+            'api_keys_masked': [_mask(x) for x in extra_list],
             'priority': r['priority'],
             'enabled': bool(r['enabled']),
             'disabled_models': [x for x in (r['disabled_models'] or '').split(',') if x.strip()],
@@ -1340,8 +1941,8 @@ async def api_admin_create_upstream():
     if e:
         return jsonify({'error': e}), 400
     await async_db_query(
-        "INSERT OR REPLACE INTO upstreams (name, base_url, api_key, priority, enabled, disabled_models) VALUES (?, ?, ?, ?, ?, ?)",
-        (ups['name'], ups['base_url'], ups['api_key'], ups['priority'], 1 if ups['enabled'] else 0, ups['disabled_models'])
+        "INSERT OR REPLACE INTO upstreams (name, base_url, api_key, api_keys, priority, enabled, disabled_models) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (ups['name'], ups['base_url'], ups['api_key'], ups.get('api_keys', ''), ups['priority'], 1 if ups['enabled'] else 0, ups['disabled_models'])
     )
     await asyncio.to_thread(upstreams.reload_upstreams_from_db)
     return jsonify({'ok': True, 'upstream': ups}), 200
@@ -1356,7 +1957,7 @@ async def api_admin_update_upstream(name):
     data = await request.get_json() or {}
     if not data:
         return jsonify({'error': 'Invalid JSON'}), 400
-    existing = await async_db_query("SELECT name, base_url, api_key, priority, enabled, disabled_models FROM upstreams WHERE name = ?", (name,))
+    existing = await async_db_query("SELECT name, base_url, api_key, api_keys, priority, enabled, disabled_models FROM upstreams WHERE name = ?", (name,))
     if not existing:
         return jsonify({'error': 'upstream not found'}), 404
     cur = existing[0]
@@ -1378,11 +1979,22 @@ async def api_admin_update_upstream(name):
         dm = ','.join([x.strip() for x in dm.split(',') if x.strip()])
     else:
         dm = ''
+    # 备用密钥池：未传 = 保持不变；传空列表/空串 = 清空
+    if 'api_keys' in data:
+        ak = data['api_keys']
+        if isinstance(ak, list):
+            ak = ','.join([str(x).strip() for x in ak if str(x).strip()])
+        elif isinstance(ak, str):
+            ak = ','.join([x.strip() for x in ak.replace('\n', ',').split(',') if x.strip()])
+        else:
+            return jsonify({'error': 'api_keys must be a list or comma-separated string'}), 400
+    else:
+        ak = cur['api_keys'] if 'api_keys' in cur.keys() else ''
     if not base_url or not api_key:
         return jsonify({'error': 'base_url and api_key are required'}), 400
     await async_db_query(
-        "UPDATE upstreams SET name=?, base_url=?, api_key=?, priority=?, enabled=?, disabled_models=? WHERE name=?",
-        (new_name, base_url, api_key, priority, 1 if enabled else 0, dm, name)
+        "UPDATE upstreams SET name=?, base_url=?, api_key=?, api_keys=?, priority=?, enabled=?, disabled_models=? WHERE name=?",
+        (new_name, base_url, api_key, ak or '', priority, 1 if enabled else 0, dm, name)
     )
     await asyncio.to_thread(upstreams.reload_upstreams_from_db)
     return jsonify({'ok': True, 'upstream': {'name': new_name, 'base_url': base_url,
@@ -1453,6 +2065,56 @@ async def admin_bans_page():
     return await render_template('admin_bans.html')
 
 
+@admin_bp.route('/admin/ip-audit')
+async def admin_ip_audit_page():
+    """IP 访问审计审批页面（IP_ACCESS_MODE=audit 模式的管理员 UI）"""
+    if 'user' not in session:
+        return redirect(url_for('login_page'))
+    if not await _is_admin():
+        return redirect(url_for('dashboard'))
+    return await render_template('admin_ip_audit.html')
+
+
+@admin_bp.route('/api/admin/ip-audit', methods=['GET'])
+async def admin_ip_audit_list():
+    """IP 访问申请列表（audit 模式）"""
+    err = await _require_admin()
+    if err:
+        return err
+    from .. import ip_audit
+    return jsonify({'records': ip_audit.list_records(),
+                    'summary': ip_audit.status_summary(),
+                    'mode': str(getattr(configs, 'IP_ACCESS_MODE', '') or '')})
+
+
+@admin_bp.route('/api/admin/ip-audit/<access_id>/approve', methods=['POST'])
+async def admin_ip_audit_approve(access_id):
+    err = await _require_admin()
+    if err:
+        return err
+    from .. import ip_audit
+    payload = await request.get_json(force=True, silent=True) or {}
+    token, msg = ip_audit.approve_access(access_id, "admin-web", payload.get('note') or '')
+    if not token:
+        return jsonify({'error': msg or '批准失败'}), 404 if '不存在' in (msg or '') else 400
+    return jsonify({'success': True,
+                    'message': f'已批准 {access_id}，访客将在等待页收到加密访问 Token'
+                               f'（{ip_audit.status_summary()["token_ttl_hours"]} 小时有效，绑定其 IP）'})
+
+
+@admin_bp.route('/api/admin/ip-audit/<access_id>/deny', methods=['POST'])
+async def admin_ip_audit_deny(access_id):
+    err = await _require_admin()
+    if err:
+        return err
+    from .. import ip_audit
+    payload = await request.get_json(force=True, silent=True) or {}
+    ok, msg = ip_audit.deny_access(access_id, "admin-web", payload.get('note') or '')
+    if not ok:
+        return jsonify({'error': msg or '操作失败'}), 404 if '不存在' in (msg or '') else 400
+    return jsonify({'success': True, 'message': f'已拒绝/吊销 {access_id}'})
+
+
 
 @admin_bp.route('/api/admin/ban-rules', methods=['GET'])
 async def admin_get_ban_rules():
@@ -1498,7 +2160,8 @@ async def api_admin_usage_daily():
         return err
     days = request.args.get('days', 30, type=int)
     days = max(1, min(days, 365))
-    return jsonify({'days': days, 'daily': await _usage_daily(days=days)}), 200
+    return jsonify({'days': days, 'daily': await _usage_daily(days=days),
+                    'models_daily': await _usage_daily_by_model(days=days)}), 200
 
 
 
@@ -1522,6 +2185,143 @@ async def api_admin_model_usage():
         {'model': r['model'], 'requests': r['requests'],
          'cost': round(float(r['cost'] or 0), 6), 'tokens': r['tokens']} for r in rows
     ]}), 200
+
+
+@admin_bp.route('/api/admin/stats/top-users', methods=['GET'])
+async def api_admin_top_users():
+    """用户用量排行 TOP N（管理员；按费用降序）"""
+    err = await _require_admin()
+    if err:
+        return err
+    days = request.args.get('days', 30, type=int)
+    days = max(1, min(days, 365))
+    limit = request.args.get('limit', 10, type=int)
+    limit = max(1, min(limit, 50))
+    rows = await async_db_query(
+        """SELECT user_name, COUNT(*) as requests, COALESCE(SUM(cost), 0) as cost,
+                  COALESCE(SUM(total_tokens), 0) as tokens
+           FROM usage_logs
+           WHERE created_at >= DATE('now', '-' || ? || ' days')
+           GROUP BY user_name ORDER BY cost DESC LIMIT ?""",
+        (days, limit)
+    ) or []
+    return jsonify({'days': days, 'users': [
+        {'user_name': r['user_name'], 'requests': r['requests'],
+         'cost': round(float(r['cost'] or 0), 6), 'tokens': r['tokens']} for r in rows
+    ]}), 200
+
+
+@admin_bp.route('/api/admin/stats/upstream-latency', methods=['GET'])
+async def api_admin_upstream_latency():
+    """上游延迟分位（管理员；Prometheus 直方图，进程生命周期累计）"""
+    err = await _require_admin()
+    if err:
+        return err
+    from ..utils.metrics import upstream_latency_summary
+    return jsonify({'latencies': upstream_latency_summary()}), 200
+
+
+@admin_bp.route('/api/admin/stats/billing-calibration', methods=['GET'])
+async def api_admin_billing_calibration():
+    """计费校准报表（管理员）：字符估算 token（/3 口径）vs 上游真实 token。
+
+    全站计费按字符（1 token ≈ 3 字符近似），上游返回的真实 usage 落在
+    real_prompt_tokens / real_completion_tokens。本报表按模型对比两者，
+    偏差率 = (估算 - 真实) / 真实，为后续按 token 计价提供数据依据。
+    仅统计捕获到真实 usage 的行（real_* 非 NULL）。
+    """
+    err = await _require_admin()
+    if err:
+        return err
+    days = request.args.get('days', 30, type=int)
+    days = max(1, min(days, 365))
+    rows = await async_db_query(
+        """SELECT model, COUNT(*) as requests,
+                  COALESCE(SUM(input_tokens), 0) as in_chars,
+                  COALESCE(SUM(output_tokens), 0) as out_chars,
+                  COALESCE(SUM(CASE WHEN real_prompt_tokens IS NOT NULL
+                              THEN real_prompt_tokens ELSE 0 END), 0) as real_in,
+                  COALESCE(SUM(CASE WHEN real_completion_tokens IS NOT NULL
+                              THEN real_completion_tokens ELSE 0 END), 0) as real_out,
+                  COALESCE(SUM(CASE WHEN real_reasoning_tokens IS NOT NULL
+                              THEN real_reasoning_tokens ELSE 0 END), 0) as reasoning,
+                  COALESCE(SUM(CASE WHEN real_cache_hit_tokens IS NOT NULL
+                              THEN real_cache_hit_tokens ELSE 0 END), 0) as cache_hit,
+                  SUM(CASE WHEN real_prompt_tokens IS NOT NULL THEN 1 ELSE 0 END) as captured
+           FROM usage_logs
+           WHERE created_at >= DATE('now', '-' || ? || ' days')
+           GROUP BY model ORDER BY requests DESC LIMIT 100""",
+        (days,)
+    ) or []
+    out = []
+    for r in rows:
+        est_tokens = (int(r['in_chars'] or 0) + int(r['out_chars'] or 0)) / 3.0
+        real_in = int(r['real_in'] or 0)
+        real_out = int(r['real_out'] or 0)
+        real_tokens = real_in + real_out
+        dev = None
+        if real_tokens > 0:
+            dev = round((est_tokens - real_tokens) / real_tokens * 100.0, 1)
+        cache_hit = int(r['cache_hit'] or 0)
+        reasoning = int(r['reasoning'] or 0)
+        out.append({
+            'model': r['model'], 'requests': r['requests'],
+            'in_chars': int(r['in_chars'] or 0), 'out_chars': int(r['out_chars'] or 0),
+            'est_tokens': int(round(est_tokens)),
+            'real_in': real_in, 'real_out': real_out,
+            'real_tokens': real_tokens, 'captured': int(r['captured'] or 0),
+            'deviation_pct': dev,
+            'cache_hit': cache_hit,
+            'cache_hit_pct': round(cache_hit / real_in * 100.0, 1) if real_in > 0 else None,
+            'reasoning': reasoning,
+            'reasoning_pct': round(reasoning / real_out * 100.0, 1) if real_out > 0 else None,
+        })
+    return jsonify({'days': days, 'models': out}), 200
+
+
+@admin_bp.route('/api/admin/stats/usage-export', methods=['GET'])
+async def api_admin_usage_export():
+    """导出每日用量明细 CSV（管理员；含每日聚合与用户/模型排行三段）"""
+    err = await _require_admin()
+    if err:
+        return err
+    days = request.args.get('days', 30, type=int)
+    days = max(1, min(days, 365))
+    daily = await _usage_daily(days=days)
+    lines = ['date,requests,tokens,cost']
+    for i, d in enumerate(daily['dates']):
+        lines.append(f"{d},{daily['requests'][i]},{daily['tokens'][i]},{daily['costs'][i]}")
+    # 用户排行
+    urows = await async_db_query(
+        """SELECT user_name, COUNT(*) as requests, COALESCE(SUM(cost), 0) as cost,
+                  COALESCE(SUM(total_tokens), 0) as tokens
+           FROM usage_logs
+           WHERE created_at >= DATE('now', '-' || ? || ' days')
+           GROUP BY user_name ORDER BY cost DESC LIMIT 100""",
+        (days,)
+    ) or []
+    lines.append('')
+    lines.append('user,requests,tokens,cost')
+    for r in urows:
+        lines.append(f"{r['user_name']},{r['requests']},{r['tokens']},{round(float(r['cost'] or 0), 6)}")
+    # 模型排行
+    mrows = await async_db_query(
+        """SELECT model, COUNT(*) as requests, COALESCE(SUM(cost), 0) as cost,
+                  COALESCE(SUM(total_tokens), 0) as tokens
+           FROM usage_logs
+           WHERE created_at >= DATE('now', '-' || ? || ' days')
+           GROUP BY model ORDER BY cost DESC LIMIT 100""",
+        (days,)
+    ) or []
+    lines.append('')
+    lines.append('model,requests,tokens,cost')
+    for r in mrows:
+        lines.append(f"{r['model']},{r['requests']},{r['tokens']},{round(float(r['cost'] or 0), 6)}")
+    from quart import Response
+    body = '\ufeff' + '\n'.join(lines)  # BOM：Excel 直接打开不乱码
+    return Response(body, mimetype='text/csv',
+                    headers={'Content-Disposition':
+                             f'attachment; filename=usage_export_{days}d.csv'})
 
 
 # ---------------------------------------------------------------- 公告管理 API
@@ -1726,6 +2526,96 @@ async def admin_hooks_page():
     if not await _is_admin():
         return redirect(url_for('dashboard'))
     return await render_template('admin_hooks.html')
+
+
+# ---------- 运维设置（余额预警 / 数据备份，DB 持久化 + 热生效）----------
+
+@admin_bp.route('/api/admin/ops-settings', methods=['GET'])
+async def api_admin_ops_settings_get():
+    err = await _require_admin()
+    if err:
+        return err
+    from .. import ops_settings
+    ov = ops_settings.get_overrides()
+    smtp = dict(configs.SMTP_SETTINGS or {})
+    smtp['pass'] = '******' if smtp.get('pass') else ''
+    napcat = dict(getattr(configs, 'NAPCAT', {}) or {})
+    napcat['token'] = '******' if napcat.get('token') else ''
+    return jsonify({
+        'balance_alert': configs.BALANCE_ALERT,
+        'db_backup': configs.DB_BACKUP,
+        'retention': getattr(configs, 'RETENTION', {}),
+        'upstream_health': configs.UPSTREAM_HEALTH,
+        'param_limits': configs.PARAM_LIMITS,
+        'smtp': smtp,
+        'napcat': napcat,
+        'token_billing': getattr(configs, 'TOKEN_BILLING', {}),
+        'smtp_configured': configs.smtp_configured(),
+        'db_type': getattr(configs, 'DB_TYPE', 'sqlite'),
+        'overridden': {k: bool(ov.get(k)) for k in
+                       ('balance_alert', 'db_backup', 'retention', 'upstream_health',
+                        'param_limits', 'smtp', 'napcat', 'token_billing')},
+    }), 200
+
+
+@admin_bp.route('/api/admin/ops-settings', methods=['PUT'])
+async def api_admin_ops_settings_put():
+    err = await _require_admin()
+    if err:
+        return err
+    from .. import ops_settings
+    data = await request.get_json() or {}
+    section = (data.get('section') or '').strip()
+    values = data.get('values')
+    if not isinstance(values, dict):
+        return jsonify({'error': 'values must be an object'}), 400
+    ok, error = await asyncio.to_thread(ops_settings.save, section, values)
+    if not ok:
+        return jsonify({'error': error}), 400
+    return jsonify({'ok': True,
+                    section: getattr(configs, section.upper(), {})}), 200
+
+
+@admin_bp.route('/api/admin/ops-settings/backup-now', methods=['POST'])
+async def api_admin_ops_backup_now():
+    """手动立即备份一次（复用定时备份同一条 pg_dump 链路）。"""
+    err = await _require_admin()
+    if err:
+        return err
+    from .. import pg_backup
+    try:
+        path = await asyncio.to_thread(pg_backup.run_backup)
+        return jsonify({'ok': True, 'file': os.path.basename(path)}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@admin_bp.route('/api/admin/ops-settings/notify-test', methods=['POST'])
+async def api_admin_ops_notify_test():
+    """向已配置的推送渠道发一条测试消息（当前仅 NapCat）。"""
+    err = await _require_admin()
+    if err:
+        return err
+    from .. import notify
+    nap = dict(getattr(configs, 'NAPCAT', {}) or {})
+    if not nap.get('enabled'):
+        return jsonify({'error': 'NapCat 推送未启用，请先勾选启用并保存'}), 400
+    targets = notify._targets(nap, '测试消息', '连通性预检')
+    if not targets:
+        return jsonify({'error': '没有可用的接收目标：请填写 QQ 号或群号'}), 400
+    queued = notify.notify('测试消息',
+                           f'NapCat 通道连通性测试 @ {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}\n'
+                           '如果你在 QQ 里看到这条消息，说明推送链路已打通。')
+    return jsonify({'ok': True, 'queued': queued}), 200
+
+
+@admin_bp.route('/admin/settings', methods=['GET'])
+async def admin_settings_page():
+    if 'user' not in session:
+        return redirect(url_for('login_page'))
+    if not await _is_admin():
+        return redirect(url_for('dashboard'))
+    return await render_template('admin_settings.html')
 
 
 import os

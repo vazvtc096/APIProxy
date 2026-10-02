@@ -36,7 +36,17 @@ def _normalize_upstream_payload(data):
         dm = ','.join([x.strip() for x in dm.split(',') if x.strip()])
     else:
         dm = ''
-    return {'name': name, 'base_url': base_url, 'api_key': api_key,
+    # 备用密钥池：列表或逗号/换行分隔字符串 -> 逗号串存储（主 key 不必重复填）
+    ak = data.get('api_keys')
+    if ak is None:
+        ak_str = ''
+    elif isinstance(ak, list):
+        ak_str = ','.join([str(x).strip() for x in ak if str(x).strip()])
+    elif isinstance(ak, str):
+        ak_str = ','.join([x.strip() for x in ak.replace('\n', ',').split(',') if x.strip()])
+    else:
+        return None, 'api_keys must be a list or comma-separated string'
+    return {'name': name, 'base_url': base_url, 'api_key': api_key, 'api_keys': ak_str,
             'priority': priority, 'enabled': enabled, 'disabled_models': dm}, None
 
 

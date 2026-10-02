@@ -1,44 +1,87 @@
 {# 通知铃铛：右上角统一入口。公告/系统通知写入 notifications 表后在此实时展示。 #}
-{# 与好友关系解耦——admin 不再需要作为「虚拟好友」承载通知。文档页不含共享导航，天然排除。 #}
-<style>
-  .notif-bell { position: relative; display: inline-flex; align-items: center; margin-right: 4px; }
+{# 穿模修复：面板挂载到 body 层（position:fixed），脱离 navbar 的 z-index 层叠上下文， #}
+{# 不会再被 sidebar（z-index 1000/2000）等页面元素盖住。 #}
+<style nonce="{{ csp_nonce }}">
+  .notif-bell { position: relative; display: inline-flex; align-items: center; }
   .notif-bell .bell-btn {
     position: relative; background: transparent; border: none; cursor: pointer;
-    color: #4b5563; font-size: 20px; line-height: 1; padding: 6px; border-radius: 8px;
+    color: #6b7280; font-size: 20px; line-height: 1; padding: 8px; border-radius: 10px;
+    transition: background .15s, color .15s;
   }
-  .notif-bell .bell-btn:hover { background: #f3f4f6; color: #1f2937; }
+  .notif-bell .bell-btn:hover { background: #f3f4f6; color: #111827; }
+  .notif-bell .bell-btn.open { background: #eef2ff; color: #4f46e5; }
   .notif-badge {
-    position: absolute; top: 0; right: 0; min-width: 16px; height: 16px; padding: 0 4px;
-    background: #ef4444; color: #fff; border-radius: 999px; font-size: 11px; font-weight: 600;
-    display: none; align-items: center; justify-content: center; transform: translate(25%, -25%);
+    position: absolute; top: 2px; right: 2px; min-width: 17px; height: 17px; padding: 0 5px;
+    background: linear-gradient(135deg, #f87171, #ef4444); color: #fff; border-radius: 999px;
+    font-size: 11px; font-weight: 700; display: none; align-items: center; justify-content: center;
+    box-shadow: 0 0 0 2px #fff; line-height: 17px; text-align: center;
   }
-  .notif-panel {
-    position: absolute; top: 46px; right: 0; width: 360px; max-width: 92vw; max-height: 70vh;
-    overflow-y: auto; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px;
-    box-shadow: 0 12px 32px rgba(0,0,0,.14); z-index: 1200; display: none;
+  .notif-badge.on { display: block; animation: nbPulse 2s ease-in-out infinite; }
+  @keyframes nbPulse {
+    0%, 100% { box-shadow: 0 0 0 2px #fff, 0 0 0 0 rgba(239,68,68,.45); }
+    50%      { box-shadow: 0 0 0 2px #fff, 0 0 0 6px rgba(239,68,68,0); }
   }
-  .notif-panel.show { display: block; }
+  /* body 级面板 */
+  #notifPanel {
+    position: fixed; width: 380px; max-width: calc(100vw - 24px); max-height: min(72vh, 560px);
+    background: #fff; border: 1px solid #eceef2; border-radius: 16px;
+    box-shadow: 0 24px 64px -12px rgba(15,23,42,.22), 0 4px 16px rgba(15,23,42,.08);
+    z-index: 5000; display: none; overflow: hidden; opacity: 0; transform: translateY(-8px) scale(.98);
+    transition: opacity .18s ease, transform .18s ease;
+  }
+  #notifPanel.show { display: flex; flex-direction: column; opacity: 1; transform: translateY(0) scale(1); }
   .notif-header {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 12px 14px; border-bottom: 1px solid #f1f5f9; position: sticky; top: 0; background: #fff;
+    padding: 14px 16px 12px; border-bottom: 1px solid #f1f5f9; flex: 0 0 auto;
   }
-  .notif-header h4 { margin: 0; font-size: 14px; color: #111827; }
+  .notif-header .nh-title { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 700; color: #0f172a; }
+  .notif-header .nh-title i { color: #4f46e5; font-size: 17px; }
+  .notif-header .nh-count {
+    font-size: 11px; font-weight: 700; color: #4f46e5; background: #eef2ff;
+    padding: 2px 8px; border-radius: 999px;
+  }
   .notif-markall {
-    background: none; border: none; color: #2563eb; font-size: 12px; cursor: pointer; padding: 4px 6px;
+    background: none; border: none; color: #6366f1; font-size: 12.5px; font-weight: 600;
+    cursor: pointer; padding: 5px 10px; border-radius: 8px; transition: background .15s;
   }
+  .notif-markall:hover { background: #eef2ff; }
+  .notif-list { overflow-y: auto; flex: 1 1 auto; overscroll-behavior: contain; }
+  .notif-list::-webkit-scrollbar { width: 6px; }
+  .notif-list::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 3px; }
   .notif-item {
-    padding: 10px 14px; border-bottom: 1px solid #f8fafc; cursor: pointer; border-left: 3px solid transparent;
+    display: flex; gap: 11px; padding: 12px 16px; cursor: pointer;
+    border-bottom: 1px solid #f8fafc; transition: background .12s; position: relative;
   }
-  .notif-item:hover { background: #f9fafb; }
-  .notif-item.unread { background: #f5f8ff; }
-  .notif-item.critical { border-left-color: #ef4444; }
-  .notif-item.warning { border-left-color: #f59e0b; }
-  .notif-item.info { border-left-color: #3b82f6; }
-  .notif-title { font-size: 13px; font-weight: 600; color: #111827; margin-bottom: 2px; }
-  .notif-body { font-size: 12px; color: #6b7280; line-height: 1.4;
-    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-  .notif-time { font-size: 11px; color: #9ca3af; margin-top: 4px; }
-  .notif-empty { padding: 28px 14px; text-align: center; color: #9ca3af; font-size: 13px; }
+  .notif-item:last-child { border-bottom: none; }
+  .notif-item:hover { background: #f8fafc; }
+  .notif-item.unread { background: #f6f8ff; }
+  .notif-item.unread:hover { background: #eff3ff; }
+  .notif-ico {
+    flex: 0 0 34px; width: 34px; height: 34px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center; font-size: 16px; margin-top: 2px;
+  }
+  .notif-item.critical .notif-ico { background: #fef2f2; color: #ef4444; }
+  .notif-item.warning  .notif-ico { background: #fffbeb; color: #f59e0b; }
+  .notif-item.info     .notif-ico { background: #eff6ff; color: #3b82f6; }
+  .notif-main { flex: 1 1 auto; min-width: 0; }
+  .notif-title { font-size: 13.5px; font-weight: 600; color: #111827; margin-bottom: 2px;
+                 display: flex; align-items: center; gap: 6px; }
+  .notif-dot { width: 7px; height: 7px; border-radius: 50%; background: #4f46e5; flex: 0 0 auto;
+               display: none; }
+  .notif-item.unread .notif-dot { display: inline-block; }
+  .notif-body { font-size: 12.5px; color: #6b7280; line-height: 1.45;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    word-break: break-word; }
+  .notif-time { font-size: 11px; color: #a3aab8; margin-top: 4px; }
+  .notif-empty { padding: 40px 16px; text-align: center; color: #9ca3af; }
+  .notif-empty i { font-size: 40px; color: #e2e8f0; display: block; margin-bottom: 10px; }
+  .notif-empty .ne-t { font-size: 14px; color: #64748b; font-weight: 600; }
+  .notif-empty .ne-s { font-size: 12px; color: #a3aab8; margin-top: 4px; }
+  .notif-footer {
+    flex: 0 0 auto; padding: 10px 16px; border-top: 1px solid #f1f5f9; text-align: center;
+  }
+  .notif-footer a { font-size: 12.5px; font-weight: 600; color: #6366f1; text-decoration: none; }
+  .notif-footer a:hover { text-decoration: underline; }
 </style>
 
 <div class="notif-bell" id="notifBell">
@@ -46,57 +89,98 @@
     <i class="bi bi-bell"></i>
     <span class="notif-badge" id="notifBadge">0</span>
   </button>
-  <div class="notif-panel" id="notifPanel">
-    <div class="notif-header">
-      <h4>通知</h4>
-      <button class="notif-markall" type="button" data-action="markAllNotif">全部已读</button>
-    </div>
-    <div id="notifList"><div class="notif-empty">加载中…</div></div>
+</div>
+
+{# 面板写在 include 里，由脚本移挂到 body —— 脱离 navbar 层叠上下文 #}
+<div id="notifPanel" aria-label="通知面板">
+  <div class="notif-header">
+    <div class="nh-title"><i class="bi bi-bell-fill"></i>通知<span class="nh-count" id="notifCount" style="display:none"></span></div>
+    <button class="notif-markall" type="button" data-action="markAllNotif">全部已读</button>
   </div>
+  <div class="notif-list" id="notifList"><div class="notif-empty"><i class="bi bi-bell"></i><div class="ne-t">加载中…</div></div></div>
+  <div class="notif-footer"><a href="/notifications" data-action="gotoNotifPage">查看全部通知</a></div>
 </div>
 
 <script nonce="{{ csp_nonce }}">
   (function () {
-    function notifEscape(s) {
+    // —— 面板移挂 body：脱离 navbar 的 z-index:100 层叠上下文（穿模根因）——
+    var panelEl = document.getElementById('notifPanel');
+    if (panelEl && panelEl.parentElement !== document.body) document.body.appendChild(panelEl);
+
+    function esc(s) {
       return String(s == null ? '' : s)
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
+    var LEVEL_ICON = { critical: 'bi-exclamation-octagon', warning: 'bi-exclamation-triangle', info: 'bi-info-circle' };
+    function relTime(s) {
+      if (!s) return '';
+      var d = new Date(String(s).replace(' ', 'T'));
+      if (isNaN(d.getTime())) return String(s);
+      var diff = (Date.now() - d.getTime()) / 1000;
+      if (diff < 60) return '刚刚';
+      if (diff < 3600) return Math.floor(diff / 60) + ' 分钟前';
+      if (diff < 86400) return Math.floor(diff / 3600) + ' 小时前';
+      if (diff < 86400 * 7) return Math.floor(diff / 86400) + ' 天前';
+      return d.toLocaleDateString('zh-CN');
+    }
     async function loadNotifBell() {
       try {
-        const r = await fetch('/api/notifications?limit=20');
+        var r = await fetch('/api/notifications?limit=20');
         if (!r.ok) return;
-        const d = await r.json();
+        var d = await r.json();
         renderNotifBell(d.notifications || [], d.unread_count || 0);
       } catch (e) { /* ignore */ }
     }
     function renderNotifBell(list, unread) {
-      const badge = document.getElementById('notifBadge');
+      var badge = document.getElementById('notifBadge');
       if (badge) {
-        if (unread > 0) { badge.style.display = 'inline-flex'; badge.textContent = unread > 99 ? '99+' : String(unread); }
-        else badge.style.display = 'none';
+        if (unread > 0) { badge.classList.add('on'); badge.textContent = unread > 99 ? '99+' : String(unread); }
+        else badge.classList.remove('on');
       }
-      const panel = document.getElementById('notifList');
-      if (!panel) return;
-      if (!list.length) { panel.innerHTML = '<div class="notif-empty">暂无通知</div>'; return; }
-      panel.innerHTML = list.map(function (n) {
-        const lvl = n.level || 'info';
-        const cls = 'notif-item ' + lvl + ' ' + (n.is_read ? 'read' : 'unread');
-        const link = n.link ? notifEscape(n.link) : '/notifications';
-        const body = notifEscape((n.body || '').slice(0, 140));
-        const title = notifEscape(n.title || '通知');
-        return '<div class="' + cls + '" data-nav="' + link + '">' +
-                 '<div class="notif-title">' + title + '</div>' +
-                 '<div class="notif-body">' + body + '</div>' +
-                 '<div class="notif-time">' + notifEscape(n.created_at || '') + '</div>' +
-               '</div>';
+      var cnt = document.getElementById('notifCount');
+      if (cnt) { if (unread > 0) { cnt.style.display = ''; cnt.textContent = unread + ' 条未读'; } else cnt.style.display = 'none'; }
+      var box = document.getElementById('notifList');
+      if (!box) return;
+      if (!list.length) {
+        box.innerHTML = '<div class="notif-empty"><i class="bi bi-bell-slash"></i>'
+          + '<div class="ne-t">暂无通知</div><div class="ne-s">新的公告与系统消息会出现在这里</div></div>';
+        return;
+      }
+      box.innerHTML = list.map(function (n) {
+        var lvl = n.level || 'info';
+        var link = esc(n.link || '');
+        var body = esc((n.body || '').slice(0, 140));
+        var title = esc(n.title || '通知');
+        return '<div class="notif-item ' + lvl + ' ' + (n.is_read ? 'read' : 'unread') + '"'
+          + ' data-action="openNotif" data-args="' + esc(n.id) + '\u0001' + link + '">'
+          + '<div class="notif-ico"><i class="bi ' + (LEVEL_ICON[lvl] || LEVEL_ICON.info) + '"></i></div>'
+          + '<div class="notif-main">'
+          +   '<div class="notif-title"><span class="notif-dot"></span>' + title + '</div>'
+          +   '<div class="notif-body">' + body + '</div>'
+          +   '<div class="notif-time">' + esc(relTime(n.created_at)) + '</div>'
+          + '</div></div>';
       }).join('');
     }
-    window.__toggleNotif = function () {
-      const p = document.getElementById('notifPanel');
-      if (p) p.classList.toggle('show');
+    function placePanel() {
+      var btn = document.querySelector('#notifBell .bell-btn');
+      if (!btn || !panelEl) return;
+      var r = btn.getBoundingClientRect();
+      var w = Math.min(380, window.innerWidth - 24);
+      var left = Math.min(Math.max(12, r.right - w), window.innerWidth - w - 12);
+      panelEl.style.top = (r.bottom + 10) + 'px';
+      panelEl.style.left = left + 'px';
+      panelEl.style.width = w + 'px';
+    }
+    window.toggleNotif = function () {
+      if (!panelEl) return;
+      var opening = !panelEl.classList.contains('show');
+      if (opening) { placePanel(); panelEl.classList.add('show'); loadNotifBell(); }
+      else panelEl.classList.remove('show');
+      var btn = document.querySelector('#notifBell .bell-btn');
+      if (btn) btn.classList.toggle('open', opening);
     };
-    window.__markAllNotif = async function () {
+    window.markAllNotif = async function () {
       try {
         await fetch('/api/notifications/read', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -105,23 +189,52 @@
         await loadNotifBell();
       } catch (e) { /* ignore */ }
     };
+    window.gotoNotifPage = function () {
+      panelEl.classList.remove('show');
+      window.location.href = '/notifications';
+    };
+    window.openNotif = async function (id, link) {
+      try {
+        await fetch('/api/notifications/read', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: id })
+        });
+      } catch (e) { /* ignore */ }
+      if (link && link !== '/notifications' && link !== '') {
+        window.location.href = link;
+      } else {
+        loadNotifBell();
+      }
+    };
+    // 关闭：点外部 / Esc / 视口变化
     document.addEventListener('click', function (e) {
-      const nb = document.querySelector('.notif-bell');
-      const p = document.getElementById('notifPanel');
-      if (nb && p && !nb.contains(e.target)) p.classList.remove('show');
+      if (!panelEl || !panelEl.classList.contains('show')) return;
+      if (panelEl.contains(e.target) || (e.target.closest && e.target.closest('#notifBell'))) return;
+      panelEl.classList.remove('show');
+      var btn = document.querySelector('#notifBell .bell-btn');
+      if (btn) btn.classList.remove('open');
     });
-    // 事件委托：铃铛按钮与「全部已读」走 data-action，与全局事件框架一致
-    document.addEventListener('click', function (e) {
-      const el = e.target.closest('[data-action]');
-      if (!el) return;
-      const a = el.getAttribute('data-action');
-      if (a === 'toggleNotif') { e.preventDefault(); window.__toggleNotif(); }
-      else if (a === 'markAllNotif') { e.preventDefault(); window.__markAllNotif(); }
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && panelEl) panelEl.classList.remove('show');
     });
-    document.addEventListener('DOMContentLoaded', loadNotifBell);
-    if (document.readyState !== 'loading') loadNotifBell();
-    setInterval(loadNotifBell, 30000);
-    // 复用全站未读 SSE / 轮询事件，红点实时刷新
-    document.addEventListener('unread-update', function () { loadNotifBell(); });
+    window.addEventListener('resize', function () {
+      if (panelEl && panelEl.classList.contains('show')) placePanel();
+    });
+    // 初次加载（仅一次）
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', loadNotifBell);
+    } else {
+        loadNotifBell();
+    }
+    // 常态：由侧边栏统一 SSE 长连接推送（notifications 事件 -> notifications-update），零轮询
+    document.addEventListener('notifications-update', function (e) {
+        var d = e.detail;
+        if (d) renderNotifBell(d.notifications || [], d.unread_count || 0);
+    });
+    // 降级兜底：仅当 SSE 未建立/已断开时按 60s 间隔拉取，且页面隐藏时暂停
+    setInterval(function () {
+        if (window.__unreadSSEAlive || document.hidden) return;
+        loadNotifBell();
+    }, 60000);
   })();
 </script>

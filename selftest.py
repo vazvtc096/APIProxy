@@ -29,7 +29,16 @@ def _list_field(raw) -> list:
     return [x.strip() for x in str(raw or "").split(",") if x.strip()]
 
 
+# 默认跳过：有副作用的 GET / 流式端点（冒烟探测会制造幽灵数据或卡死在 SSE 上）
+_DEFAULT_SKIP_PREFIXES = (
+    "/ip-audit",   # /ip-audit 会创建审计记录；/ip-audit/status 是永不结束的 SSE 流
+)
+
+
 def _is_skipped(path: str) -> bool:
+    for p in _DEFAULT_SKIP_PREFIXES:
+        if path.startswith(p):
+            return True
     wl = _list_field(getattr(configs, "SELFTEST_WHITELIST", ""))
     bl = _list_field(getattr(configs, "SELFTEST_BLACKLIST", ""))
     if wl:

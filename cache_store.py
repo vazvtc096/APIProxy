@@ -319,6 +319,45 @@ def get_cache() -> CacheStore:
 
 
 # --------------------------------------------------------------------------- #
+# JSON 便捷封装（供业务层直接缓存结构化数据，无需手动序列化）
+# --------------------------------------------------------------------------- #
+def cache_set_json(key: str, value, ttl: int = None) -> None:
+    """把任意可 JSON 序列化的值写入缓存（utf-8 安全）。"""
+    try:
+        _store.set(key, json.dumps(value, ensure_ascii=False), ttl)
+    except (TypeError, ValueError) as e:
+        logger.warning(f"Cache: cache_set_json 序列化失败 key={key}: {e}")
+
+
+def cache_get_json(key: str):
+    """读取并反序列化；未命中 / 损坏 / 过期均返回 None。"""
+    raw = _store.get(key)
+    if raw is None:
+        return None
+    try:
+        return json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def cache_delete_pattern(pattern: str) -> int:
+    """按 glob 模式批量删除缓存键（memory / proxy 后端均支持）。返回删除条数。"""
+    try:
+        keys = _store.keys(pattern)
+    except Exception as e:
+        logger.warning(f"Cache: keys({pattern}) 失败：{e}")
+        return 0
+    if not keys:
+        return 0
+    try:
+        _store.delete(*keys)
+    except Exception as e:
+        logger.warning(f"Cache: delete({pattern}) 失败：{e}")
+        return 0
+    return len(keys)
+
+
+# --------------------------------------------------------------------------- #
 # LB 内部缓存 HTTP 接口（供 Worker 代理调用）
 # --------------------------------------------------------------------------- #
 def _serve_cache_op(op, key, value, ttl):

@@ -68,6 +68,19 @@
         .toast.error { background: #dc2626; }
         .toast.ok { background: #16a34a; }
         pre { background: #1e1e2e; color: #e4e4e7; padding: 14px 16px; border-radius: 10px; font-size: 12px; overflow:auto; max-height: 320px; white-space: pre-wrap; word-break: break-word; }
+        /* DSL 输入联想浮层 */
+        .hook-ac { position: fixed; z-index: 300; min-width: 260px; max-width: 400px; max-height: 260px; overflow-y: auto; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; box-shadow: 0 10px 28px rgba(0,0,0,0.14); font-size: 13px; display: none; }
+        .hook-ac .ac-item { padding: 7px 12px; cursor: pointer; }
+        .hook-ac .ac-item .n { font-family: ui-monospace, monospace; font-weight: 600; color: #667eea; font-size: 12.5px; }
+        .hook-ac .ac-item .s { font-family: ui-monospace, monospace; font-size: 11px; color: #374151; word-break: break-all; }
+        .hook-ac .ac-item .d { font-size: 11.5px; color: #666; margin-top: 1px; }
+        .hook-ac .ac-item.sel { background: #f0f2ff; }
+        .hook-ac .ac-empty { padding: 10px 12px; color: #9ca3af; font-size: 12px; }
+        html[data-theme="dark"] .hook-ac { background: #131a2b; border-color: #2a3650; box-shadow: 0 10px 28px rgba(0,0,0,0.55); }
+        html[data-theme="dark"] .hook-ac .ac-item .n { color: #9db4f0; }
+        html[data-theme="dark"] .hook-ac .ac-item .s { color: #aab5c9; }
+        html[data-theme="dark"] .hook-ac .ac-item .d { color: #8a94a8; }
+        html[data-theme="dark"] .hook-ac .ac-item.sel { background: #232d42; }
     </style>
 {% include "_navbar_css.html" %}
 </head>
@@ -130,13 +143,13 @@
                     </div>
                     <div class="form-row" style="margin-top:12px;">
                         <div class="form-group full">
-                            <label>条件（留空表示始终成立）</label>
+                            <label>条件（留空表示始终成立；输入时自动联想常量 / 成员 / 函数）</label>
                             <textarea id="hCondition" placeholder="TRIGGER_USER.loginCount <= 1 and TRIGGER_USER.isAdmin == 0"></textarea>
                         </div>
                     </div>
                     <div class="form-row" style="margin-top:12px;">
                         <div class="form-group full">
-                            <label>动作（分号或换行分隔多个；如 <code>send_message(TRIGGER_USER, "你好 %s", TRIGGER_USER.userName)</code>）</label>
+                            <label>动作（分号或换行分隔多个，输入时自动联想；如 <code>send_message(TRIGGER_USER, "你好 %s", TRIGGER_USER.userName)</code>）</label>
                             <textarea id="hActions" style="min-height:120px;" placeholder='add_balence(TRIGGER_USER, 1.0); send_message(TRIGGER_USER, "欢迎！赠送 1 元额度")'></textarea>
                         </div>
                     </div>
@@ -241,6 +254,12 @@
         }
         function escapeHtml(s) {
             return (s == null ? '' : String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+        function fmtTime(s) {
+            if (!s) return '-';
+            const d = new Date(String(s).replace(' ', 'T'));
+            if (isNaN(d.getTime())) return String(s);
+            return d.toLocaleString('zh-CN', { hour12: false });
         }
 
         document.querySelectorAll('.tab').forEach(tab => {
@@ -367,7 +386,7 @@
             if (!list.length) { tb.innerHTML = '<tr><td colspan="5" class="empty">暂无执行日志</td></tr>'; return; }
             tb.innerHTML = list.map(l => `
                 <tr>
-                    <td style="font-size:12px;color:#999;">${escapeHtml(l.created_at || '')}</td>
+                    <td style="font-size:12px;color:#999;">${escapeHtml(fmtTime(l.created_at))}</td>
                     <td class="mono">${escapeHtml(l.hook_name || l.hook_id || '')}</td>
                     <td class="mono">${escapeHtml(l.event_name || '')}</td>
                     <td class="mono">${escapeHtml(l.trigger_user || '')}</td>
@@ -395,6 +414,125 @@
             await loadMeta();
             await loadHooks();
         })();
+
+        // ============ DSL 输入联想浮层 ============
+        // 数据源：/api/admin/hooks/meta（常量 / 动作函数 / 用户成员 / 纯函数）
+        function attachHookAutocomplete(textarea) {
+            const box = document.createElement('div');
+            box.className = 'hook-ac';
+            document.body.appendChild(box);
+            let items = [], idx = -1, tokStart = 0, active = false;
+
+            function caretViewport() {
+                // 镜像 div 法：把 textarea 样式复制到隐藏 div，用零宽标记定位光标
+                const st = getComputedStyle(textarea);
+                const div = document.createElement('div');
+                ['fontFamily','fontSize','fontWeight','lineHeight','letterSpacing','tabSize',
+                 'paddingTop','paddingRight','paddingBottom','paddingLeft',
+                 'borderTopWidth','borderLeftWidth','boxSizing','width'
+                ].forEach(p => { div.style[p] = st[p]; });
+                div.style.position = 'absolute'; div.style.left = '-9999px'; div.style.top = '0';
+                div.style.whiteSpace = 'pre-wrap'; div.style.wordWrap = 'break-word'; div.style.visibility = 'hidden';
+                div.textContent = textarea.value.substring(0, textarea.selectionStart);
+                const mark = document.createElement('span');
+                mark.textContent = '\u200b';
+                div.appendChild(mark);
+                document.body.appendChild(div);
+                const r = textarea.getBoundingClientRect();
+                const lh = (parseFloat(st.lineHeight) || parseFloat(st.fontSize) * 1.4 || 20);
+                const res = {
+                    x: r.left + mark.offsetLeft - textarea.scrollLeft,
+                    y: r.top + mark.offsetTop - textarea.scrollTop + lh,
+                };
+                document.body.removeChild(div);
+                return res;
+            }
+            function hide() { active = false; idx = -1; box.style.display = 'none'; }
+            function render() {
+                if (!items.length) { hide(); return; }
+                const MAX = 12;
+                box.innerHTML = items.slice(0, MAX).map((it, i) =>
+                    `<div class="ac-item${i === idx ? ' sel' : ''}" data-i="${i}">` +
+                    `<div class="n">${escapeHtml(it.name)}</div>` +
+                    (it.sig ? `<div class="s">${escapeHtml(it.sig)}</div>` : '') +
+                    (it.desc ? `<div class="d">${escapeHtml(it.desc)}</div>` : '') +
+                    `</div>`).join('') +
+                    (items.length > MAX ? `<div class="ac-empty">共 ${items.length} 项，继续输入以缩小范围</div>` : '');
+                box.style.display = 'block';
+                const p = caretViewport();
+                box.style.left = Math.max(8, Math.min(p.x, window.innerWidth - 420)) + 'px';
+                box.style.top = Math.min(p.y + 4, window.innerHeight - 280) + 'px';
+                const sel = box.querySelector('.ac-item.sel');
+                if (sel) sel.scrollIntoView({ block: 'nearest' });
+            }
+            function show(list, start) {
+                tokStart = start; items = list; idx = 0; active = true; render();
+            }
+            function move(d) {
+                if (!items.length) return;
+                idx = (idx + d + Math.min(items.length, 12)) % Math.min(items.length, 12);
+                render();
+            }
+            function accept() {
+                if (!active || !items[idx]) { hide(); return; }
+                const it = items[idx];
+                const pos = textarea.selectionStart;
+                const isFn = it.sig ? it.sig.includes('(') : false;
+                const ins = it.name + (isFn ? '()' : '');
+                textarea.value = textarea.value.substring(0, tokStart) + ins + textarea.value.substring(pos);
+                const cp = tokStart + it.name.length + (isFn ? 1 : 0);
+                textarea.focus();
+                textarea.setSelectionRange(cp, cp);
+                hide();
+            }
+            function analyze() {
+                if (!META) { hide(); return; }
+                const pos = textarea.selectionStart;
+                const before = textarea.value.substring(0, pos);
+                // 1) 成员访问：IDENT. → 用户对象成员（TRIGGER_USER.userName 等）
+                let m = before.match(/([A-Za-z_][A-Za-z0-9_]*)\.$/);
+                if (m) {
+                    const owner = m[1];
+                    show((META.user_members || []).map(f => ({ name: f, desc: owner + ' 的成员' })), pos);
+                    return;
+                }
+                // 2) 普通标识符：按上下文排序——条件框常量/纯函数优先，动作框动作函数优先
+                m = before.match(/[A-Za-z_][A-Za-z0-9_]*$/);
+                if (m) {
+                    const tok = m[0].toLowerCase();
+                    const start = pos - m[0].length;
+                    const dyn = META.dynamic_members || [];
+                    const stat = META.static_members || [];
+                    const pure = (META.pure_functions || []).map(f => ({ name: f, sig: f + '()', desc: '安全内置函数' }));
+                    const pool = /Actions$/.test(textarea.id) ? [...stat, ...dyn, ...pure] : [...dyn, ...pure, ...stat];
+                    const list = pool.filter(x => x.name.toLowerCase().startsWith(tok) && x.name.toLowerCase() !== tok);
+                    show(list, start);
+                    return;
+                }
+                hide();
+            }
+            textarea.addEventListener('input', analyze);
+            textarea.addEventListener('click', analyze);
+            textarea.addEventListener('keydown', (e) => {
+                if (!active) return;
+                if (e.key === 'ArrowDown') { e.preventDefault(); move(1); }
+                else if (e.key === 'ArrowUp') { e.preventDefault(); move(-1); }
+                else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); accept(); }
+                else if (e.key === 'Escape') { hide(); e.stopPropagation(); }
+            });
+            textarea.addEventListener('blur', () => setTimeout(hide, 120));
+            box.addEventListener('mousedown', (e) => {
+                const it = e.target.closest('.ac-item');
+                if (!it) return;
+                e.preventDefault();
+                idx = parseInt(it.dataset.i, 10);
+                accept();
+            });
+        }
+        ['hCondition','hActions','tCondition','tActions'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) attachHookAutocomplete(el);
+        });
     </script>
 </body>
 </html>

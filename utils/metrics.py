@@ -68,6 +68,76 @@ def _route_label(request) -> str:
     return request.path or "/"
 
 
+def upstream_latency_summary() -> list:
+    """从 UPSTREAM_DURATION 直方图提取每 (model, upstream) 的请求量与延迟分位。
+
+    直方图是进程生命周期累计值（重启清零），分位由累计桶插值估算：
+    P 值落在某桶内时按桶内线性插值；超出最大有限桶（应极罕见，>60s）
+    时以最大有限桶为下界估算。返回按请求量降序的列表：
+      [{model, upstream, count, avg_ms, p50_ms, p95_ms, p99_ms}, ...]
+    """
+    import math
+
+    # {(model, upstream): {'buckets': [(le, cum)], 'count': n, 'sum': s}}
+    data: dict = {}
+    try:
+        metrics = UPSTREAM_DURATION.collect()
+    except Exception:
+        return []
+    for metric in metrics:
+        for sample in metric.samples:
+            labels = sample.labels or {}
+            key = (labels.get("model", ""), labels.get("upstream", ""))
+            d = data.setdefault(key, {"buckets": [], "count": 0, "sum": 0.0})
+            name = sample.name
+            if name.endswith("_bucket"):
+                le_raw = labels.get("le")
+                if le_raw is None:
+                    continue
+                le = math.inf if le_raw == "+Inf" else float(le_raw)
+                d["buckets"].append((le, float(sample.value)))
+            elif name.endswith("_count"):
+                d["count"] = int(sample.value)
+            elif name.endswith("_sum"):
+                d["sum"] = float(sample.value)
+
+    out = []
+    for (model, upstream), d in data.items():
+        count = d["count"]
+        if count <= 0 or not d["buckets"]:
+            continue
+        cum = sorted(d["buckets"])
+        finite_max = max((le for le, _ in cum if le != math.inf), default=1.0)
+
+        def _quantile(q: float) -> float:
+            target = q * count
+            prev_le, prev_c = 0.0, 0.0
+            for le, c in cum:
+                if c >= target:
+                    if le == math.inf:
+                        le = finite_max
+                    span = c - prev_c
+                    if span <= 0:
+                        return prev_le
+                    frac = (target - prev_c) / span
+                    return prev_le + (le - prev_le) * frac
+                prev_le = le if le != math.inf else finite_max
+                prev_c = c
+            return finite_max
+
+        out.append({
+            "model": model,
+            "upstream": upstream,
+            "count": count,
+            "avg_ms": round((d["sum"] / count) * 1000, 1),
+            "p50_ms": round(_quantile(0.50) * 1000, 1),
+            "p95_ms": round(_quantile(0.95) * 1000, 1),
+            "p99_ms": round(_quantile(0.99) * 1000, 1),
+        })
+    out.sort(key=lambda x: -x["count"])
+    return out
+
+
 def setup_metrics(app):
     """注册 /metrics 端点与请求追踪钩子。"""
     from quart import Response, g, request

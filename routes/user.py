@@ -11,8 +11,77 @@ from .. import configs
 from ..constants import CHAR_PRICE_LOOKUP, UNEXCEPT_CHAR, MONEY_PER_MILLION_TOKENS, UNEXCEPT_MODEL, MAX_OVERDRAFT
 from ..cloudflare import get_client_ip as _cf_get_client_ip
 from .. import waf as _waf
+from .. import tokenpolicy as _tokenpolicy
+from .. import budget as _budget
 
 user_bp = Blueprint('user', __name__)
+
+
+@user_bp.route('/api/user/budget', methods=['GET'])
+async def get_my_budget():
+    """当前用户的月度消费预算与本月已消费"""
+    if 'user' not in session:
+        return jsonify({'error': 'Not logged in'}), 401
+    info = await asyncio.to_thread(_budget.get_budget, session['user'])
+    if not info:
+        return jsonify({'error': 'User not found'}), 404
+    return jsonify(info)
+
+
+@user_bp.route('/api/user/budget', methods=['POST'])
+async def set_my_budget():
+    """设置自己的月度消费预算（0 或空 = 取消限制）"""
+    if 'user' not in session:
+        return jsonify({'error': 'Not logged in'}), 401
+    data = await request.get_json() or {}
+    ok, err = await asyncio.to_thread(
+        _budget.set_budget, session['user'], data.get('monthly_budget'))
+    return (jsonify({'ok': True}) if ok else (jsonify({'error': err}), 400))
+
+
+@user_bp.route('/api/tokens', methods=['GET'])
+async def list_tokens():
+    """当前用户的令牌列表（含策略与用量；key 只暴露哈希前缀提示）"""
+    if 'user' not in session:
+        return jsonify({'error': 'Not logged in'}), 401
+    try:
+        rows = _tokenpolicy.list_policies(session['user'])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    return jsonify({'tokens': rows})
+
+
+@user_bp.route('/api/tokens/<int:key_id>/policy', methods=['POST'])
+async def update_token_policy(key_id: int):
+    """更新自己令牌的策略（额度/过期/模型白名单/IP白名单/停用）"""
+    if 'user' not in session:
+        return jsonify({'error': 'Not logged in'}), 401
+    data = await request.get_json() or {}
+    ok, err = await _asyncio.to_thread(
+        _tokenpolicy.set_policy, key_id, session['user'], False,
+        label=data.get('label'),
+        expires_at=data.get('expires_at'),
+        quota=data.get('quota'),
+        allowed_models=data.get('allowed_models'),
+        ip_whitelist=data.get('ip_whitelist'),
+        is_active=data.get('is_active'),
+        rpm_limit=data.get('rpm_limit'),
+        tpm_limit=data.get('tpm_limit'),
+    )
+    return (jsonify({'ok': True}) if ok else (jsonify({'error': err}), 400))
+
+
+@user_bp.route('/api/redeem', methods=['POST'])
+async def redeem_code():
+    """用户自助兑换充值码到余额"""
+    if 'user' not in session:
+        return jsonify({'error': 'Not logged in'}), 401
+    data = await request.get_json() or {}
+    from .. import redeem as _redeem
+    ok, msg = await _asyncio.to_thread(_redeem.redeem, data.get('code'), session['user'])
+    return (jsonify({'ok': True, 'message': msg}) if ok
+            else (jsonify({'error': msg}), 400))
+
 
 @user_bp.route('/apikeys', methods=['GET'])
 async def list_apikeys():
@@ -69,7 +138,7 @@ async def userinfo():
 
     # 已登录用户直接按用户名查询
     user = await async_db_query(
-        "SELECT user_name, balence, apikeys, uid, created_at, is_admin, is_banned, ban_reason, ban_expire_at, max_overdraft, must_change_password FROM users WHERE user_name = ?",
+        "SELECT user_name, balence, apikeys, uid, created_at, is_admin, is_banned, ban_reason, ban_expire_at, max_overdraft, must_change_password, monthly_budget, budget_spent, budget_month FROM users WHERE user_name = ?",
         (owner,)
     )
     if not user:
@@ -86,6 +155,9 @@ async def userinfo():
         'uid': info.get('uid'),
         'balence': info['balence'],
         'max_overdraft': info.get('max_overdraft', 0) or 0,
+        'monthly_budget': float(info.get('monthly_budget') or 0.0),
+        'budget_spent': round(float(info.get('budget_spent') or 0.0), 6)
+                        if (info.get('budget_month') or '') == _budget.current_month() else 0.0,
         'created_at': info.get('created_at'),
         'apikeys': info['apikeys'].split(',') if info['apikeys'] else [],
         'is_admin': bool(info.get('is_admin', 0)),

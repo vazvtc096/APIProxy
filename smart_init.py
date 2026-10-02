@@ -80,6 +80,8 @@ def smart_init():
             'last_active_time': 'TIMESTAMP',
             'login_count': 'INTEGER DEFAULT 0',
             'total_spent': 'REAL DEFAULT 0.0',
+            'is_honeypot': 'INTEGER DEFAULT 0',
+            'honeypot_expire_at': 'TEXT',
         }
         
         for col, definition in needed.items():
@@ -102,6 +104,8 @@ def smart_init():
                 user_name TEXT,
                 amount REAL,
                 status TEXT DEFAULT 'pending',
+                pay_channel TEXT DEFAULT '',
+                bank_order_no TEXT,
                 admin_uid TEXT,
                 admin_name TEXT,
                 admin_remark TEXT,
@@ -109,6 +113,17 @@ def smart_init():
                 processed_at TIMESTAMP
             )
         """)
+    else:
+        # 旧库升级：补 analogBank 支付通道相关列
+        cur.execute("PRAGMA table_info(recharge_requests)")
+        rr_cols = {col[1] for col in cur.fetchall()}
+        for col, definition in (('pay_channel', "TEXT DEFAULT ''"), ('bank_order_no', 'TEXT')):
+            if col not in rr_cols:
+                print(f'  recharge_requests 添加字段: {col}')
+                try:
+                    cur.execute(f'ALTER TABLE recharge_requests ADD COLUMN {col} {definition}')
+                except Exception as e:
+                    print(f'    跳过: {e}')
     
     
     # 4. login_logs 表（登录日志）
@@ -124,6 +139,7 @@ def smart_init():
                 user_agent TEXT,
                 status TEXT,
                 reason TEXT,
+                ja3_hash TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -602,6 +618,63 @@ def smart_init():
     except: pass
     print("  [OK] 索引创建完成")
 
+    # 6.10 login_logs 迁移：补 ja3_hash 列（已存在表的兼容）
+    try:
+        cur.execute("PRAGMA table_info(login_logs)")
+        ll_cols = {c[1] for c in cur.fetchall()}
+        if "ja3_hash" not in ll_cols:
+            print("  添加字段: login_logs.ja3_hash")
+            cur.execute("ALTER TABLE login_logs ADD COLUMN ja3_hash TEXT")
+    except Exception as e:
+        print(f"    login_logs 迁移跳过: {e}")
+
+    # 6.11 ja3_fingerprints 表（JA3/JA4 客户端指纹登记与追溯）
+    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='ja3_fingerprints'")
+    if not cur.fetchone():
+        print("创建 ja3_fingerprints 表...")
+        cur.execute("""
+            CREATE TABLE ja3_fingerprints (
+                hash TEXT PRIMARY KEY,
+                ja4 TEXT,
+                first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                seen_count INTEGER DEFAULT 0,
+                ua_samples TEXT,
+                ip_samples TEXT,
+                is_flagged INTEGER DEFAULT 0,
+                note TEXT
+            )
+        """)
+        try:
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_ja3_flagged ON ja3_fingerprints(is_flagged)")
+        except: pass
+
+    # 6.12 honeypot_accounts 表（蜜罐诱捕账号审计）
+    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='honeypot_accounts'")
+    if not cur.fetchone():
+        print("创建 honeypot_accounts 表...")
+        cur.execute("""
+            CREATE TABLE honeypot_accounts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                bait_username TEXT UNIQUE,
+                target_username TEXT,
+                attacker_ip TEXT,
+                ja3_hash TEXT,
+                user_agent TEXT,
+                reason TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at TEXT,
+                is_disarmed INTEGER DEFAULT 0
+            )
+        """)
+        try:
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_hp_attacker ON honeypot_accounts(attacker_ip)")
+        except: pass
+        try:
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_hp_bait ON honeypot_accounts(bait_username)")
+        except: pass
+
     # 4.4.5 独立 apikeys 索引表（修复全表扫描 DoS）。该表历史由 apikey.py 的
     # _init_apikeys_table 建，但 smart_init 未调用它，导致下方 SELECT 报
     # "no such table: apikeys" 并使后续建表中断。此处补建，保证 smart_init 自洽。
@@ -989,6 +1062,70 @@ def smart_init():
     except Exception as e:
         print(f"  pricing_schedules 首次导入跳过：{e}")
 
+    # 6.3c 时段计费扩展：days 列（生效星期 JSON 数组，如 "[0,1,2,3,4]"=周一~周五；NULL=每天）
+    try:
+        cur.execute("PRAGMA table_info(pricing_schedules)")
+        _ps_cols = {r[1] for r in cur.fetchall()}
+        if "days" not in _ps_cols:
+            cur.execute("ALTER TABLE pricing_schedules ADD COLUMN days TEXT")
+            print("  [OK] pricing_schedules 补充 days 列（生效星期）")
+    except Exception as e:
+        print(f"  pricing_schedules days 列迁移跳过：{e}")
+
+    # 6.3d 节假日表（命中当天全天谷价）：首启从 config.yaml pricing.holidays 导入，之后以 DB 为准
+    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='pricing_holidays'")
+    if not cur.fetchone():
+        cur.execute("CREATE TABLE pricing_holidays (day TEXT PRIMARY KEY)")
+    try:
+        cur.execute("SELECT COUNT(*) FROM pricing_holidays")
+        if cur.fetchone()[0] == 0:
+            _hols = (getattr(configs, 'PRICING', {}) or {}).get('holidays') or []
+            _hn = 0
+            for _h in _hols:
+                _h = str(_h).strip()
+                if _h:
+                    cur.execute("INSERT OR IGNORE INTO pricing_holidays (day) VALUES (?)", (_h,))
+                    _hn += 1
+            if _hn:
+                print(f"  [OK] 已从 config.yaml 导入 {_hn} 个节假日到 pricing_holidays 表")
+    except Exception as e:
+        print(f"  pricing_holidays 首次导入跳过：{e}")
+
+    # 6.3e 用户组（所有用户默认 default 组；组内可配可调模型与价格倍率）
+    try:
+        cur.execute("""CREATE TABLE IF NOT EXISTS user_groups (
+                name TEXT PRIMARY KEY,
+                allowed_models TEXT DEFAULT '',
+                price_multiplier REAL DEFAULT 1.0,
+                note TEXT DEFAULT ''
+            )""")
+        cur.execute("SELECT COUNT(*) FROM user_groups")
+        if cur.fetchone()[0] == 0:
+            cur.execute("INSERT OR IGNORE INTO user_groups (name, allowed_models, price_multiplier, note) "
+                        "VALUES ('default', '', 1.0, '默认组：可调用全部模型')")
+    except Exception as e:
+        print(f"  user_groups 表创建跳过：{e}")
+    try:
+        cur.execute("PRAGMA table_info(users)")
+        _u_cols = {r[1] for r in cur.fetchall()}
+        if "user_group" not in _u_cols:
+            cur.execute("ALTER TABLE users ADD COLUMN user_group TEXT DEFAULT 'default'")
+            print("  [OK] users 补充 user_group 列（默认 default 组）")
+    except Exception as e:
+        print(f"  users user_group 列迁移跳过：{e}")
+
+    # 6.3f 模型映射表（请求模型 A → 上游 B（可空=任意/可多个=候选集）的模型 C）
+    try:
+        cur.execute("""CREATE TABLE IF NOT EXISTS model_mappings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                pattern TEXT NOT NULL,
+                upstreams TEXT DEFAULT '',
+                target_model TEXT NOT NULL,
+                enabled INTEGER DEFAULT 1
+            )""")
+    except Exception as e:
+        print(f"  model_mappings 表创建跳过：{e}")
+
     # ② 清理 BufPay 残留的 orders 表（如库中存在）
     try:
         cur.execute("DROP TABLE IF EXISTS orders")
@@ -1005,11 +1142,17 @@ def smart_init():
                 name TEXT PRIMARY KEY,
                 base_url TEXT NOT NULL,
                 api_key TEXT NOT NULL,
+                api_keys TEXT DEFAULT '',
                 priority INTEGER DEFAULT 100,
                 enabled INTEGER DEFAULT 1,
                 disabled_models TEXT DEFAULT ''
             )
         """)
+    # 幂等补列：存量库补 api_keys（密钥池，0005 迁移同款）
+    try:
+        cur.execute("ALTER TABLE upstreams ADD COLUMN api_keys TEXT DEFAULT ''")
+    except Exception:
+        pass
     # 首次迁移：若 upstreams 表为空，将 config.yaml 的 upstreams 导入 DB（之后以 DB 为准）
     try:
         cur.execute("SELECT COUNT(*) FROM upstreams")

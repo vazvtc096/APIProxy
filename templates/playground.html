@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>调用模型 - Cloud LLM API 代理</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style nonce="{{ csp_nonce }}">
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #fafafa;
+            color: #1a1a1a;
+            min-height: 100vh;
+        }
+        /* 顶部导航栏 */
+        .navbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 64px;
+            background: white;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+            z-index: 100;
+        }
+        .navbar-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .logo {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        .logo svg {
+            width: 20px;
+            height: 20px;
+            color: white;
+        }
+        .logo-text {
+            font-size: 18px;
+            font-weight: 700;
+            color: #1a1a1a;
+            cursor: pointer;
+        }
+        .navbar-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-right: 16px;
+        }
+        .nav-link {
+            padding: 8px 16px;
+            font-size: 14px;
+            font-weight: 500;
+            color: #666;
+            text-decoration: none;
+            border-radius: 8px;
+            transition: all 0.2s;
+        }
+        .nav-link:hover {
+            background: #f5f5f5;
+            color: #1a1a1a;
+        }
+        .nav-link.active {
+            background: #f0f2ff;
+            color: #667eea;
+        }
+        .balence-display {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #f0f2ff;
+            padding: 8px 16px;
+            border-radius: 20px;
+        }
+        .balence-icon {
+            color: #667eea;
+            font-size: 16px;
+        }
+        .balence-amount {
+            font-size: 14px;
+            font-weight: 600;
+            color: #667eea;
+        }
+        /* 用户头像下拉 */
+        .user-menu {
+            position: relative;
+        }
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .user-avatar:hover {
+            transform: scale(1.05);
+        }
+        .user-dropdown {
+            position: absolute;
+            top: calc(100% + 8px);
+            right: 0;
+            width: 240px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+            padding: 8px;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-10px);
+            transition: all 0.2s;
+        }
+        .user-dropdown.show {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+        .user-info-header {
+            padding: 16px;
+            border-bottom: 1px solid #f0f0f0;
+            margin-bottom: 8px;
+        }
+        .user-info-name {
+            font-size: 15px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 4px;
+        }
+        .user-info-uid {
+            font-size: 12px;
+            color: #9ca3af;
+            font-family: monospace;
+        }
+        .dropdown-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.15s;
+            font-size: 14px;
+            color: #333;
+        }
+        .dropdown-item:hover {
+            background: #f5f5f5;
+        }
+        .dropdown-item i {
+            font-size: 18px;
+            color: #667eea;
+        }
+        .dropdown-item.danger {
+            color: #dc2626;
+        }
+        .dropdown-item.danger i {
+            color: #dc2626;
+        }
+        .dropdown-divider {
+            height: 1px;
+            background: #f0f0f0;
+            margin: 8px 0;
+        }
+        /* 主内容区 */
+        .main-container {
+            display: flex;
+            padding-top: 64px;
+            padding-left: 240px;
+            min-height: 100vh;
+            box-sizing: border-box;
+        }
+        .main-content {
+            flex: 1;
+            min-height: calc(100vh - 64px);
+        }
+        /* 左侧侧边栏（固定定位：仅内容区滚动，侧边栏不随页面滚动） */
+        .sidebar {
+            width: 240px;
+            background: white;
+            border-right: 1px solid #f0f0f0;
+            padding: 24px 0;
+            position: fixed;
+            top: 64px;
+            bottom: 0;
+            left: 0;
+            overflow-y: auto;
+            box-sizing: border-box;
+        }
+        .sidebar-section { margin-bottom: 24px; }
+        .sidebar-section-title {
+            font-size: 11px; font-weight: 600; color: #9ca3af;
+            text-transform: uppercase; letter-spacing: 0.5px;
+            padding: 0 20px; margin-bottom: 8px;
+        }
+        .sidebar-item {
+            display: flex; align-items: center; gap: 12px;
+            padding: 10px 20px; cursor: pointer; transition: all 0.15s;
+            font-size: 14px; color: #666; border-left: 3px solid transparent;
+            text-decoration: none;
+        }
+        .sidebar-item:hover { background: #fafafa; color: #1a1a1a; }
+        .sidebar-item.active {
+            background: #f0f2ff; color: #667eea;
+            border-left-color: #667eea; font-weight: 500;
+        }
+        .sidebar-item i { font-size: 18px; width: 20px; text-align: center; }
+        .page-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 32px 24px;
+        }
+        .page-header {
+            margin-bottom: 32px;
+        }
+        .page-title {
+            font-size: 28px;
+            font-weight: 700;
+            color: #1a1a1a;
+            margin-bottom: 8px;
+        }
+        .page-subtitle {
+            font-size: 14px;
+            color: #666;
+        }
+        /* 卡片 */
+        .card {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+        .card-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .card-icon {
+            width: 40px;
+            height: 40px;
+            background: #f0f2ff;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #667eea;
+            font-size: 20px;
+        }
+        .card-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1a1a1a;
+        }
+        /* 表单 */
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            color: #333;
+            margin-bottom: 8px;
+        }
+        .form-input {
+            width: 100%;
+            padding: 12px 16px;
+            font-size: 14px;
+            border: 1.5px solid #e5e7eb;
+            border-radius: 10px;
+            outline: none;
+            transition: all 0.2s;
+            background: #fafafa;
+        }
+        .form-input:focus {
+            border-color: #667eea;
+            background: white;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        .form-input::placeholder {
+            color: #9ca3af;
+        }
+        .form-hint {
+            font-size: 12px;
+            color: #9ca3af;
+            margin-top: 6px;
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+        /* 按钮 */
+        .btn-primary {
+            padding: 12px 24px;
+            font-size: 14px;
+            font-weight: 600;
+            color: white;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+        .btn-primary:active {
+            transform: translateY(0);
+        }
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .btn-danger {
+            padding: 12px 24px;
+            font-size: 14px;
+            font-weight: 600;
+            color: white;
+            background: #dc2626;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
+        }
+        .btn-danger:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(220, 38, 38, 0.4);
+        }
+        /* 消息提示 */
+        .alert {
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .alert.show {
+            display: block;
+        }
+        .alert-error {
+            background: #fef2f2;
+            color: #dc2626;
+        }
+        .alert-success {
+            background: #f0fdf4;
+            color: #16a34a;
+        }
+        /* 信息表格 */
+        .info-table {
+            width: 100%;
+        }
+        .info-row {
+            display: flex;
+            padding: 12px 0;
+            border-bottom: 1px solid #f5f5f5;
+        }
+        .info-row:last-child {
+            border-bottom: none;
+        }
+        .info-label {
+            width: 120px;
+            font-size: 14px;
+            color: #666;
+            flex-shrink: 0;
+        }
+        .info-value {
+            font-size: 14px;
+            color: #1a1a1a;
+            font-weight: 500;
+        }
+        /* 加载动画 */
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 0.8s linear infinite;
+            vertical-align: middle;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        /* 响应式 */
+        @media (max-width: 768px) {
+            .sidebar {
+                display: none;
+            }
+            .main-container {
+                padding-left: 0;
+            }
+            .page-container {
+                padding: 24px 16px;
+            }
+            .page-title {
+                font-size: 24px;
+            }
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+    
+<style nonce="{{ csp_nonce }}">
+    /* ===== 调用模型（对话式调试台）布局 ===== */
+    .pg-wrap { position: fixed; top: 64px; left: 240px; right: 0; bottom: 0; display: flex; }
+    /* 左侧：会话列表 */
+    .pg-convs { width: 260px; flex: 0 0 260px; background: #ffffff; border-right: 1px solid #f0f0f0; display: flex; flex-direction: column; }
+    .pg-convs-head { padding: 14px 14px 10px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #f0f0f0; }
+    .pg-convs-head span { font-size: 13px; font-weight: 600; color: #6b7280; }
+    .pg-newbtn { border: none; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #fff; width: 28px; height: 28px; border-radius: 8px; cursor: pointer; font-size: 16px; line-height: 1; display: flex; align-items: center; justify-content: center; }
+    .pg-newbtn:hover { opacity: 0.9; }
+    .pg-conv-list { flex: 1; overflow-y: auto; padding: 8px; }
+    .pg-conv { padding: 10px 12px; border-radius: 10px; cursor: pointer; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; transition: background 0.15s; }
+    .pg-conv:hover { background: #f5f6fa; }
+    .pg-conv.active { background: #f0f2ff; }
+    .pg-conv-title { flex: 1; font-size: 13.5px; color: #374151; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pg-conv.active .pg-conv-title { color: #4f46e5; font-weight: 600; }
+    .pg-conv-del { border: none; background: transparent; color: #c7cbd4; cursor: pointer; font-size: 14px; padding: 2px 4px; border-radius: 6px; flex: 0 0 auto; }
+    .pg-conv-del:hover { color: #dc2626; background: #fef2f2; }
+    .pg-convs-hint { padding: 10px 14px; font-size: 11.5px; color: #9ca3af; border-top: 1px solid #f0f0f0; line-height: 1.6; }
+    /* 右侧：对话主区 */
+    .pg-main { flex: 1; display: flex; flex-direction: column; min-width: 0; background: #fafafa; }
+    .pg-toolbar { display: flex; align-items: center; gap: 10px; padding: 12px 20px; background: #ffffff; border-bottom: 1px solid #f0f0f0; flex-wrap: wrap; }
+    .pg-toolbar select { padding: 8px 12px; border: 1.5px solid #e5e7eb; border-radius: 10px; font-size: 13px; font-family: inherit; background: #fafafa; color: #1a1a1a; max-width: 320px; outline: none; }
+    .pg-toolbar select:focus { border-color: #667eea; }
+    .pg-tool-btn { border: 1px solid #e5e7eb; background: #fff; color: #4b5563; padding: 8px 14px; border-radius: 10px; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: all 0.15s; }
+    .pg-tool-btn:hover { border-color: #667eea; color: #667eea; }
+    .pg-tool-btn.warn { color: #d97706; }
+    .pg-tool-btn.warn:hover { border-color: #f59e0b; color: #d97706; background: #fffbeb; }
+    .pg-tool-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .pg-syspanel { display: none; padding: 12px 20px; background: #ffffff; border-bottom: 1px solid #f0f0f0; }
+    .pg-syspanel.open { display: block; }
+    .pg-syspanel textarea { width: 100%; min-height: 72px; padding: 10px 14px; border: 1.5px solid #e5e7eb; border-radius: 10px; font-size: 13px; font-family: inherit; resize: vertical; outline: none; background: #fafafa; color: #1a1a1a; }
+    .pg-syspanel textarea:focus { border-color: #667eea; }
+    .pg-syspanel .row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+    .pg-syspanel .hint { font-size: 12px; color: #9ca3af; flex: 1; }
+    .pg-messages { flex: 1; overflow-y: auto; padding: 24px; scroll-behavior: smooth; }
+    .pg-empty { text-align: center; color: #9ca3af; padding: 80px 20px; }
+    .pg-empty i { font-size: 44px; color: #e2e8f0; display: block; margin-bottom: 12px; }
+    .pg-empty .t { font-size: 15px; color: #64748b; font-weight: 600; }
+    .pg-empty .s { font-size: 12.5px; margin-top: 6px; }
+    .pg-msg { display: flex; gap: 12px; margin-bottom: 20px; }
+    .pg-msg .avatar { width: 34px; height: 34px; border-radius: 50%; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; font-size: 14px; color: #fff; }
+    .pg-msg.user .avatar { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+    .pg-msg.assistant .avatar { background: #10b981; }
+    .pg-msg .bubble { max-width: min(760px, 78%); padding: 12px 16px; border-radius: 14px; font-size: 14px; line-height: 1.7; word-break: break-word; }
+    .pg-msg.user .bubble { background: #f0f2ff; color: #1f2937; border-top-left-radius: 4px; white-space: pre-wrap; }
+    .pg-msg.assistant .bubble { background: #ffffff; color: #1f2937; border: 1px solid #eceef2; border-top-right-radius: 4px; white-space: pre-wrap; }
+    .pg-msg .meta { font-size: 11.5px; color: #9ca3af; margin-top: 6px; }
+    .pg-msg.error .bubble { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+    .pg-cursor { display: inline-block; width: 8px; height: 15px; background: #667eea; vertical-align: -2px; animation: pgblink 0.9s infinite; border-radius: 2px; }
+    @keyframes pgblink { 0%,100% { opacity: 1; } 50% { opacity: 0.15; } }
+    /* 底部输入区 */
+    .pg-inputbar { padding: 14px 20px 18px; background: #ffffff; border-top: 1px solid #f0f0f0; }
+    .pg-input-inner { display: flex; gap: 10px; align-items: flex-end; max-width: 900px; margin: 0 auto; }
+    .pg-inputbar textarea { flex: 1; min-height: 48px; max-height: 160px; padding: 12px 16px; border: 1.5px solid #e5e7eb; border-radius: 12px; font-size: 14px; font-family: inherit; line-height: 1.6; resize: none; outline: none; background: #fafafa; color: #1a1a1a; }
+    .pg-inputbar textarea:focus { border-color: #667eea; background: #fff; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); }
+    .pg-send { border: none; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #fff; width: 48px; height: 48px; border-radius: 12px; cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center; transition: all 0.2s; flex: 0 0 auto; }
+    .pg-send:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4); }
+    .pg-send:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+    .pg-send .loading { width: 18px; height: 18px; border: 2px solid rgba(255,255,255,0.4); border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .pg-input-hint { max-width: 900px; margin: 8px auto 0; font-size: 11.5px; color: #b0b7c3; text-align: center; }
+    @media (max-width: 900px) { .pg-convs { display: none; } .pg-wrap { left: 0; } }
+</style>
+
+</head>
+<body>
+    <!-- 顶部导航栏 -->
+    <nav class="navbar">
+        <div class="navbar-left">
+            <div class="logo" data-nav="/dashboard">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+            </div>
+            <span class="logo-text" data-nav="/dashboard">Cloud LLM API 代理</span>
+        </div>
+        <div class="navbar-right">
+            {% include "_notif_bell.html" %}
+            <div class="balence-display">
+                <i class="bi bi-wallet2 balence-icon"></i>
+                <span class="balence-amount" id="balenceAmount">¥0.00</span>
+            </div>
+            <div class="user-menu">
+                <div class="user-avatar" id="userAvatar" data-action="toggleUserMenu">
+                    <span id="avatarText">U</span>
+                </div>
+                <div class="user-dropdown" id="userDropdown">
+                    <div class="user-info-header">
+                        <div class="user-info-name" id="userName">用户名</div>
+                        <div class="user-info-uid" id="userUid">UID: 000000000000</div>
+                    </div>
+                    <div class="dropdown-item" data-nav="/dashboard">
+                        <i class="bi bi-speedometer2"></i>
+                        <span>仪表板</span>
+                    </div>
+                    <div class="dropdown-item" data-nav="/settings">
+                        <i class="bi bi-gear"></i>
+                        <span>设置</span>
+                    </div>
+                    <div class="dropdown-divider"></div>
+                    <div class="dropdown-item danger" data-action="logout">
+                        <i class="bi bi-box-arrow-right"></i>
+                        <span>退出登录</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+
+    <!-- 主内容区：调用模型（对话式调试台） -->
+    <div class="pg-wrap">
+        <!-- 左侧：会话列表 -->
+        <div class="pg-convs">
+            <div class="pg-convs-head">
+                <span>对话列表</span>
+                <button class="pg-newbtn" data-action="pgNewConv" title="新建对话">+</button>
+            </div>
+            <div class="pg-conv-list" id="pgConvList"></div>
+            <div class="pg-convs-hint">上下文持久保存在服务端，切换页面/设备后仍可继续。</div>
+        </div>
+        <!-- 右侧：对话主区 -->
+        <div class="pg-main">
+            <div class="pg-toolbar">
+                <select id="pgModel" title="模型"></select>
+                <button class="pg-tool-btn" data-action="pgToggleSys"><i class="bi bi-magic"></i>系统提示词</button>
+                <button class="pg-tool-btn warn" data-action="pgClearCtx" id="pgClearBtn"><i class="bi bi-eraser"></i>清空上下文</button>
+                <span style="flex:1"></span>
+                <span style="font-size:12px;color:#9ca3af;" id="pgCtxInfo"></span>
+            </div>
+            <div class="pg-syspanel" id="pgSysPanel">
+                <textarea id="pgSysText" placeholder="（可选）系统提示词 System Prompt：设定模型的角色与行为规则，随每次请求自动携带。"></textarea>
+                <div class="row">
+                    <span class="hint">保存在当前对话上，仅对本对话生效。</span>
+                    <button class="pg-tool-btn" data-action="pgSaveSys"><i class="bi bi-check2"></i>保存</button>
+                </div>
+            </div>
+            <div class="pg-messages" id="pgMessages">
+                <div class="pg-empty" id="pgEmpty">
+                    <i class="bi bi-chat-square-dots"></i>
+                    <div class="t">开始与模型对话</div>
+                    <div class="s">选择模型后发送消息；完整链路（映射/负载均衡/计费）与正式 API 一致，照常扣费。</div>
+                </div>
+            </div>
+            <div class="pg-inputbar">
+                <div class="pg-input-inner">
+                    <textarea id="pgInput" placeholder="输入消息，Enter 发送，Shift+Enter 换行"></textarea>
+                    <button class="pg-send" id="pgSendBtn" data-action="pgSend"><i class="bi bi-send"></i></button>
+                </div>
+                <div class="pg-input-hint">上下文 = 系统提示词 + 本对话最近 60 条消息；用量与费用随每条回复显示。</div>
+            </div>
+        </div>
+    </div>
+
+    {% with active_page='playground' %}{% include "_sidebar.html" %}{% endwith %}
+
+    <script nonce="{{ csp_nonce }}">
+        // 用户菜单切换
+        function toggleUserMenu() {
+            const dropdown = document.getElementById('userDropdown');
+            dropdown.classList.toggle('show');
+        }
+        document.addEventListener('click', function(e) {
+            const userMenu = document.querySelector('.user-menu');
+            if (userMenu && !userMenu.contains(e.target)) {
+                document.getElementById('userDropdown').classList.remove('show');
+            }
+        });
+        async function logout() {
+            try { await fetch('/logout', { method: 'POST' }); } catch (e) {}
+            window.location.href = '/login';
+        }
+
+    // ===== 调用模型（Playground）逻辑 =====
+    var pgState = { convs: [], curId: null, models: [], streaming: false, msgCount: 0 };
+
+    function pgEsc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+
+    function pgToast(msg, ok) {
+        const t = document.createElement('div');
+        t.style.cssText = 'position:fixed;top:80px;right:24px;padding:12px 20px;background:#fff;border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,0.15);font-size:13.5px;z-index:9999;' +
+            (ok === false ? 'color:#b91c1c;' : 'color:#16a34a;');
+        t.textContent = msg;
+        document.body.appendChild(t);
+        setTimeout(() => t.remove(), 2600);
+    }
+
+    async function pgApi(url, opts) {
+        const r = await fetch(url, opts);
+        let d = {};
+        try { d = await r.json(); } catch (e) {}
+        if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+        return d;
+    }
+
+    async function pgLoadModels() {
+        try {
+            const d = await pgApi('/api/models');
+            pgState.models = (d.data || []).map(x => x.id).sort();
+            const sel = document.getElementById('pgModel');
+            sel.innerHTML = '';
+            if (!pgState.models.length) {
+                const o = document.createElement('option'); o.value = ''; o.textContent = '（暂无可用模型）';
+                sel.appendChild(o); sel.disabled = true; return;
+            }
+            pgState.models.forEach(m => {
+                const o = document.createElement('option'); o.value = m; o.textContent = m; sel.appendChild(o);
+            });
+        } catch (e) { pgToast('模型列表加载失败：' + e.message, false); }
+    }
+
+    async function pgLoadConvs() {
+        const d = await pgApi('/api/playground/conversations');
+        pgState.convs = d.conversations || [];
+        if (!pgState.convs.length) { await pgNewConv(true); return; }
+        pgRenderConvs();
+        const keep = pgState.convs.find(c => c.id === pgState.curId);
+        pgSelectConv(keep ? keep.id : pgState.convs[0].id);
+    }
+
+    function pgRenderConvs() {
+        const box = document.getElementById('pgConvList');
+        box.innerHTML = '';
+        pgState.convs.forEach(c => {
+            const div = document.createElement('div');
+            div.className = 'pg-conv' + (c.id === pgState.curId ? ' active' : '');
+            const t = document.createElement('span');
+            t.className = 'pg-conv-title';
+            t.textContent = c.title || '新对话';
+            t.title = t.textContent;
+            const del = document.createElement('button');
+            del.className = 'pg-conv-del'; del.innerHTML = '<i class="bi bi-trash"></i>'; del.title = '删除对话';
+            del.setAttribute('data-action', 'pgDelConv'); del.setAttribute('data-args', String(c.id));
+            div.appendChild(t); div.appendChild(del);
+            div.addEventListener('click', (e) => { if (e.target.closest('.pg-conv-del')) return; pgSelectConv(c.id); });
+            box.appendChild(div);
+        });
+    }
+
+    async function pgSelectConv(id) {
+        if (pgState.streaming) { pgToast('请等待当前回复完成', false); return; }
+        pgState.curId = id;
+        pgRenderConvs();
+        const conv = pgState.convs.find(c => c.id === id);
+        const sel = document.getElementById('pgModel');
+        if (conv && conv.model && Array.from(sel.options).some(o => o.value === conv.model)) sel.value = conv.model;
+        document.getElementById('pgSysText').value = (conv && conv.system_prompt) || '';
+        const d = await pgApi('/api/playground/conversations/' + id + '/messages');
+        pgRenderMessages(d.messages || []);
+        pgUpdateCtxInfo(d.messages ? d.messages.length : 0);
+    }
+
+    function pgRenderMessages(msgs) {
+        const box = document.getElementById('pgMessages');
+        box.innerHTML = '';
+        if (!msgs.length) {
+            box.innerHTML = '<div class="pg-empty"><i class="bi bi-chat-square-dots"></i>' +
+                '<div class="t">开始与模型对话</div>' +
+                '<div class="s">选择模型后发送消息；完整链路（映射/负载均衡/计费）与正式 API 一致，照常扣费。</div></div>';
+            return;
+        }
+        msgs.forEach(m => pgAppendBubble(m.role, m.content, null, false));
+        pgScrollBottom();
+    }
+
+    function pgAppendBubble(role, text, meta, streaming) {
+        const box = document.getElementById('pgMessages');
+        const empty = document.getElementById('pgEmpty');
+        if (empty) empty.remove();
+        const wrap = document.createElement('div');
+        wrap.className = 'pg-msg ' + (role === 'user' ? 'user' : (role === 'error' ? 'assistant error' : 'assistant'));
+        wrap.dataset.role = role;
+        const av = document.createElement('div');
+        av.className = 'avatar';
+        av.innerHTML = role === 'user' ? '<i class="bi bi-person"></i>' : '<i class="bi bi-cpu"></i>';
+        const col = document.createElement('div');
+        col.style.cssText = 'max-width:100%;min-width:0;';
+        const bub = document.createElement('div');
+        bub.className = 'bubble';
+        bub.textContent = text || '';
+        if (streaming) bub.insertAdjacentHTML('beforeend', '<span class="pg-cursor"></span>');
+        col.appendChild(bub);
+        if (meta) {
+            const mt = document.createElement('div');
+            mt.className = 'meta';
+            mt.textContent = meta;
+            col.appendChild(mt);
+        }
+        wrap.appendChild(av); wrap.appendChild(col);
+        box.appendChild(wrap);
+        pgScrollBottom();
+        return bub;
+    }
+
+    function pgScrollBottom() {
+        const box = document.getElementById('pgMessages');
+        box.scrollTop = box.scrollHeight;
+    }
+
+    function pgUpdateCtxInfo(n) {
+        document.getElementById('pgCtxInfo').textContent = n ? ('上下文 ' + n + ' 条') : '';
+    }
+
+    async function pgNewConv(silent) {
+        try {
+            const d = await pgApi('/api/playground/conversations', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model: document.getElementById('pgModel').value || '' })
+            });
+            const c = d.conversation;
+            pgState.convs.unshift(c);
+            pgState.curId = c.id;
+            pgRenderConvs();
+            pgRenderMessages([]);
+            pgUpdateCtxInfo(0);
+            document.getElementById('pgSysText').value = '';
+            if (!silent) pgSelectConv(c.id);
+        } catch (e) { pgToast('新建对话失败：' + e.message, false); }
+    }
+
+    async function pgDelConv(id) {
+        if (!confirm('确定删除该对话？其全部上下文将一并删除。')) return;
+        try {
+            await pgApi('/api/playground/conversations/' + id, { method: 'DELETE' });
+            pgState.convs = pgState.convs.filter(c => c.id !== id);
+            if (pgState.curId === id) pgState.curId = null;
+            if (pgState.convs.length) { await pgSelectConv(pgState.convs[0].id); }
+            else { await pgNewConv(true); }
+            pgToast('已删除');
+        } catch (e) { pgToast('删除失败：' + e.message, false); }
+    }
+
+    async function pgClearCtx() {
+        if (!pgState.curId) return;
+        if (!confirm('清空当前对话的全部上下文？（对话与设置保留）')) return;
+        try {
+            await pgApi('/api/playground/conversations/' + pgState.curId + '/clear', { method: 'POST' });
+            pgRenderMessages([]);
+            pgUpdateCtxInfo(0);
+            pgToast('上下文已清空');
+        } catch (e) { pgToast('清空失败：' + e.message, false); }
+    }
+
+    function pgToggleSys() { document.getElementById('pgSysPanel').classList.toggle('open'); }
+
+    async function pgSaveSys() {
+        if (!pgState.curId) return;
+        try {
+            const d = await pgApi('/api/playground/conversations/' + pgState.curId, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ system_prompt: document.getElementById('pgSysText').value })
+            });
+            const c = pgState.convs.find(x => x.id === pgState.curId);
+            if (c && d.conversation) { c.system_prompt = d.conversation.system_prompt; }
+            pgToast('系统提示词已保存');
+        } catch (e) { pgToast('保存失败：' + e.message, false); }
+    }
+
+    // 解析上游流式响应（POST + SSE 手工解析）
+    async function pgSend() {
+        if (pgState.streaming) return;
+        const input = document.getElementById('pgInput');
+        const btn = document.getElementById('pgSendBtn');
+        const content = input.value.trim();
+        if (!content) return;
+        if (!pgState.curId) { await pgNewConv(true); }
+        const model = document.getElementById('pgModel').value;
+        if (!model) { pgToast('暂无可用模型，请先在管理端配置上游', false); return; }
+
+        pgState.streaming = true;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="loading"></span>';
+        input.value = '';
+        input.style.height = 'auto';
+
+        pgAppendBubble('user', content, null, false);
+        const bub = pgAppendBubble('assistant', '', null, true);
+        pgScrollBottom();
+
+        let acc = '';
+        let reasoning = '';
+        const setBubble = (t) => { bub.textContent = t; bub.insertAdjacentHTML('beforeend', '<span class="pg-cursor"></span>'); pgScrollBottom(); };
+
+        try {
+            const resp = await fetch('/api/playground/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ conversation_id: pgState.curId, content: content, model: model, stream: true })
+            });
+            if (!resp.ok) {
+                let d = {};
+                try { d = await resp.json(); } catch (e) {}
+                throw new Error(d.error || ('HTTP ' + resp.status));
+            }
+            const reader = resp.body.getReader();
+            const dec = new TextDecoder();
+            let buf = '', doneAll = false;
+            while (!doneAll) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buf += dec.decode(value, { stream: true });
+                let idx;
+                while ((idx = buf.indexOf('\n\n')) >= 0) {
+                    const raw = buf.slice(0, idx); buf = buf.slice(idx + 2);
+                    const lines = raw.split('\n');
+                    for (const line of lines) {
+                        if (line.indexOf('data: ') !== 0) continue;
+                        const payload = line.slice(6);
+                        if (payload === '[DONE]') { doneAll = true; break; }
+                        let obj;
+                        try { obj = JSON.parse(payload); } catch (e) { continue; }
+                        if (obj.__pg_error__) { throw new Error(obj.__pg_error__); }
+                        if (obj.__pg_meta__) {
+                            const m = obj.__pg_meta__;
+                            const cost = (m.cost != null) ? ('¥' + Number(m.cost).toFixed(6)) : '';
+                            const meta = [m.model, cost, (m.input_tokens + '入/' + m.output_tokens + '出')].filter(Boolean).join(' · ');
+                            bub.parentElement.querySelector('.meta')?.remove();
+                            const mt = document.createElement('div'); mt.className = 'meta'; mt.textContent = meta;
+                            bub.parentElement.appendChild(mt);
+                            continue;
+                        }
+                        const ch = obj.choices && obj.choices[0];
+                        let piece = '';
+                        if (ch && ch.delta && ch.delta.content) piece = ch.delta.content;
+                        else if (ch && ch.message && ch.message.content) piece = ch.message.content;
+                        else if (typeof ch?.text === 'string') piece = ch.text;
+                        if (piece) { acc += piece; setBubble(acc); }
+                        else {
+                            // content 为空时展示思考内容（reasoning 模型兜底）
+                            const rpiece = (ch && ch.delta && ch.delta.reasoning_content) ||
+                                           (ch && ch.message && ch.message.reasoning_content) || '';
+                            if (rpiece) { reasoning += rpiece; if (!acc) setBubble('（思考中）' + reasoning); }
+                        }
+                    }
+                }
+            }
+            if (acc) bub.textContent = acc;
+            else if (reasoning) bub.textContent = '（思考内容）' + reasoning;
+            else bub.textContent = '（空响应）';
+            pgState.msgCount += 2;
+            pgUpdateCtxInfo(pgState.msgCount);
+            // 刷新会话列表（标题/排序可能变化）
+            try {
+                const d = await pgApi('/api/playground/conversations');
+                pgState.convs = d.conversations || [];
+                pgRenderConvs();
+            } catch (e) {}
+        } catch (e) {
+            bub.textContent = '请求失败：' + e.message;
+            bub.parentElement.parentElement.classList.add('error');
+        } finally {
+            pgState.streaming = false;
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-send"></i>';
+            pgScrollBottom();
+        }
+    }
+
+    // 绑定动作（对齐 data-action 委托约定）
+    window.pgNewConv = pgNewConv;
+    window.pgDelConv = pgDelConv;
+    window.pgClearCtx = pgClearCtx;
+    window.pgToggleSys = pgToggleSys;
+    window.pgSaveSys = pgSaveSys;
+    window.pgSend = pgSend;
+
+    // 输入框：Enter 发送 / Shift+Enter 换行，自动增高
+    document.getElementById('pgInput').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); pgSend(); }
+    });
+    document.getElementById('pgInput').addEventListener('input', function () {
+        this.style.height = 'auto';
+        this.style.height = Math.min(this.scrollHeight, 160) + 'px';
+    });
+
+    // 初始化（导航栏用户信息复用全站 SSE 快照）
+    (async function () {
+        try {
+            const d = await window.getUserInfo();
+            if (d && d.username) {
+                document.getElementById('balenceAmount').textContent = '¥' + Number(d.balence || 0).toFixed(6);
+                document.getElementById('avatarText').textContent = (String(d.username).charAt(0) || 'U').toUpperCase();
+                document.getElementById('userName').textContent = d.username;
+                document.getElementById('userUid').textContent = 'UID: ' + (d.uid || '-');
+            }
+        } catch (e) {}
+        document.addEventListener('userinfo-update', (e) => {
+            const d = e.detail;
+            if (d && d.username) document.getElementById('balenceAmount').textContent = '¥' + Number(d.balence || 0).toFixed(6);
+        });
+        await pgLoadModels();
+        await pgLoadConvs();
+    })();
+
+    </script>
+</body>
+</html>

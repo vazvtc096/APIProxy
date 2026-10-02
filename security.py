@@ -542,7 +542,11 @@ def _expire_str(minutes: float) -> str:
 
 
 async def ban_ip_auto(db, ip: str, kind, val, reason: str):
-    expire = None if kind == "always" else _expire_str(val)
+    # ip_blacklist.ban_expire_at 必须存 epoch 秒级浮点，与 admin 手动封禁、hooks._act_block_ip
+    # 以及登录校验/中间件的 `ban_expire_at > time.time()` 比对保持一致。
+    # 注意：绝不能存 ISO 字符串——SQLite 中 TEXT > REAL 恒为真，会导致该 IP 永远无法自动解封，
+    # 且管理员列表页 float() 解析会抛 ValueError。val 单位为分钟（来自 _parse_ban_duration）。
+    expire = None if kind == "always" else (time.time() + float(val) * 60)
     await db(
         "INSERT INTO ip_blacklist (ip, reason, ban_expire_at) VALUES (?,?,?) "
         "ON CONFLICT(ip) DO UPDATE SET reason=excluded.reason, ban_expire_at=excluded.ban_expire_at",

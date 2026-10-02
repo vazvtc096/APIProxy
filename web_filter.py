@@ -21,6 +21,7 @@
   wf_categories() / wf_status() / wf_policy()
 """
 import logging
+import re
 from typing import List, Optional
 from urllib.parse import urlparse, unquote
 
@@ -89,13 +90,21 @@ _API_PREFIXES = ("/api/", "/v1/", "/oauth/", "/internal/", "/cluster/",
 # 分类
 # ============================================================================
 def classify(text: str) -> Optional[str]:
-    """把一段文本（path+query）归类到第一个命中的分类；未命中返回 None。"""
+    """把一段文本（path+query）归类到第一个命中的分类；未命中返回 None。
+
+    纯 ASCII 且长度 <= 3 的短关键词（如 "av"、"c2"）按词边界匹配，
+    避免 URL 子串误伤（如 favicon.ico / java / save 命中 "av"）。
+    """
     if not text:
         return None
     low = text.lower()
     for cat, kws in _CATEGORY_KEYWORDS.items():
         for kw in kws:
-            if kw.lower() in low:
+            k = kw.lower()
+            if len(k) <= 3 and k.isascii():
+                if re.search(r'(?<![a-z0-9])' + re.escape(k) + r'(?![a-z0-9])', low):
+                    return cat
+            elif k in low:
                 return cat
     return None
 

@@ -346,14 +346,20 @@ class TaskExecutor:
         affected = 0
         
         if scope == 'all_users':
-            # 给所有用户发送系统消息
-            users = _db_query("SELECT uid, user_name FROM users")
+            # 给所有用户发送系统消息（发件人为系统虚拟用户 0x0「系统」，可进入聊天）
+            try:
+                from .system_users import system_sender
+                sys_uid, sys_name = system_sender('000000000000')
+            except Exception:
+                sys_uid, sys_name = '000000000000', '系统'
+            users = [u for u in _db_query("SELECT uid, user_name FROM users")
+                     if u.get('uid') and u['uid'] != sys_uid]
             for user in users:
                 try:
                     _db_query(
                         """INSERT INTO chat_messages (message_id, from_uid, from_name, to_uid, to_name, content, type, status)
-                           VALUES (?, 'system', '系统公告', ?, ?, ?, 'system', 'sent')""",
-                        (f'msg_sys_{int(time.time())}_{user["uid"]}', user['uid'], user['user_name'], content)
+                           VALUES (?, ?, ?, ?, ?, ?, 'system', 'sent')""",
+                        (f'msg_sys_{int(time.time())}_{user["uid"]}', sys_uid, sys_name, user['uid'], user['user_name'], content)
                     )
                     affected += 1
                 except:

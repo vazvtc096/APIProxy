@@ -709,7 +709,10 @@ async def _act_send_announcement(ctx, title, content='', **kw) -> str:
 async def _act_notify_admin(ctx, text, *args, **kw) -> str:
     db = _require_db()
     admins = await db("SELECT uid, user_name FROM users WHERE is_admin = 1")
-    admin = await _get_admin()
+    # 发件人使用系统虚拟用户「钩子系统」（UID 恒定 000000000002），
+    # 管理员可直接点击进入该会话；不再伪造 admin 名义发信。
+    from .system_users import system_sender
+    sender_uid, sender_name = system_sender('000000000002')
     content = _apply_format(str(text), args)[:2000]
     cnt = 0
     for a in admins or []:
@@ -718,7 +721,7 @@ async def _act_notify_admin(ctx, text, *args, **kw) -> str:
             """INSERT INTO chat_messages
                (message_id, from_uid, from_name, to_uid, to_name, content, type, status, is_read, created_at)
                VALUES (?, ?, ?, ?, ?, ?, 'system', 'sent', 0, CURRENT_TIMESTAMP)""",
-            (msg_id, admin['uid'], admin['user_name'], a['uid'], a['user_name'], content)
+            (msg_id, sender_uid, sender_name, a['uid'], a['user_name'], content)
         )
         cnt += 1
     return f'notify_admin -> {cnt} 位管理员'

@@ -22,6 +22,7 @@
   - 配置中完全没有该模型时，回退到 DB model_prices（管理员定价表，无时段），再回退 default。
 """
 import time
+import json
 import logging
 
 from . import configs
@@ -61,19 +62,60 @@ def _num(v, default):
         return default
 
 
-def _resolve_entry(entry: dict, now_sec: int):
+def _holiday_today(now) -> bool:
+    """今天是否命中 pricing.holidays（YYYY-MM-DD 一次性 / MM-DD 每年循环）。"""
+    holidays = (configs.PRICING or {}).get("holidays") or []
+    if not isinstance(holidays, list):
+        return False
+    today = time.strftime("%Y-%m-%d", now)
+    month_day = time.strftime("%m-%d", now)
+    for h in holidays:
+        h = str(h).strip()
+        if h and h in (today, month_day):
+            return True
+    return False
+
+
+def _match_schedules(entry: dict, now):
+    """遍历 schedules，返回第一个命中时段的 (input, output, tier)；无命中返回 None。
+
+    - sch.days: 可选 [0..6]（周一=0），缺省每天生效；
+    - 全局 pricing.holidays 命中当天 -> 跳过所有时段（落到 base 价，即空闲/谷价）。
+    """
+    now_sec = now.tm_hour * 3600 + now.tm_min * 60 + now.tm_sec
+    base_in = _num(entry.get("input"), _FALLBACK["input"])
+    base_out = _num(entry.get("output"), _FALLBACK["output"])
+    schedules = entry.get("schedules")
+    if not isinstance(schedules, list) or _holiday_today(now):
+        return None
+    for sch in schedules:
+        if not isinstance(sch, dict):
+            continue
+        days = sch.get("days")
+        if isinstance(days, list) and days:
+            try:
+                allow = {int(d) for d in days}
+            except (TypeError, ValueError):
+                allow = None
+            if allow is not None and now.tm_wday not in allow:
+                continue
+        s = _parse_hms(sch.get("start"))
+        e = _parse_hms(sch.get("end"))
+        if _in_window(now_sec, s, e):
+            inp = _num(sch.get("input"), base_in)
+            outp = _num(sch.get("output"), base_out)
+            tier = "peak" if (inp > base_in or outp > base_out) else "offpeak"
+            return inp, outp, tier
+    return None
+
+
+def _resolve_entry(entry: dict, now):
     """从单个模型计费条目解析出 (input, output)。entry 可能含 schedules。"""
     if not isinstance(entry, dict):
         return None
-    schedules = entry.get("schedules")
-    if isinstance(schedules, list):
-        for sch in schedules:
-            if not isinstance(sch, dict):
-                continue
-            s = _parse_hms(sch.get("start"))
-            e = _parse_hms(sch.get("end"))
-            if _in_window(now_sec, s, e):
-                return _num(sch.get("input"), _FALLBACK["input"]), _num(sch.get("output"), _FALLBACK["output"])
+    hit = _match_schedules(entry, now)
+    if hit is not None:
+        return hit[0], hit[1]
     # 无时段命中 -> 用该条目 base input/output
     if "input" in entry or "output" in entry:
         return _num(entry.get("input"), _FALLBACK["input"]), _num(entry.get("output"), _FALLBACK["output"])
@@ -102,11 +144,12 @@ def _db_price(model: str):
 
 
 def reload_pricing_from_db():
-    """从 DB pricing_schedules 表加载时段计费，合并进 configs.PRICING['models']。
+    """从 DB 加载时段计费与节假日，合并进 configs.PRICING（热加载，无 DB 表则保留 yaml 原值）。
 
-    - 对 DB 中有 schedules 的模型：用 DB schedules 覆盖 configs.PRICING 中同模型的 schedules
-    - 对 DB 中无 schedules 的模型：不影响（保留 config.yaml 原值）
-    - 返回加载的条数（-1 表示表不存在或读取失败）
+    - pricing_schedules：对 DB 中有行的模型，用 DB schedules（含 days 生效星期）覆盖
+      configs.PRICING 中同模型的 schedules；DB 无行的模型保留 config.yaml 原值。
+    - pricing_holidays：有表则以 DB 为准整体覆盖 configs.PRICING['holidays']；无表保留 yaml。
+    - 返回加载的 schedule 行数（-1 表示表不存在或读取失败）。
     """
     try:
         from . import db
@@ -114,9 +157,14 @@ def reload_pricing_from_db():
         try:
             cur = conn.cursor()
             cur.execute(
-                'SELECT model, "start", "end", input, output, enabled FROM pricing_schedules'
+                'SELECT model, "start", "end", input, output, enabled, days FROM pricing_schedules'
             )
             rows = cur.fetchall()
+            try:
+                cur.execute("SELECT day FROM pricing_holidays ORDER BY day ASC")
+                hol_rows = [r["day"] for r in cur.fetchall()]
+            except Exception:
+                hol_rows = None  # 表不存在：保留 config.yaml 的 holidays
         finally:
             conn.close()
     except Exception as e:
@@ -129,6 +177,10 @@ def reload_pricing_from_db():
         pricing = configs.PRICING
     models = pricing.setdefault("models", {})
 
+    # 节假日（DB 为准）
+    if hol_rows is not None:
+        pricing["holidays"] = [str(h) for h in hol_rows if str(h or "").strip()]
+
     # 按模型分组
     by_model = {}
     for r in rows:
@@ -136,14 +188,30 @@ def reload_pricing_from_db():
         if m not in by_model:
             by_model[m] = []
         if r["enabled"]:
-            by_model[m].append({
+            sch = {
                 "start": r["start"],
                 "end": r["end"],
                 "input": r["input"],
                 "output": r["output"],
-            })
+            }
+            # days：JSON 数组字符串（[0..6]，周一=0）；NULL/解析失败 = 每天生效
+            days_raw = None
+            try:
+                days_raw = r["days"]
+            except (KeyError, IndexError):
+                days_raw = None
+            if days_raw:
+                try:
+                    _d = json.loads(days_raw) if isinstance(days_raw, str) else days_raw
+                    if isinstance(_d, list):
+                        _d = sorted({int(x) for x in _d if 0 <= int(x) <= 6})
+                        if _d:
+                            sch["days"] = _d
+                except (ValueError, TypeError):
+                    pass
+            by_model[m].append(sch)
 
-    # 合并：DB 有 schedules 的模型 -> 覆盖；config.yaml 保留 base input/output
+    # 合并：DB 有行的模型 -> 覆盖；config.yaml 保留 base input/output
     for m, scheds in by_model.items():
         if m not in models or not isinstance(models[m], dict):
             models[m] = {"schedules": scheds}
@@ -163,7 +231,6 @@ def resolve_price(model: str, upstream_name: str = None, now=None):
     """
     if now is None:
         now = time.localtime()
-    now_sec = now.tm_hour * 3600 + now.tm_min * 60 + now.tm_sec
 
     pricing = configs.PRICING or {}
     models = pricing.get("models") or {}
@@ -172,14 +239,14 @@ def resolve_price(model: str, upstream_name: str = None, now=None):
     if upstream_name:
         entry = models.get(f"{model}@{upstream_name}")
         if entry is not None:
-            r = _resolve_entry(entry, now_sec)
+            r = _resolve_entry(entry, now)
             if r is not None:
                 return r
 
     # 2) 通用模型价
     entry = models.get(model)
     if entry is not None:
-        r = _resolve_entry(entry, now_sec)
+        r = _resolve_entry(entry, now)
         if r is not None:
             return r
 
@@ -204,7 +271,6 @@ def resolve_price_tier(model: str, upstream_name: str = None, now=None):
     """
     if now is None:
         now = time.localtime()
-    now_sec = now.tm_hour * 3600 + now.tm_min * 60 + now.tm_sec
 
     pricing = configs.PRICING or {}
     models = pricing.get("models") or {}
@@ -231,18 +297,9 @@ def resolve_price_tier(model: str, upstream_name: str = None, now=None):
     base_in = _num(entry.get("input"), _FALLBACK["input"])
     base_out = _num(entry.get("output"), _FALLBACK["output"])
 
-    schedules = entry.get("schedules")
-    if isinstance(schedules, list):
-        for sch in schedules:
-            if not isinstance(sch, dict):
-                continue
-            s = _parse_hms(sch.get("start"))
-            e = _parse_hms(sch.get("end"))
-            if _in_window(now_sec, s, e):
-                inp = _num(sch.get("input"), base_in)
-                outp = _num(sch.get("output"), base_out)
-                tier = "peak" if (inp > base_in or outp > base_out) else "offpeak"
-                return inp, outp, tier
+    hit = _match_schedules(entry, now)
+    if hit is not None:
+        return hit
 
     # 无时段命中 -> base 价（无峰谷）
     return base_in, base_out, None

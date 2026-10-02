@@ -16,6 +16,13 @@ import logging
 import uuid
 from typing import Callable, List, Optional
 
+from . import cache_store
+
+# 通知列表 / 未读数缓存 TTL（秒）。通知非高频变更，短缓存即可显著削减
+# 铃铛轮询与列表接口对 SQLite 的聚合查询压力；写入 / 已读时精准失效。
+_NOTIF_LIST_TTL = 10
+_NOTIF_UNREAD_TTL = 10
+
 __all__ = [
     'init_notifications',
     'ensure_notifications_table',
@@ -75,8 +82,9 @@ async def add_notification(user_uid: str, title: str, body: str,
     title = (title or '').strip()[:300]
     body = (body or '').strip()[:8000]
     link = (link or '').strip()[:2000]
-    nid = 'ntf_' + uuid.uuid4().hex[:14]
+    nid = None
     try:
+        nid = 'ntf_' + uuid.uuid4().hex[:14]
         await _db()(
             """INSERT INTO notifications
                (id, user_uid, title, body, level, link, announcement_id, is_read, created_at)
@@ -87,13 +95,22 @@ async def add_notification(user_uid: str, title: str, body: str,
     except Exception as e:
         logging.error(f'[notifications] add_notification failed for {user_uid}: {e}')
         return None
+    finally:
+        # 写入即失效该用户相关缓存（列表 + 未读数），保证下次读取取到新通知
+        if nid:
+            cache_store.cache_delete_pattern(f"notif:list:{user_uid}:*")
+            cache_store.cache_delete_pattern(f"notif:unread:{user_uid}")
 
 
 async def get_notifications(user_uid: str, limit: int = 30,
                             unread_only: bool = False) -> List[dict]:
-    """取某用户的通知列表（按时间倒序）。"""
+    """取某用户的通知列表（按时间倒序）。结果按 uid+limit+unread 维度短缓存。"""
     if not user_uid:
         return []
+    cache_key = f"notif:list:{user_uid}:{int(limit)}:{1 if unread_only else 0}"
+    cached = cache_store.cache_get_json(cache_key)
+    if cached is not None:
+        return cached
     db = _db()
     sql = "SELECT * FROM notifications WHERE user_uid = ?"
     if unread_only:
@@ -101,26 +118,34 @@ async def get_notifications(user_uid: str, limit: int = 30,
     sql += " ORDER BY created_at DESC LIMIT ?"
     try:
         rows = await db(sql, (user_uid, int(limit)))
-        return list(rows or [])
+        result = [dict(r) for r in (rows or [])]
     except Exception as e:
         logging.error(f'[notifications] get_notifications failed for {user_uid}: {e}')
         return []
+    cache_store.cache_set_json(cache_key, result, _NOTIF_LIST_TTL)
+    return result
 
 
 async def unread_count(user_uid: str) -> int:
-    """未读通知数。"""
+    """未读通知数（按 uid 短缓存）。"""
     if not user_uid:
         return 0
+    cache_key = f"notif:unread:{user_uid}"
+    cached = cache_store.cache_get_json(cache_key)
+    if cached is not None:
+        return int(cached)
     db = _db()
     try:
         rows = await db(
             "SELECT COUNT(*) as cnt FROM notifications WHERE user_uid = ? AND COALESCE(is_read, 0) = 0",
             (user_uid,)
         )
-        return rows[0]['cnt'] if rows else 0
+        cnt = rows[0]['cnt'] if rows else 0
     except Exception as e:
         logging.error(f'[notifications] unread_count failed for {user_uid}: {e}')
         return 0
+    cache_store.cache_set_json(cache_key, cnt, _NOTIF_UNREAD_TTL)
+    return cnt
 
 
 async def mark_read(user_uid: str, notif_id: Optional[str] = None) -> int:
@@ -139,7 +164,12 @@ async def mark_read(user_uid: str, notif_id: Optional[str] = None) -> int:
                 "UPDATE notifications SET is_read = 1 WHERE user_uid = ?",
                 (user_uid,)
             )
-        return getattr(rows, 'rowcount', 0) or 0
+        # async_db_query 对写操作返回 cur.rowcount（整数），直接返回即可
+        return int(rows or 0)
     except Exception as e:
         logging.error(f'[notifications] mark_read failed for {user_uid}: {e}')
         return 0
+    finally:
+        # 已读即失效该用户相关缓存，保证铃铛红点 / 列表立即更新
+        cache_store.cache_delete_pattern(f"notif:list:{user_uid}:*")
+        cache_store.cache_delete_pattern(f"notif:unread:{user_uid}")

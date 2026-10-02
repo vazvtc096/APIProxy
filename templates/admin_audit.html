@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>审计日志 - 管理员后台</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style nonce="{{ csp_nonce }}">
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #fafafa; color: #1a1a1a; min-height: 100vh; }
+        .main-container { display: flex; padding-top: 64px; min-height: 100vh; }
+        .content { flex: 1; margin-left: 240px; padding: 32px; }
+        .page-title { font-size: 24px; font-weight: 700; color: #1a1a1a; }
+        .page-subtitle { font-size: 14px; color: #666; margin-top: 4px; }
+        .btn { padding: 8px 16px; font-size: 13px; font-weight: 500; border-radius: 8px; cursor: pointer; transition: all 0.2s; border: none; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+        .btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+        .btn-secondary { background: #f5f5f5; color: #333; }
+        .btn-secondary:hover { background: #eee; }
+        .card { background: white; border-radius: 16px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 24px; }
+        .card h3 { font-size: 16px; font-weight: 600; margin-bottom: 12px; }
+        .stats-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+        .stat-chip { background: #f8f9fb; border-radius: 12px; padding: 12px 18px; font-size: 13px; color: #555; }
+        .stat-chip b { display: block; font-size: 20px; color: #1a1a1a; margin-top: 2px; }
+        .filter-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+        .filter-row input, .filter-row select { padding: 7px 10px; font-size: 13px; border: 1px solid #e5e7eb; border-radius: 8px; outline: none; }
+        .filter-row input:focus, .filter-row select:focus { border-color: #667eea; }
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; padding: 10px 12px; font-size: 12px; font-weight: 600; color: #666; text-transform: uppercase; letter-spacing: 0.5px; background: #fafafa; border-bottom: 1px solid #f0f0f0; }
+        td { padding: 8px 12px; font-size: 13px; border-bottom: 1px solid #f0f0f0; color: #333; vertical-align: top; }
+        tr:hover td { background: #fafafa; }
+        .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 500; }
+        .badge-low { background: #f0fdf4; color: #16a34a; }
+        .badge-medium { background: #fffbeb; color: #d97706; }
+        .badge-high, .badge-critical { background: #fef2f2; color: #dc2626; }
+        .mono { font-family: Consolas, Menlo, monospace; font-size: 12px; word-break: break-all; }
+        .empty { text-align: center; color: #9ca3af; padding: 32px; font-size: 14px; }
+        .pager { display: flex; gap: 10px; align-items: center; margin-top: 14px; font-size: 13px; color: #666; }
+
+        /* 侧边栏基础样式（与 admin_bans 等页统一） */
+        .sidebar { width: 240px; background: white; border-right: 1px solid #f0f0f0; padding: 24px 0; position: fixed; top: 64px; bottom: 0; left: 0; overflow-y: auto; }
+        .sidebar-section { margin-bottom: 24px; }
+        .sidebar-section-title { font-size: 11px; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.5px; padding: 0 20px; margin-bottom: 8px; }
+        .sidebar-item { display: flex; align-items: center; gap: 12px; padding: 10px 20px; cursor: pointer; transition: all 0.15s; font-size: 14px; color: #666; border-left: 3px solid transparent; text-decoration: none; }
+        .sidebar-item:hover { background: #fafafa; color: #1a1a1a; }
+        .sidebar-item.active { background: #f0f2ff; color: #667eea; border-left-color: #667eea; font-weight: 500; }
+        .sidebar-item i { font-size: 18px; width: 20px; text-align: center; }
+    </style>
+</head>
+<body>
+    {% include "_navbar_css.html" %}
+    {% include "_navbar.html" %}
+    <div class="main-container">
+        {% with active_page = 'audit' %}
+        {% include "_sidebar.html" %}
+        {% endwith %}
+
+        <main class="content">
+            <div class="page-title">审计日志</div>
+            <div class="page-subtitle">管理员操作统一收口（audit_log 表）：所有管理端写操作自动留痕，失败操作同样记录</div>
+
+            <div class="card">
+                <h3>近 7 天统计</h3>
+                <div class="stats-row" id="statsRow"><div class="stat-chip">加载中…</div></div>
+            </div>
+
+            <div class="card">
+                <h3>审计事件</h3>
+                <div class="filter-row">
+                    <input type="text" id="f-category" placeholder="分类（admin）" style="width:120px;">
+                    <input type="text" id="f-event" placeholder="事件（POST /api/...）" style="width:220px;">
+                    <select id="f-severity" style="width:110px;">
+                        <option value="">全部级别</option>
+                        <option value="low">low</option>
+                        <option value="medium">medium</option>
+                        <option value="high">high</option>
+                        <option value="critical">critical</option>
+                    </select>
+                    <input type="text" id="f-user" placeholder="操作人" style="width:120px;">
+                    <input type="text" id="f-ip" placeholder="来源 IP" style="width:140px;">
+                    <select id="f-days" style="width:120px;">
+                        <option value="0">全部时间</option>
+                        <option value="1" selected>近 24 小时</option>
+                        <option value="7">近 7 天</option>
+                        <option value="30">近 30 天</option>
+                    </select>
+                    <button class="btn btn-primary" data-action="query">查询</button>
+                    <a class="btn btn-secondary" id="exportLink" href="/api/admin/audit?days=7&fmt=csv" download>导出 CSV</a>
+                </div>
+                <table>
+                    <thead>
+                        <tr><th>时间</th><th>级别</th><th>事件</th><th>操作人</th><th>IP</th><th>详情</th></tr>
+                    </thead>
+                    <tbody id="auditBody"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
+                </table>
+                <div class="pager">
+                    <span id="countInfo"></span>
+                    <button class="btn btn-secondary" data-action="more" style="margin-left:auto;">加载更多</button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script nonce="{{ csp_nonce }}">
+        'use strict';
+        var currentLimit = 100;
+        function esc(s) {
+            return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+            });
+        }
+        function sevBadge(s) {
+            var cls = ['low', 'medium', 'high', 'critical'].indexOf(s) >= 0 ? s : 'low';
+            return '<span class="badge badge-' + cls + '">' + esc(s || 'low') + '</span>';
+        }
+        function buildQuery(extra) {
+            var p = new URLSearchParams();
+            var map = { category: 'f-category', event_type: 'f-event', severity: 'f-severity', user: 'f-user', client_ip: 'f-ip', days: 'f-days' };
+            Object.keys(map).forEach(function (k) {
+                var v = document.getElementById(map[k]).value;
+                if (v !== '') p.set(k, v);
+            });
+            Object.keys(extra || {}).forEach(function (k) { p.set(k, extra[k]); });
+            return p.toString();
+        }
+        async function loadStats() {
+            try {
+                var r = await fetch('/api/admin/audit-stats?days=7', { credentials: 'same-origin' });
+                var d = await r.json();
+                var st = (d.stats || {});
+                var cats = st.by_category || {};
+                var html = '<div class="stat-chip">总量<b>' + esc(st.total || 0) + '</b></div>';
+                Object.keys(cats).forEach(function (c) {
+                    html += '<div class="stat-chip">' + esc(c) + '<b>' + esc(cats[c]) + '</b></div>';
+                });
+                document.getElementById('statsRow').innerHTML = html;
+            } catch (e) { document.getElementById('statsRow').innerHTML = '<div class="stat-chip">统计加载失败</div>'; }
+        }
+        async function loadEvents(append) {
+            var body = document.getElementById('auditBody');
+            if (!append) body.innerHTML = '<tr><td colspan="6" class="empty">加载中…</td></tr>';
+            try {
+                var qs = buildQuery({ limit: currentLimit });
+                var r = await fetch('/api/admin/audit?' + qs, { credentials: 'same-origin' });
+                var d = await r.json();
+                var evs = d.events || [];
+                if (!evs.length) {
+                    body.innerHTML = '<tr><td colspan="6" class="empty">无匹配记录</td></tr>';
+                } else {
+                    var html = evs.map(function (e) {
+                        return '<tr><td style="white-space:nowrap;">' + esc(e.created_at) + '</td>'
+                            + '<td>' + sevBadge(e.severity) + '</td>'
+                            + '<td class="mono">' + esc(e.event_type) + '</td>'
+                            + '<td>' + esc(e.user_name || '-') + '</td>'
+                            + '<td class="mono">' + esc(e.client_ip || '-') + '</td>'
+                            + '<td class="mono">' + esc(e.details || '') + '</td></tr>';
+                    }).join('');
+                    if (append) { body.insertAdjacentHTML('beforeend', html); }
+                    else { body.innerHTML = html; }
+                }
+                document.getElementById('countInfo').textContent = '显示 ' + evs.length + ' 条（limit ' + currentLimit + '）';
+                document.getElementById('exportLink').href = '/api/admin/audit?' + buildQuery({ fmt: 'csv', limit: 5000 });
+            } catch (e) {
+                body.innerHTML = '<tr><td colspan="6" class="empty">查询失败: ' + esc(e.message) + '</td></tr>';
+            }
+        }
+        document.addEventListener('click', function (ev) {
+            var el = ev.target.closest('[data-action]');
+            if (!el) return;
+            var act = el.getAttribute('data-action');
+            if (act === 'query') { currentLimit = 100; loadEvents(false); }
+            else if (act === 'more') { currentLimit += 100; loadEvents(true); }
+        });
+        loadStats();
+        loadEvents(false);
+    </script>
+</body>
+</html>

@@ -140,6 +140,12 @@
         function escapeHtml(s) {
             return (s == null ? '' : String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
         }
+        function fmtTime(s) {
+            if (!s) return '-';
+            const d = new Date(String(s).replace(' ', 'T'));
+            if (isNaN(d.getTime())) return String(s);
+            return d.toLocaleString('zh-CN', { hour12: false });
+        }
         const LEVEL_BADGE = {info:'badge-info', warning:'badge-warn', critical:'badge-danger'};
         const TARGET_LABEL = {all:'全体', users:'普通用户', admins:'管理员', custom:'指定'};
 
@@ -184,7 +190,7 @@
                     <td>${TARGET_LABEL[a.target] || a.target}</td>
                     <td>${a.recipients != null ? a.recipients : '-'}</td>
                     <td>${a.pinned ? '<span class="badge badge-ok">置顶</span>' : '-'}</td>
-                    <td style="font-size:12px;color:#999;">${escapeHtml(a.created_at || '')}</td>
+                    <td style="font-size:12px;color:#999;">${escapeHtml(fmtTime(a.created_at))}</td>
                     <td><button class="btn btn-secondary btn-sm" data-action="recallAnnouncement" data-args="'${a.announcement_id}'">撤回</button></td>
                 </tr>`).join('');
         }

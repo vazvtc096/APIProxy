@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>计费规则 - 管理员后台</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style nonce="{{ csp_nonce }}">
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #fafafa; color: #1a1a1a; min-height: 100vh; }
+        .main-container { display: flex; padding-top: 64px; min-height: 100vh; }
+        .content { flex: 1; margin-left: 240px; padding: 32px; }
+        .page-title { font-size: 24px; font-weight: 700; color: #1a1a1a; }
+        .page-subtitle { font-size: 14px; color: #666; margin-top: 4px; }
+        .btn { padding: 10px 20px; font-size: 14px; font-weight: 500; border-radius: 10px; cursor: pointer; transition: all 0.2s; border: none; display: inline-flex; align-items: center; gap: 8px; text-decoration: none; }
+        .btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; box-shadow: 0 2px 8px rgba(102,126,234,0.3); }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(102,126,234,0.4); }
+        .btn-secondary { background: #f5f5f5; color: #333; }
+        .btn-secondary:hover { background: #eee; }
+        .btn-danger { background: #fef2f2; color: #dc2626; }
+        .btn-danger:hover { background: #fee2e2; }
+        .btn-sm { padding: 6px 12px; font-size: 12px; border-radius: 6px; }
+        .card { background: white; border-radius: 16px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 24px; }
+        .card h3 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+        .card .hint { font-size: 12px; color: #9ca3af; margin-bottom: 16px; }
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; padding: 12px 16px; font-size: 12px; font-weight: 600; color: #666; text-transform: uppercase; letter-spacing: 0.5px; background: #fafafa; border-bottom: 1px solid #f0f0f0; }
+        td { padding: 10px 16px; font-size: 14px; border-bottom: 1px solid #f0f0f0; color: #333; }
+        tr:hover td { background: #fafafa; }
+        .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 500; }
+        .badge-ok { background: #f0fdf4; color: #16a34a; }
+        .badge-off { background: #f5f5f5; color: #9ca3af; }
+        .badge-peak { background: #fff7ed; color: #ea580c; }
+        .empty { text-align: center; color: #9ca3af; padding: 32px; font-size: 14px; }
+        .mono { font-family: Consolas, Menlo, monospace; }
+        input[type=text], input[type=number] { padding: 8px 12px; font-size: 14px; border: 1px solid #e5e7eb; border-radius: 8px; outline: none; transition: border-color 0.15s; }
+        input[type=text]:focus, input[type=number]:focus { border-color: #667eea; }
+        input.num { width: 96px; text-align: right; }
+        .form-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
+        .form-row label { font-size: 13px; color: #666; }
+        .day-chk { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: #444; background: #f7f7f8; border: 1px solid #ececf0; border-radius: 8px; padding: 6px 10px; cursor: pointer; user-select: none; }
+        .day-chk:has(input:checked) { background: #f0f2ff; border-color: #c7cbfa; color: #667eea; }
+        .day-chk input { accent-color: #667eea; }
+        textarea { width: 100%; min-height: 140px; padding: 12px; font-size: 13px; font-family: Consolas, Menlo, monospace; border: 1px solid #e5e7eb; border-radius: 10px; outline: none; resize: vertical; }
+        textarea:focus { border-color: #667eea; }
+        .toast { position: fixed; top: 80px; right: 24px; background: #1a1a1a; color: white; padding: 12px 20px; border-radius: 10px; font-size: 14px; opacity: 0; transform: translateY(-10px); transition: all 0.25s; z-index: 200; }
+        .toast.show { opacity: 1; transform: translateY(0); }
+        .toast.error { background: #dc2626; }
+        .toast.ok { background: #16a34a; }
+        .editing { background: #f0f2ff !important; }
+        .section-gap { margin-top: 20px; padding-top: 16px; border-top: 1px dashed #ececf0; }
+
+        /* 侧边栏基础样式（与 admin_bans 等页统一；原页面缺失导致侧边栏裸奔成纯文本） */
+        .sidebar { width: 240px; background: white; border-right: 1px solid #f0f0f0; padding: 24px 0; position: fixed; top: 64px; bottom: 0; left: 0; overflow-y: auto; }
+        .sidebar-section { margin-bottom: 24px; }
+        .sidebar-section-title { font-size: 11px; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.5px; padding: 0 20px; margin-bottom: 8px; }
+        .sidebar-item { display: flex; align-items: center; gap: 12px; padding: 10px 20px; cursor: pointer; transition: all 0.15s; font-size: 14px; color: #666; border-left: 3px solid transparent; text-decoration: none; }
+        .sidebar-item:hover { background: #fafafa; color: #1a1a1a; }
+        .sidebar-item.active { background: #f0f2ff; color: #667eea; border-left-color: #667eea; font-weight: 500; }
+        .sidebar-item i { font-size: 18px; width: 20px; text-align: center; }
+
+    </style>
+</head>
+<body>
+    {% include "_navbar_css.html" %}
+    {% include "_navbar.html" %}
+    <div class="main-container">
+        {% with active_page = 'pricing' %}
+        {% include "_sidebar.html" %}
+        {% endwith %}
+
+        <main class="content">
+            <div class="page-title">计费规则</div>
+            <div class="page-subtitle">模型基础单价 / 时段峰谷计费（以数据库为准，保存后即时生效，无需重启服务）</div>
+
+            <div class="card">
+                <h3>模型基础单价</h3>
+                <div class="hint">每百万 token 的人民币单价；未配置时段的请求按此计费（计费链路兜底顺序：上游专属价 → 模型时段价 → 此表 → 全局 default）。</div>
+                <table>
+                    <thead>
+                        <tr><th style="width:34%;">模型</th><th>输入价</th><th>输出价</th><th>状态</th><th style="width:120px;">操作</th></tr>
+                    </thead>
+                    <tbody id="priceTable"><tr><td colspan="5" class="empty">加载中…</td></tr></tbody>
+                </table>
+                <div class="form-row section-gap">
+                    <label>新增/覆盖：</label>
+                    <input type="text" id="np-model" placeholder="模型名" style="width:220px;">
+                    <input type="number" id="np-input" class="num" step="0.01" placeholder="输入价">
+                    <input type="number" id="np-output" class="num" step="0.01" placeholder="输出价">
+                    <button class="btn btn-primary btn-sm" data-action="addBasePrice">保存基础价</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>时段峰谷计费</h3>
+                <div class="hint">命中时段的价格覆盖基础单价；「生效星期」不勾任何一天 = 每天生效；支持跨午夜（如 22:00:00-06:00:00）。节假日列表中的日期全天按基础价（谷价）计。</div>
+                <table>
+                    <thead>
+                        <tr><th style="width:22%;">模型</th><th>时段</th><th>生效星期</th><th>输入价</th><th>输出价</th><th>状态</th><th style="width:190px;">操作</th></tr>
+                    </thead>
+                    <tbody id="schedTable"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody>
+                </table>
+
+                <div class="section-gap">
+                    <div class="form-row">
+                        <label id="schFormTitle"><b>新增时段</b></label>
+                    </div>
+                    <div class="form-row">
+                        <input type="text" id="sch-model" placeholder="模型名（如 deepseek-flash）" style="width:220px;">
+                        <input type="text" id="sch-start" class="mono" placeholder="开始 HH:MM:SS" style="width:130px;">
+                        <input type="text" id="sch-end" class="mono" placeholder="结束 HH:MM:SS" style="width:130px;">
+                        <input type="number" id="sch-input" class="num" step="0.01" placeholder="输入价">
+                        <input type="number" id="sch-output" class="num" step="0.01" placeholder="输出价">
+                    </div>
+                    <div class="form-row" id="schDays">
+                        <span class="day-chk"><input type="checkbox" value="0"><span>周一</span></span>
+                        <span class="day-chk"><input type="checkbox" value="1"><span>周二</span></span>
+                        <span class="day-chk"><input type="checkbox" value="2"><span>周三</span></span>
+                        <span class="day-chk"><input type="checkbox" value="3"><span>周四</span></span>
+                        <span class="day-chk"><input type="checkbox" value="4"><span>周五</span></span>
+                        <span class="day-chk"><input type="checkbox" value="5"><span>周六</span></span>
+                        <span class="day-chk"><input type="checkbox" value="6"><span>周日</span></span>
+                        <span style="font-size:12px;color:#9ca3af;">不勾 = 每天生效</span>
+                    </div>
+                    <div class="form-row">
+                        <button class="btn btn-primary btn-sm" data-action="saveScheduleForm" id="schSaveBtn">保存时段</button>
+                        <button class="btn btn-secondary btn-sm" data-action="resetScheduleForm" id="schCancelBtn" style="display:none;">取消编辑</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>节假日（全天谷价）</h3>
+                <div class="hint">每行一条。YYYY-MM-DD = 一次性（如 2026-10-01）；MM-DD = 每年循环（如 01-01）。命中的日期所有时段规则不生效，全天按基础单价（谷价）计。峰时规则按惯例需排除法定节假日。</div>
+                <textarea id="holText" placeholder="2026-10-01&#10;2026-10-02&#10;01-01"></textarea>
+                <div class="form-row" style="margin-top:12px;">
+                    <button class="btn btn-primary btn-sm" data-action="saveHolidays">保存节假日</button>
+                    <span style="font-size:12px;color:#9ca3af;" id="holCount"></span>
+                </div>
+            </div>
+        </main>
+    </div>
+    <div class="toast" id="toast"></div>
+
+    <script nonce="{{ csp_nonce }}">
+        function toast(msg, type) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.className = 'toast show ' + (type || '');
+            setTimeout(() => t.className = 'toast', 2600);
+        }
+        function escapeHtml(s) {
+            return (s == null ? '' : String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+        const DAY_NAMES = ['一', '二', '三', '四', '五', '六', '日'];
+        function daysLabel(days) {
+            if (!days || !days.length) return '每天';
+            return days.map(d => '周' + (DAY_NAMES[d] || d)).join(' ');
+        }
+        function fmtN(v) {
+            const n = Number(v);
+            return isNaN(n) ? String(v) : String(n);
+        }
+
+        // ---------- 基础单价 ----------
+        async function loadPrices() {
+            let data;
+            try {
+                const res = await fetch('/api/admin/model-prices');
+                if (!res.ok) return;
+                data = await res.json();
+            } catch (e) { return; }
+            const rows = data.model_prices || [];
+            const tb = document.getElementById('priceTable');
+            if (!rows.length) {
+                tb.innerHTML = '<tr><td colspan="5" class="empty">暂无基础价</td></tr>';
+                return;
+            }
+            tb.innerHTML = rows.map(r => `
+                <tr>
+                    <td class="mono">${escapeHtml(r.model)}</td>
+                    <td><input type="number" class="num bp-in" step="0.01" value="${fmtN(r.input)}"></td>
+                    <td><input type="number" class="num bp-out" step="0.01" value="${fmtN(r.output)}"></td>
+                    <td>${r.priced ? '<span class="badge badge-ok">已定价</span>' : '<span class="badge badge-off">未定价</span>'}</td>
+                    <td><button class="btn btn-primary btn-sm" data-action="saveBasePrice" data-args="'${escapeHtml(r.model)}'" data-arg-this>保存</button></td>
+                </tr>`).join('');
+        }
+        async function saveBasePrice(model, el) {
+            const tr = el.closest('tr');
+            const inp = tr.querySelector('.bp-in').value;
+            const out = tr.querySelector('.bp-out').value;
+            const res = await fetch('/api/admin/model-prices', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({model: model, input: Number(inp), output: Number(out)})
+            });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok) { toast('已保存 ' + model, 'ok'); loadPrices(); }
+            else toast(data.error || '保存失败', 'error');
+        }
+        async function addBasePrice() {
+            const model = document.getElementById('np-model').value.trim();
+            if (!model) { toast('模型名不能为空', 'error'); return; }
+            const res = await fetch('/api/admin/model-prices', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    model: model,
+                    input: Number(document.getElementById('np-input').value || 0),
+                    output: Number(document.getElementById('np-output').value || 0)
+                })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok) { toast('已保存 ' + model, 'ok'); loadPrices(); }
+            else toast(data.error || '保存失败', 'error');
+        }
+
+        // ---------- 时段峰谷 ----------
+        let SCHEDS = {};
+        let editingId = null;
+        async function loadSchedules() {
+            let data;
+            try {
+                const res = await fetch('/api/admin/pricing-schedules');
+                if (!res.ok) return;
+                data = await res.json();
+            } catch (e) { return; }
+            const rows = data.schedules || [];
+            SCHEDS = {};
+            rows.forEach(r => SCHEDS[r.id] = r);
+            const tb = document.getElementById('schedTable');
+            if (!rows.length) {
+                tb.innerHTML = '<tr><td colspan="7" class="empty">暂无时段规则（当前全部按基础单价计费）</td></tr>';
+                return;
+            }
+            tb.innerHTML = rows.map(r => `
+                <tr id="sched-row-${r.id}">
+                    <td class="mono">${escapeHtml(r.model)}</td>
+                    <td class="mono">${escapeHtml(r.start)} ~ ${escapeHtml(r.end)}</td>
+                    <td>${daysLabel(r.days)}</td>
+                    <td>${fmtN(r.input)}</td>
+                    <td>${fmtN(r.output)}</td>
+                    <td>${r.enabled ? '<span class="badge badge-ok">启用</span>' : '<span class="badge badge-off">停用</span>'}</td>
+                    <td>
+                        <button class="btn btn-secondary btn-sm" data-action="editSchedule" data-args="'${r.id}'">编辑</button>
+                        <button class="btn btn-secondary btn-sm" data-action="toggleSchedule" data-args="'${r.id}'${String.fromCharCode(1)}${r.enabled ? 'false' : 'true'}">${r.enabled ? '停用' : '启用'}</button>
+                        <button class="btn btn-danger btn-sm" data-action="deleteSchedule" data-args="'${r.id}'">删除</button>
+                    </td>
+                </tr>`).join('');
+        }
+        function editSchedule(id) {
+            const r = SCHEDS[id];
+            if (!r) return;
+            editingId = id;
+            document.getElementById('sch-model').value = r.model || '';
+            document.getElementById('sch-start').value = r.start || '';
+            document.getElementById('sch-end').value = r.end || '';
+            document.getElementById('sch-input').value = r.input;
+            document.getElementById('sch-output').value = r.output;
+            document.querySelectorAll('#schDays input[type=checkbox]').forEach(cb => {
+                cb.checked = !!(r.days && r.days.includes(Number(cb.value)));
+            });
+            document.getElementById('schFormTitle').innerHTML = '<b>编辑时段 #' + id + '</b>（模型：' + escapeHtml(r.model) + '）';
+            document.getElementById('schSaveBtn').textContent = '更新时段';
+            document.getElementById('schCancelBtn').style.display = '';
+            const tr = document.getElementById('sched-row-' + id);
+            if (tr) { tr.classList.add('editing'); tr.scrollIntoView({behavior: 'smooth', block: 'center'}); }
+        }
+        function resetScheduleForm() {
+            editingId = null;
+            ['sch-model', 'sch-start', 'sch-end', 'sch-input', 'sch-output'].forEach(id => document.getElementById(id).value = '');
+            document.querySelectorAll('#schDays input[type=checkbox]').forEach(cb => cb.checked = false);
+            document.getElementById('schFormTitle').innerHTML = '<b>新增时段</b>';
+            document.getElementById('schSaveBtn').textContent = '保存时段';
+            document.getElementById('schCancelBtn').style.display = 'none';
+            document.querySelectorAll('tr.editing').forEach(tr => tr.classList.remove('editing'));
+        }
+        async function saveScheduleForm() {
+            const model = document.getElementById('sch-model').value.trim();
+            const start = document.getElementById('sch-start').value.trim();
+            const end = document.getElementById('sch-end').value.trim();
+            if (!model || !start || !end) { toast('模型名 / 开始 / 结束 不能为空', 'error'); return; }
+            const days = Array.from(document.querySelectorAll('#schDays input[type=checkbox]:checked')).map(cb => Number(cb.value));
+            const body = {
+                model: model, start: start, end: end,
+                input: Number(document.getElementById('sch-input').value || 0),
+                output: Number(document.getElementById('sch-output').value || 0),
+                days: days
+            };
+            const res = await fetch(editingId ? '/api/admin/pricing-schedules/' + editingId : '/api/admin/pricing-schedules', {
+                method: editingId ? 'PUT' : 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(body)
+            });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok) { toast(editingId ? '已更新' : '已新增', 'ok'); resetScheduleForm(); loadSchedules(); }
+            else toast(data.error || '保存失败', 'error');
+        }
+        async function toggleSchedule(id, enable) {
+            const r = SCHEDS[id];
+            if (!r) return;
+            const res = await fetch('/api/admin/pricing-schedules/' + id, {
+                method: 'PUT', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    model: r.model, start: r.start, end: r.end,
+                    input: r.input, output: r.output, days: r.days || [], enabled: !!enable
+                })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok) { toast(enable ? '已启用' : '已停用', 'ok'); loadSchedules(); }
+            else toast(data.error || '操作失败', 'error');
+        }
+        async function deleteSchedule(id) {
+            const r = SCHEDS[id];
+            if (!r) return;
+            if (!confirm('删除 ' + r.model + ' 的时段 ' + r.start + '~' + r.end + '？')) return;
+            const res = await fetch('/api/admin/pricing-schedules/' + id, {method: 'DELETE'});
+            const data = await res.json().catch(() => ({}));
+            if (res.ok) { toast('已删除', 'ok'); if (editingId === id) resetScheduleForm(); loadSchedules(); }
+            else toast(data.error || '删除失败', 'error');
+        }
+
+        // ---------- 节假日 ----------
+        async function loadHolidays() {
+            let data;
+            try {
+                const res = await fetch('/api/admin/pricing-holidays');
+                if (!res.ok) return;
+                data = await res.json();
+            } catch (e) { return; }
+            const days = data.holidays || [];
+            document.getElementById('holText').value = days.join('\n');
+            document.getElementById('holCount').textContent = '当前 ' + days.length + ' 条';
+        }
+        async function saveHolidays() {
+            const lines = document.getElementById('holText').value.split('\n')
+                .map(s => s.trim()).filter(Boolean);
+            const res = await fetch('/api/admin/pricing-holidays', {
+                method: 'PUT', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({holidays: lines})
+            });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok) { toast('已保存 ' + (data.holidays || []).length + ' 条节假日', 'ok'); loadHolidays(); }
+            else toast(data.error || '保存失败', 'error');
+        }
+
+        loadPrices();
+        loadSchedules();
+        loadHolidays();
+    </script>
+</body>
+</html>

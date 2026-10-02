@@ -302,6 +302,17 @@
             color: #9ca3af;
             font-weight: 400;
         }
+        .sys-tag {
+            font-size: 10px;
+            font-weight: 600;
+            color: #6d28d9;
+            background: #ede9fe;
+            border: 1px solid #c4b5fd;
+            border-radius: 4px;
+            padding: 1px 5px;
+            margin-left: 6px;
+            flex-shrink: 0;
+        }
         .conversation-preview {
             font-size: 13px;
             color: #666;
@@ -1138,6 +1149,7 @@
                 const preview = lastMsg ? getMessagePreview(lastMsg) : '暂无消息';
                 const time = lastMsg ? formatTime(lastMsg.created_at) : '';
                 const unread = conv.unread_count || 0;
+                const sysBadge = conv.is_system ? '<span class="sys-tag">系统</span>' : '';
 
                 return `
                     <div class="conversation-item ${isActive ? 'active' : ''}" data-action="selectConversationByUid" data-args="'${conv.friend_uid}'">
@@ -1147,7 +1159,7 @@
                         </div>
                         <div class="conversation-info">
                             <div class="conversation-name">
-                                <span>${escapeHtml(name)}</span>
+                                <span>${escapeHtml(name)}</span>${sysBadge}
                                 <span class="conversation-time">${time}</span>
                             </div>
                             <div class="conversation-preview">${escapeHtml(preview)}</div>

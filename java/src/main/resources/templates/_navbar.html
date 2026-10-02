@@ -1,0 +1,84 @@
+    <nav class="navbar">
+        <div class="navbar-left">
+            <div class="logo" data-nav="/dashboard">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M13 2L3 14h9v8l11-12h-9l-1-8z"></path>
+                </svg>
+            </div>
+            <span class="logo-text" data-nav="/dashboard">Cloud LLM API 代理</span>
+        </div>
+        <div class="navbar-right">
+            {% include "_notif_bell.html" %}
+            <div class="balence-display">
+                <i class="bi bi-wallet2 balence-icon"></i>
+                <span class="balence-amount" id="balenceAmount">¥0.00</span>
+            </div>
+            <div class="user-menu">
+                <div class="user-avatar" id="userAvatar" data-action="toggleUserMenu">U</div>
+                <div class="user-dropdown" id="userDropdown">
+                    <div class="user-info-header">
+                        <div class="user-info-name" id="userName">用户</div>
+                        <div class="user-info-uid" id="userUid">UID: -</div>
+                    </div>
+                    <div class="dropdown-item" data-nav="/dashboard">
+                        <i class="bi bi-speedometer2"></i><span>仪表板</span>
+                    </div>
+                    <div class="dropdown-item" data-nav="/social">
+                        <i class="bi bi-grid"></i><span>社区广场</span>
+                    </div>
+                    <div class="dropdown-item" data-nav="/social/friends">
+                        <i class="bi bi-people"></i><span>好友</span>
+                    </div>
+                    <div class="dropdown-item" data-nav="/social/chat">
+                        <i class="bi bi-chat-dots"></i><span>消息</span>
+                    </div>
+                    <div class="dropdown-divider"></div>
+                    <div class="dropdown-item" data-nav="/settings">
+                        <i class="bi bi-gear"></i><span>设置</span>
+                    </div>
+                    <div class="dropdown-item danger" data-action="logout">
+                        <i class="bi bi-box-arrow-right"></i><span>退出登录</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+    <script nonce="{{ csp_nonce }}">
+        function toggleUserMenu() {
+            const d = document.getElementById('userDropdown');
+            if (d) d.classList.toggle('show');
+        }
+        document.addEventListener('click', function(e) {
+            const um = document.querySelector('.user-menu');
+            const dd = document.getElementById('userDropdown');
+            if (um && dd && !um.contains(e.target)) dd.classList.remove('show');
+        });
+        function applyNavbarUser(data) {
+            if (!data) { window.location.href = '/login'; return; }
+            const ba = document.getElementById('balenceAmount');
+            const av = document.getElementById('userAvatar');
+            const un = document.getElementById('userName');
+            const uid = document.getElementById('userUid');
+            if (ba) ba.textContent = '¥' + Number(data.balence || 0).toFixed(2);
+            if (av) av.textContent = (data.username || 'U').charAt(0).toUpperCase();
+            if (un) un.textContent = data.username || '用户';
+            if (uid) uid.textContent = 'UID: ' + (data.uid || '-');
+        }
+        // 余额/用户名由统一 SSE（/api/stream 的 userinfo 事件）实时推送，无需每页 fetch /userinfo
+        document.addEventListener('userinfo-update', (e) => applyNavbarUser(e.detail));
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (window.userInfo) { applyNavbarUser(window.userInfo); return; }
+            // 侧边栏 SSE 已建立时优先消费其推送（兜底由 getUserInfo 内部一次性拉取）
+            if (window.getUserInfo) { applyNavbarUser(await window.getUserInfo()); return; }
+            // 无侧边栏页面（如登录页）：直接拉取一次
+            try {
+                const res = await fetch('/userinfo');
+                applyNavbarUser(res.ok ? await res.json() : null);
+            } catch (e) { applyNavbarUser(null); }
+        });
+        function logout() {
+            fetch('/logout', { method: 'POST' })
+                .then(() => { window.location.href = '/login'; })
+                .catch(() => { window.location.href = '/login'; });
+        }
+    </script>

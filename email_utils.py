@@ -12,7 +12,20 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
 from cryptography.fernet import Fernet
-from .configs import SMTP_SERVER, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM, TOKEN_SECRET
+from . import configs
+
+
+def _smtp_conf() -> tuple:
+    """调用时读取 SMTP 配置（configs.SMTP_SETTINGS），支持系统设置页热改。
+
+    返回 (server, port, user, password, from_name)。
+    """
+    s = getattr(configs, 'SMTP_SETTINGS', {}) or {}
+    return (s.get('server') or 'smtp.163.com', int(s.get('port') or 465),
+            s.get('user') or '', s.get('pass') or '',
+            s.get('from') or 'Cloud LLM API 代理')
+
+TOKEN_SECRET = configs.TOKEN_SECRET
 
 # Fernet 密钥（用于加密验证码 / 密码重置令牌）
 _fernet_key: bytes | None = None
@@ -82,7 +95,8 @@ def send_verification_email(email: str) -> tuple[bool, str]:
     Returns:
         (success: bool, message: str)
     """
-    if not SMTP_USER or not SMTP_PASS:
+    server, port, smtp_user, smtp_pass, smtp_from = _smtp_conf()
+    if not smtp_user or not smtp_pass:
         return False, "邮箱服务未配置"
     
     # 检查发送频率
@@ -137,14 +151,14 @@ def send_verification_email(email: str) -> tuple[bool, str]:
     try:
         # 创建邮件
         msg = MIMEText(body, 'html', 'utf-8')
-        msg['From'] = Header(SMTP_FROM, 'utf-8')
+        msg['From'] = Header(smtp_from, 'utf-8')
         msg['To'] = Header(email, 'utf-8')
         msg['Subject'] = Header(subject, 'utf-8')
         
         # 发送邮件
-        server = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT)
-        server.login(SMTP_USER, SMTP_PASS)
-        server.sendmail(SMTP_USER, [email], msg.as_string())
+        server = smtplib.SMTP_SSL(server, port)
+        server.login(smtp_user, smtp_pass)
+        server.sendmail(smtp_user, [email], msg.as_string())
         server.quit()
         
         # 保存验证码记录（Fernet 加密存储）
@@ -229,7 +243,8 @@ def send_password_reset_email(email: str, username: str) -> tuple[bool, str]:
     Returns:
         (success: bool, message: str)
     """
-    if not SMTP_USER or not SMTP_PASS:
+    server, port, smtp_user, smtp_pass, smtp_from = _smtp_conf()
+    if not smtp_user or not smtp_pass:
         return False, "邮箱服务未配置"
     
     # 检查发送频率
@@ -284,14 +299,14 @@ def send_password_reset_email(email: str, username: str) -> tuple[bool, str]:
     try:
         # 创建邮件
         msg = MIMEText(body, 'html', 'utf-8')
-        msg['From'] = Header(SMTP_FROM, 'utf-8')
+        msg['From'] = Header(smtp_from, 'utf-8')
         msg['To'] = Header(email, 'utf-8')
         msg['Subject'] = Header(subject, 'utf-8')
         
         # 发送邮件
-        server = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT)
-        server.login(SMTP_USER, SMTP_PASS)
-        server.sendmail(SMTP_USER, [email], msg.as_string())
+        server = smtplib.SMTP_SSL(server, port)
+        server.login(smtp_user, smtp_pass)
+        server.sendmail(smtp_user, [email], msg.as_string())
         server.quit()
         
         # 保存验证码记录（Fernet 加密存储）
@@ -311,6 +326,65 @@ def send_password_reset_email(email: str, username: str) -> tuple[bool, str]:
         return False, f"邮件发送失败: {str(e)}"
 
 
+def send_low_balance_email(email: str, username: str, balance: float, threshold: float) -> tuple[bool, str]:
+    """发送余额不足提醒邮件
+
+    Args:
+        email: 收件人邮箱
+        username: 用户名
+        balance: 当前余额（¥）
+        threshold: 预警阈值（¥）
+
+    Returns:
+        (success: bool, message: str)
+    """
+    server, port, smtp_user, smtp_pass, smtp_from = _smtp_conf()
+    if not smtp_user or not smtp_pass:
+        return False, "邮箱服务未配置"
+
+    subject = "Cloud LLM API 代理 - 余额不足提醒"
+    body = f"""
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: linear-gradient(135deg, #f6ad3c 0%, #f5652c 100%); padding: 30px; border-radius: 12px 12px 0 0;">
+            <h2 style="color: white; margin: 0; font-size: 24px;">余额不足提醒</h2>
+            <p style="color: rgba(255,255,255,0.9); margin: 8px 0 0 0; font-size: 14px;">请及时充值</p>
+        </div>
+        <div style="background: #fff; padding: 40px 30px; border-radius: 0 0 12px 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
+            <p style="color: #333; font-size: 16px; margin: 0 0 20px 0;">您好，<strong>{username}</strong></p>
+            <p style="color: #666; font-size: 14px; margin: 0 0 30px 0;">您的账户余额已低于预警阈值，请及时充值，以免影响 API 调用。</p>
+            <div style="background: #fff8ee; border: 1px solid #fde8c8; padding: 20px; border-radius: 8px; text-align: center; margin-bottom: 30px;">
+                <p style="color: #999; font-size: 12px; margin: 0 0 8px 0;">当前余额</p>
+                <span style="font-size: 36px; font-weight: bold; color: #e05d1a;">¥{balance:.4f}</span>
+                <p style="color: #999; font-size: 12px; margin: 8px 0 0 0;">预警阈值 ¥{threshold:.2f}</p>
+            </div>
+            <p style="color: #999; font-size: 12px; margin: 0;">
+                本提醒在 24 小时内不会重复发送。<br>
+                如果这不是您本人的操作，请忽略此邮件。
+            </p>
+        </div>
+        <div style="text-align: center; color: #999; font-size: 12px; margin-top: 20px;">
+            © 2024 Cloud LLM API 代理. All rights reserved.
+        </div>
+    </div>
+    """
+
+    try:
+        msg = MIMEText(body, 'html', 'utf-8')
+        msg['From'] = Header(smtp_from, 'utf-8')
+        msg['To'] = Header(email, 'utf-8')
+        msg['Subject'] = Header(subject, 'utf-8')
+
+        server = smtplib.SMTP_SSL(server, port)
+        server.login(smtp_user, smtp_pass)
+        server.sendmail(smtp_user, [email], msg.as_string())
+        server.quit()
+
+        return True, "提醒邮件已发送"
+
+    except Exception as e:
+        return False, f"邮件发送失败: {str(e)}"
+
+
 def send_login_alert_email(email: str, username: str, ip: str, user_agent: str, login_time: str,
                            device_type: str = '', risk_level: str = '', risk_details: list = None) -> tuple[bool, str]:
     """发送异地登录提醒邮件
@@ -325,7 +399,8 @@ def send_login_alert_email(email: str, username: str, ip: str, user_agent: str, 
     Returns:
         (success: bool, message: str)
     """
-    if not SMTP_USER or not SMTP_PASS:
+    server, port, smtp_user, smtp_pass, smtp_from = _smtp_conf()
+    if not smtp_user or not smtp_pass:
         return False, "邮箱服务未配置"
     
     # 构造邮件内容
@@ -394,14 +469,14 @@ def send_login_alert_email(email: str, username: str, ip: str, user_agent: str, 
     try:
         # 创建邮件
         msg = MIMEText(body, 'html', 'utf-8')
-        msg['From'] = Header(SMTP_FROM, 'utf-8')
+        msg['From'] = Header(smtp_from, 'utf-8')
         msg['To'] = Header(email, 'utf-8')
         msg['Subject'] = Header(subject, 'utf-8')
         
         # 发送邮件
-        server = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT)
-        server.login(SMTP_USER, SMTP_PASS)
-        server.sendmail(SMTP_USER, [email], msg.as_string())
+        server = smtplib.SMTP_SSL(server, port)
+        server.login(smtp_user, smtp_pass)
+        server.sendmail(smtp_user, [email], msg.as_string())
         server.quit()
         
         return True, "提醒邮件已发送"

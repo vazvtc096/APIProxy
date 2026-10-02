@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>系统设置 - 管理员后台</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style nonce="{{ csp_nonce }}">
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #fafafa; color: #1a1a1a; min-height: 100vh; }
+        .main-container { display: flex; padding-top: 64px; min-height: 100vh; }
+        .content { flex: 1; margin-left: 240px; padding: 32px; }
+        .page-title { font-size: 24px; font-weight: 700; color: #1a1a1a; }
+        .page-subtitle { font-size: 14px; color: #666; margin-top: 4px; }
+        .btn { padding: 10px 20px; font-size: 14px; font-weight: 500; border-radius: 10px; cursor: pointer; transition: all 0.2s; border: none; display: inline-flex; align-items: center; gap: 8px; text-decoration: none; }
+        .btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; box-shadow: 0 2px 8px rgba(102,126,234,0.3); }
+        .btn-primary:hover { transform: translateY(-1px); }
+        .btn-secondary { background: #f5f5f5; color: #333; }
+        .btn-secondary:hover { background: #eee; }
+        .btn-sm { padding: 6px 12px; font-size: 12px; border-radius: 6px; }
+        .card { background: white; border-radius: 16px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 24px; }
+        .card h3 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+        .card .hint { font-size: 12px; color: #9ca3af; margin-bottom: 16px; }
+        .form-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
+        .form-row > label:not(.switch) { font-size: 13px; color: #666; min-width: 110px; }
+        input[type=text], input[type=number] { padding: 8px 12px; font-size: 14px; border: 1px solid #e5e7eb; border-radius: 8px; outline: none; transition: border-color 0.15s; }
+        input[type=text]:focus, input[type=number]:focus { border-color: #667eea; }
+        .switch { position: relative; display: inline-block; flex: 0 0 auto; width: 40px; height: 22px; vertical-align: middle; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: #d1d5db; border-radius: 999px; transition: background-color 0.2s ease; }
+        .slider:before { content: ""; position: absolute; height: 16px; width: 16px; left: 3px; top: 3px; background: white; border-radius: 50%; transition: transform 0.2s ease; }
+        .switch input:checked + .slider { background: #667eea; }
+        /* 轨道 40px，滑块 16px，两端各留 3px：位移 = 40 - 16 - 3*2 = 18px，与轨道长度精确匹配 */
+        .switch input:checked + .slider:before { transform: translateX(18px); }
+        .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 500; }
+        .badge-ok { background: #f0fdf4; color: #16a34a; }
+        .badge-off { background: #f5f5f5; color: #9ca3af; }
+        .badge-warn { background: #fffbeb; color: #d97706; }
+        .toast { position: fixed; top: 80px; right: 24px; background: #1a1a1a; color: white; padding: 12px 20px; border-radius: 10px; font-size: 14px; opacity: 0; transform: translateY(-10px); transition: all 0.25s; z-index: 200; }
+        .toast.show { opacity: 1; transform: translateY(0); }
+        .toast.ok { background: #16a34a; }
+        .toast.error { background: #dc2626; }
+
+        /* 侧边栏基础样式（与 admin_bans 等页统一） */
+        .sidebar { width: 240px; background: white; border-right: 1px solid #f0f0f0; padding: 24px 0; position: fixed; top: 64px; bottom: 0; left: 0; overflow-y: auto; }
+        .sidebar-section { margin-bottom: 24px; }
+        .sidebar-section-title { font-size: 11px; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.5px; padding: 0 20px; margin-bottom: 8px; }
+        .sidebar-item { display: flex; align-items: center; gap: 12px; padding: 10px 20px; cursor: pointer; transition: all 0.15s; font-size: 14px; color: #666; border-left: 3px solid transparent; text-decoration: none; }
+        .sidebar-item:hover { background: #fafafa; color: #1a1a1a; }
+        .sidebar-item.active { background: #f0f2ff; color: #667eea; border-left-color: #667eea; font-weight: 500; }
+        .sidebar-item i { font-size: 18px; width: 20px; text-align: center; }
+    </style>
+</head>
+<body>
+    {% include "_navbar_css.html" %}
+    {% include "_navbar.html" %}
+    <div class="main-container">
+        {% with active_page = 'ops-settings' %}
+        {% include "_sidebar.html" %}
+        {% endwith %}
+
+        <main class="content">
+            <div class="page-title">系统设置</div>
+            <div class="page-subtitle">余额预警 / 数据备份（保存后即时生效，无需重启；WebUI 保存值优先于 config.yaml）</div>
+
+            <div class="card">
+                <h3>余额预警 <span id="ba-override" style="display:none;" class="badge badge-warn">已由 WebUI 覆盖</span></h3>
+                <div class="hint">用户扣费后余额低于阈值时自动发站内通知（可选邮件）。同一用户在冷却期内只提醒一次。邮件依赖 SMTP 已配置。</div>
+                <div class="form-row">
+                    <label>启用预警</label>
+                    <label class="switch"><input type="checkbox" id="ba-enabled"><span class="slider"></span></label>
+                </div>
+                <div class="form-row">
+                    <label>余额阈值（¥）</label>
+                    <input type="number" id="ba-threshold" step="0.5" min="0" max="100000" style="width:120px;">
+                    <span style="font-size:12px;color:#9ca3af;">0 = 关闭触发（等价于停用）</span>
+                </div>
+                <div class="form-row">
+                    <label>冷却时间（小时）</label>
+                    <input type="number" id="ba-cooldown" step="1" min="1" max="720" style="width:100px;">
+                </div>
+                <div class="form-row">
+                    <label>同时发邮件</label>
+                    <label class="switch"><input type="checkbox" id="ba-email"><span class="slider"></span></label>
+                </div>
+                <div class="form-row">
+                    <button class="btn btn-primary btn-sm" data-action="saveBalanceAlert">保存余额预警设置</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>数据备份（PostgreSQL）<span id="db-override" style="display:none;" class="badge badge-warn">已由 WebUI 覆盖</span></h3>
+                <div class="hint" id="db-hint">pg_dump 每日定时全库备份到 backups/ 目录，自动清理过期文件。备份目录（db_backup.dir）仅在 config.yaml 中配置。</div>
+                <div class="form-row">
+                    <label>启用定时备份</label>
+                    <label class="switch"><input type="checkbox" id="db-enabled"><span class="slider"></span></label>
+                    <span id="db-type-badge" class="badge badge-off"></span>
+                </div>
+                <div class="form-row">
+                    <label>每日备份时刻</label>
+                    <input type="number" id="db-hour" step="1" min="0" max="23" style="width:90px;"> <span style="font-size:13px;color:#666;">点（服务器本地时间）</span>
+                </div>
+                <div class="form-row">
+                    <label>保留天数</label>
+                    <input type="number" id="db-keep" step="1" min="1" max="365" style="width:90px;"> <span style="font-size:13px;color:#666;">天（超期自动删除）</span>
+                </div>
+                <div class="form-row">
+                    <button class="btn btn-primary btn-sm" data-action="saveDbBackup">保存备份设置</button>
+                    <button class="btn btn-secondary btn-sm" data-action="backupNow">立即备份一次</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>日志保留策略<span id="rt-override" style="display:none;" class="badge badge-warn">已由 WebUI 覆盖</span></h3>
+                <div class="hint">每日定时分批删除超期日志，防止 usage_logs / audit_log 无限膨胀。保留天数填 0 = 不清理该表。保存后即时生效。</div>
+                <div class="form-row">
+                    <label>启用清理</label>
+                    <label class="switch"><input type="checkbox" id="rt-enabled"><span class="slider"></span></label>
+                </div>
+                <div class="form-row">
+                    <label>每日执行时刻</label>
+                    <input type="number" id="rt-hour" step="1" min="0" max="23" style="width:90px;"> <span style="font-size:13px;color:#666;">点（服务器本地时间）</span>
+                </div>
+                <div class="form-row">
+                    <label>用量日志保留</label>
+                    <input type="number" id="rt-usage" step="1" min="0" max="3650" style="width:100px;"> <span style="font-size:13px;color:#666;">天（usage_logs，0=不清）</span>
+                </div>
+                <div class="form-row">
+                    <label>审计日志保留</label>
+                    <input type="number" id="rt-audit" step="1" min="0" max="3650" style="width:100px;"> <span style="font-size:13px;color:#666;">天（audit_log，0=不清）</span>
+                </div>
+                <div class="form-row">
+                    <label>单批删除行数</label>
+                    <input type="number" id="rt-batch" step="500" min="100" max="50000" style="width:110px;">
+                </div>
+                <div class="form-row">
+                    <button class="btn btn-primary btn-sm" data-action="saveRetention">保存日志保留设置</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>计费口径（真实 token 计费）<span id="tb-override" style="display:none;" class="badge badge-warn">已由 WebUI 覆盖</span></h3>
+                <div class="hint">默认关闭 = 按字符口径计费（1 token ≈ 3 字符近似）。开启后每次响应完成时按上游返回的真实 usage 多退少补（预扣估算、结算真实），输入输出单价仍用「模型定价」表（含时段价）。缓存命中输入按折扣计价（DeepSeek 缓存命中约为未命中 1/10）。上游未返回 usage 的请求自动回落字符口径。保存后即时生效。</div>
+                <div class="form-row">
+                    <label>启用真实 token 计费</label>
+                    <label class="switch"><input type="checkbox" id="tb-enabled"><span class="slider"></span></label>
+                </div>
+                <div class="form-row">
+                    <label>缓存命中折扣</label>
+                    <input type="number" id="tb-ratio" step="0.01" min="0" max="1" style="width:100px;"> <span style="font-size:13px;color:#666;">（命中输入价 / 未命中价，0.1 = 一折）</span>
+                </div>
+                <div class="form-row">
+                    <button class="btn btn-primary btn-sm" data-action="saveTokenBilling">保存计费口径设置</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>NapCat QQ 推送<span id="nap-override" style="display:none;" class="badge badge-warn">已由 WebUI 覆盖</span></h3>
+                <div class="hint">通过 NapCat（OneBot 11）把余额预警、上游故障/恢复实时推送到 QQ。按服务地址协议头自动选通道：http(s):// 走 HTTP API，ws(s):// 走正向 WebSocket（跨公网用 wss:// 加密，证书配在 NapCat 侧）。access token 与 NapCat 侧网络配置保持一致。保存后即时生效。</div>
+                <div class="form-row">
+                    <label>启用推送</label>
+                    <label class="switch"><input type="checkbox" id="nap-enabled"><span class="slider"></span></label>
+                </div>
+                <div class="form-row">
+                    <label>服务地址</label>
+                    <input type="text" id="nap-url" placeholder="http://127.0.0.1:3000" style="width:260px;">
+                </div>
+                <div class="form-row">
+                    <label>Access Token</label>
+                    <input type="password" id="nap-token" style="width:220px;" autocomplete="new-password" placeholder="留空 = 不修改">
+                </div>
+                <div class="form-row">
+                    <label>QQ 号</label>
+                    <input type="text" id="nap-users" placeholder="私聊接收，逗号分隔，如 10001,10002" style="width:260px;">
+                </div>
+                <div class="form-row">
+                    <label>群号</label>
+                    <input type="text" id="nap-groups" placeholder="群聊接收，逗号分隔" style="width:260px;">
+                </div>
+                <div class="form-row">
+                    <button class="btn btn-primary btn-sm" data-action="saveNapcat">保存推送设置</button>
+                    <button class="btn btn-sm" data-action="notifyTest" style="margin-left:8px;">发送测试消息</button>
+                    <span id="nap-status" style="font-size:12px;color:#666;margin-left:8px;"></span>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>邮件服务（SMTP）<span id="smtp-override" style="display:none;" class="badge badge-warn">已由 WebUI 覆盖</span></h3>
+                <div class="hint">注册验证码 / 密码重置 / 余额预警邮件的发送通道。保存后即时生效；密码仅写入，读取时以 ****** 显示。</div>
+                <div class="form-row">
+                    <label>SMTP 服务器</label>
+                    <input type="text" id="smtp-server" placeholder="smtp.163.com" style="width:220px;">
+                    <label>端口</label>
+                    <input type="number" id="smtp-port" min="1" max="65535" style="width:90px;">
+                    <span style="font-size:12px;color:#9ca3af;">SSL 直连（465）</span>
+                </div>
+                <div class="form-row">
+                    <label>账号</label>
+                    <input type="text" id="smtp-user" style="width:220px;" autocomplete="off">
+                    <label>密码 / 授权码</label>
+                    <input type="password" id="smtp-pass" style="width:220px;" autocomplete="new-password" placeholder="留空 = 不修改">
+                </div>
+                <div class="form-row">
+                    <label>发件人名称</label>
+                    <input type="text" id="smtp-from" style="width:220px;">
+                    <span id="smtp-status" class="badge badge-off"></span>
+                </div>
+                <div class="form-row">
+                    <button class="btn btn-primary btn-sm" data-action="saveSmtp">保存邮件设置</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>上游健康探测<span id="hc-override" style="display:none;" class="badge badge-warn">已由 WebUI 覆盖</span></h3>
+                <div class="hint">定时用小请求探测各上游，连续失败自动冷却、恢复自动摘除冷却。改后下一轮探测即生效，无需重启。</div>
+                <div class="form-row">
+                    <label>启用探测</label>
+                    <label class="switch"><input type="checkbox" id="hc-enabled"><span class="slider"></span></label>
+                </div>
+                <div class="form-row">
+                    <label>探测间隔（秒）</label>
+                    <input type="number" id="hc-interval" min="30" max="86400" step="30" style="width:110px;">
+                    <label>探测 max_tokens</label>
+                    <input type="number" id="hc-tokens" min="1" max="100" style="width:80px;">
+                    <label>探测模型</label>
+                    <input type="text" id="hc-model" placeholder="留空 = 用各上游默认模型" style="width:200px;">
+                </div>
+                <div class="form-row">
+                    <button class="btn btn-primary btn-sm" data-action="saveHealth">保存探测设置</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>请求参数治理<span id="pl-override" style="display:none;" class="badge badge-warn">已由 WebUI 覆盖</span></h3>
+                <div class="hint">对 chat / responses / Claude / completions 入口的请求参数做上限校验，超限直接 400 拒绝，防单请求刷爆计费。</div>
+                <div class="form-row">
+                    <label>启用治理</label>
+                    <label class="switch"><input type="checkbox" id="pl-enabled"><span class="slider"></span></label>
+                </div>
+                <div class="form-row">
+                    <label>max_tokens 上限</label>
+                    <input type="number" id="pl-cap" min="0" max="1000000" step="1024" style="width:120px;">
+                    <span style="font-size:12px;color:#9ca3af;">0 = 不限制</span>
+                </div>
+                <div class="form-row">
+                    <label>temperature 范围</label>
+                    <input type="number" id="pl-temp-lo" step="0.1" style="width:80px;"> ~
+                    <input type="number" id="pl-temp-hi" step="0.1" style="width:80px;">
+                    <label style="min-width:auto;">top_p 范围</label>
+                    <input type="number" id="pl-topp-lo" step="0.05" style="width:80px;"> ~
+                    <input type="number" id="pl-topp-hi" step="0.05" style="width:80px;">
+                </div>
+                <div class="form-row">
+                    <button class="btn btn-primary btn-sm" data-action="saveParamLimits">保存治理设置</button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script nonce="{{ csp_nonce }}">
+        'use strict';
+        function $(id) { return document.getElementById(id); }
+        function toast(msg, cls) {
+            var t = $('toast');
+            t.textContent = msg; t.className = 'toast show ' + (cls || '');
+            setTimeout(function () { t.className = 'toast ' + (cls || ''); }, 2600);
+        }
+        async function api(url, opts) {
+            var r = await fetch(url, Object.assign({ credentials: 'same-origin' }, opts || {}));
+            var j = await r.json().catch(function () { return {}; });
+            if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+            return j;
+        }
+
+        async function load() {
+            try {
+                var d = await api('/api/admin/ops-settings');
+                var ba = d.balance_alert || {}, db = d.db_backup || {};
+                var hc = d.upstream_health || {}, pl = d.param_limits || {}, sm = d.smtp || {};
+                var rt = d.retention || {};
+                $('ba-enabled').checked = !!ba.enabled;
+                $('ba-threshold').value = ba.threshold != null ? ba.threshold : 5;
+                $('ba-cooldown').value = ba.cooldown_hours != null ? ba.cooldown_hours : 24;
+                $('ba-email').checked = ba.email !== false;
+                $('db-enabled').checked = !!db.enabled;
+                $('db-hour').value = db.hour != null ? db.hour : 3;
+                $('db-keep').value = db.keep_days != null ? db.keep_days : 14;
+                $('smtp-server').value = sm.server || '';
+                $('smtp-port').value = sm.port || 465;
+                $('smtp-user').value = sm.user || '';
+                $('smtp-from').value = sm.from || '';
+                var isPg = (d.db_type || '') === 'postgres';
+                var b = $('db-type-badge');
+                b.textContent = isPg ? '后端: PostgreSQL' : '后端: ' + (d.db_type || 'sqlite') + '（备份不可用）';
+                b.className = 'badge ' + (isPg ? 'badge-ok' : 'badge-warn');
+                if (!isPg) {
+                    $('db-enabled').disabled = true; $('db-hour').disabled = true; $('db-keep').disabled = true;
+                }
+                var st = $('smtp-status');
+                st.textContent = d.smtp_configured ? '已配置可用' : '未配置（走滑块验证码）';
+                st.className = 'badge ' + (d.smtp_configured ? 'badge-ok' : 'badge-off');
+                $('hc-enabled').checked = !!hc.enabled;
+                $('hc-interval').value = hc.interval_seconds || 300;
+                $('hc-tokens').value = hc.max_tokens || 1;
+                $('hc-model').value = hc.probe_model || '';
+                $('pl-enabled').checked = !!pl.enabled;
+                $('pl-cap').value = pl.max_tokens_cap != null ? pl.max_tokens_cap : 16384;
+                var tr = pl.temperature_range || [0, 2], pr = pl.top_p_range || [0, 1];
+                $('pl-temp-lo').value = tr[0]; $('pl-temp-hi').value = tr[1];
+                $('pl-topp-lo').value = pr[0]; $('pl-topp-hi').value = pr[1];
+                $('rt-enabled').checked = !!rt.enabled;
+                $('rt-hour').value = rt.hour != null ? rt.hour : 4;
+                $('rt-usage').value = rt.usage_days != null ? rt.usage_days : 90;
+                $('rt-audit').value = rt.audit_days != null ? rt.audit_days : 180;
+                $('rt-batch').value = rt.batch != null ? rt.batch : 5000;
+                var np = d.napcat || {};
+                $('nap-enabled').checked = !!np.enabled;
+                $('nap-url').value = np.base_url || 'http://127.0.0.1:3000';
+                $('nap-users').value = np.user_ids || '';                $('nap-groups').value = np.group_ids || '';
+                var tb = d.token_billing || {};
+                $('tb-enabled').checked = !!tb.enabled;
+                $('tb-ratio').value = tb.cache_hit_ratio != null ? tb.cache_hit_ratio : 0.1;
+                var ov = d.overridden || {};
+                $('ba-override').style.display = ov.balance_alert ? '' : 'none';
+                $('db-override').style.display = ov.db_backup ? '' : 'none';
+                $('smtp-override').style.display = ov.smtp ? '' : 'none';
+                $('hc-override').style.display = ov.upstream_health ? '' : 'none';
+                $('pl-override').style.display = ov.param_limits ? '' : 'none';
+                $('rt-override').style.display = ov.retention ? '' : 'none';
+                $('nap-override').style.display = ov.napcat ? '' : 'none';
+                $('tb-override').style.display = ov.token_billing ? '' : 'none';
+            } catch (e) { toast('加载失败: ' + e.message, 'error'); }
+        }
+
+        async function putSection(section, values) {
+            await api('/api/admin/ops-settings', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ section: section, values: values })
+            });
+        }
+
+        async function saveBalanceAlert() {
+            try {
+                await putSection('balance_alert', {
+                    enabled: $('ba-enabled').checked,
+                    threshold: parseFloat($('ba-threshold').value || '0'),
+                    cooldown_hours: parseInt($('ba-cooldown').value || '24', 10),
+                    email: $('ba-email').checked
+                });
+                toast('余额预警设置已保存，即时生效', 'ok');
+                load();
+            } catch (e) { toast('保存失败: ' + e.message, 'error'); }
+        }
+
+        async function saveSmtp() {
+            try {
+                var v = {
+                    server: $('smtp-server').value.trim(),
+                    port: parseInt($('smtp-port').value || '465', 10),
+                    user: $('smtp-user').value.trim(),
+                    from: $('smtp-from').value.trim()
+                };
+                var pw = $('smtp-pass').value;
+                if (pw !== '') v.pass = pw;   // 留空 = 不修改密码
+                await putSection('smtp', v);
+                $('smtp-pass').value = '';
+                toast('邮件设置已保存，即时生效', 'ok');
+                load();
+            } catch (e) { toast('保存失败: ' + e.message, 'error'); }
+        }
+
+        async function saveHealth() {
+            try {
+                await putSection('upstream_health', {
+                    enabled: $('hc-enabled').checked,
+                    interval_seconds: parseInt($('hc-interval').value || '300', 10),
+                    max_tokens: parseInt($('hc-tokens').value || '1', 10),
+                    probe_model: $('hc-model').value.trim()
+                });
+                toast('探测设置已保存，下一轮生效', 'ok');
+                load();
+            } catch (e) { toast('保存失败: ' + e.message, 'error'); }
+        }
+
+        async function saveParamLimits() {
+            try {
+                await putSection('param_limits', {
+                    enabled: $('pl-enabled').checked,
+                    max_tokens_cap: parseInt($('pl-cap').value || '16384', 10),
+                    temperature_range: [parseFloat($('pl-temp-lo').value || '0'), parseFloat($('pl-temp-hi').value || '2')],
+                    top_p_range: [parseFloat($('pl-topp-lo').value || '0'), parseFloat($('pl-topp-hi').value || '1')]
+                });
+                toast('参数治理设置已保存，即时生效', 'ok');
+                load();
+            } catch (e) { toast('保存失败: ' + e.message, 'error'); }
+        }
+
+        async function saveRetention() {
+            try {
+                await putSection('retention', {
+                    enabled: $('rt-enabled').checked,
+                    hour: parseInt($('rt-hour').value || '4', 10),
+                    usage_days: parseInt($('rt-usage').value || '90', 10),
+                    audit_days: parseInt($('rt-audit').value || '180', 10),
+                    batch: parseInt($('rt-batch').value || '5000', 10)
+                });
+                toast('日志保留设置已保存，即时生效', 'ok');
+                load();
+            } catch (e) { toast('保存失败: ' + e.message, 'error'); }
+        }
+
+        async function saveNapcat() {
+            try {
+                var v = {
+                    enabled: $('nap-enabled').checked,
+                    base_url: $('nap-url').value.trim(),
+                    user_ids: $('nap-users').value.trim(),
+                    group_ids: $('nap-groups').value.trim()
+                };
+                var tk = $('nap-token').value;
+                if (tk !== '') v.token = tk;   // 留空 = 不修改 token
+                await putSection('napcat', v);
+                $('nap-token').value = '';
+                toast('NapCat 推送设置已保存，即时生效', 'ok');
+                load();
+            } catch (e) { toast('保存失败: ' + e.message, 'error'); }
+        }
+
+        async function notifyTest() {
+            $('nap-status').textContent = '发送中...';
+            try {
+                var r = await fetch('/api/admin/ops-settings/notify-test', { method: 'POST' });
+                var d = await r.json();
+                if (!r.ok) {
+                    $('nap-status').textContent = d.error || ('HTTP ' + r.status);
+                    toast(d.error || '测试失败', 'error');
+                    return;
+                }
+                $('nap-status').textContent = '已排队 ' + d.queued + ' 条，请到 QQ 查收';
+                toast('测试消息已投递', 'ok');
+            } catch (e) { $('nap-status').textContent = ''; toast('测试失败: ' + e.message, 'error'); }
+        }
+
+        document.addEventListener('click', function (ev) {
+            var el = ev.target.closest('[data-action]');
+            if (!el) return;
+            var act = el.getAttribute('data-action');
+            if (act === 'saveBalanceAlert') saveBalanceAlert();
+            else if (act === 'saveDbBackup') saveDbBackup();
+            else if (act === 'backupNow') backupNow();
+            else if (act === 'saveSmtp') saveSmtp();
+            else if (act === 'saveHealth') saveHealth();
+            else if (act === 'saveParamLimits') saveParamLimits();
+            else if (act === 'saveRetention') saveRetention();
+            else if (act === 'saveNapcat') saveNapcat();
+            else if (act === 'notifyTest') notifyTest();
+            else if (act === 'saveTokenBilling') saveTokenBilling();
+        });
+
+        async function saveTokenBilling() {
+            try {
+                await putSection('token_billing', {
+                    enabled: $('tb-enabled').checked,
+                    cache_hit_ratio: parseFloat($('tb-ratio').value || '0.1')
+                });
+                toast('计费口径设置已保存，即时生效', 'ok');
+                load();
+            } catch (e) { toast('保存失败: ' + e.message, 'error'); }
+        }
+
+        load();
+    </script>
+</body>
+</html>

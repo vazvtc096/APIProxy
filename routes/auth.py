@@ -8,6 +8,9 @@ from .. import announcements as _ann
 from ..apikey import APIKey, hash_password, verify_password, generate_uid, _get_user_by_name, _verify_user_password
 from ..configs import BASEURL, APIKEY, RCON_ENABLED, RCON_SECRET, SSL_ENABLED, SESSION_SECRET, OAUTH_JWT_SECRET, SMTP_CONFIGURED
 from .. import configs
+from .. import ja3 as _ja3
+from .. import honeypot as _honeypot
+from .. import ja3_threat as _ja3threat
 from ..constants import CHAR_PRICE_LOOKUP, UNEXCEPT_CHAR, MONEY_PER_MILLION_TOKENS, UNEXCEPT_MODEL, MAX_OVERDRAFT
 from ..cloudflare import get_client_ip as _cf_get_client_ip
 from .. import waf as _waf
@@ -46,8 +49,8 @@ async def register():
     if not any(c.isdigit() for c in password):
         return jsonify({"error": "Password must contain at least one digit"}), 400
     
-    # 验证方式分支：SMTP 已配置走邮箱验证码，未配置走滑块验证码
-    if SMTP_CONFIGURED:
+    # 验证方式分支：SMTP 已配置走邮箱验证码，未配置走滑块验证码（WebUI 热改实时生效）
+    if configs.smtp_configured():
         # 邮箱验证（如果提供了邮箱则必须验证）
         if email:
             if '@' not in email or '.' not in email:
@@ -91,9 +94,12 @@ async def register():
     if existing:
         return jsonify({'error': 'This username is unavailable, please choose another'}), 400
 
-    # 生成密码哈希和 UID
+    # 生成密码哈希和 UID（0~15 为系统虚拟用户保留池，防御式避让）
     password_hash = hash_password(password)
+    from ..system_users import is_system_uid as _is_sys_uid
     uid = generate_uid()
+    while _is_sys_uid(uid):
+        uid = generate_uid()
 
     if email:
         await async_db_query(
@@ -123,6 +129,13 @@ async def register():
 async def login():
     client_ip = _get_client_ip()
     user_agent = _get_user_agent()
+    # JA3 / JA4 指纹采集（用于追溯与跨 IP 关联）
+    ja3_info = {}
+    try:
+        ja3_info = _ja3.extract_ja3(request, client_ip)
+        ja3_hash = ja3_info.get('ja3_hash', '') or ''
+    except Exception:
+        ja3_hash = ''
     # IP 白名单：匹配则按条目 bypass 范围跳过对应拦截（默认 all = 全部跳过）
     wl_bypass = await _whitelist_bypass(client_ip)
 
@@ -143,13 +156,50 @@ async def login():
             (client_ip, time.time())
         )
         if ip_rows and 'all' not in wl_bypass and 'blacklist' not in wl_bypass:
-            await _record_login_log('', owner, client_ip, user_agent, 'failed', 'IP blocked by admin')
+            await _record_login_log('', owner, client_ip, user_agent, 'failed', 'IP blocked by admin', ja3_hash)
             return jsonify({'error': 'Access denied: your IP has been blocked by administrator'}), 403
     except Exception as e:
         logging.error(f"IP blacklist check failed: {e}")
 
     if not owner or not password:
         return jsonify({'error': 'Username and password required'}), 400
+
+    # 设备解析（后续风险评分/蜜罐/填充检测共用）
+    from ..security import parse_user_agent, record_security_event, ban_ip_auto
+    device = parse_user_agent(user_agent)
+
+    # 凭证填充检测：同一 JA3 在窗口内尝试大量不同账号 → stuffing 扫描器。
+    # 合成指纹（syn-）跨用户聚合，默认不参与判定（CRED_STUFFING_APPLY_SYNTHETIC 可开），
+    # 避免 NAT/校园网下多个真实用户共用同浏览器指纹时误判+误布蜜罐。
+    stuffing = None
+    if (getattr(configs, 'CRED_STUFFING_ENABLED', True) and ja3_hash
+            and (ja3_info.get('source') != 'synthetic'
+                 or getattr(configs, 'CRED_STUFFING_APPLY_SYNTHETIC', False))):
+        try:
+            stuffing = _ja3threat.record_login_attempt(ja3_hash, client_ip, owner)
+            if stuffing and stuffing.get('stuffing'):
+                logging.warning(f"凭证填充检测命中: JA3={ja3_hash} "
+                                f"distinct_users={stuffing.get('distinct_users')} ip={client_ip}")
+                # 记录安全事件（审计留档，始终执行）
+                try:
+                    await record_security_event(
+                        async_db_query, '', owner, 'credential_stuffing', 'critical', 80,
+                        [f"JA3 指纹 {ja3_hash} 在 {int(stuffing.get('window', 300))}s 内尝试 "
+                         f"{stuffing.get('distinct_users')} 个不同账号",
+                         f"IP: {client_ip}", f"UA: {user_agent}"],
+                        client_ip, device, action_taken='monitored')
+                except Exception as e:
+                    logging.error(f"cred stuffing event failed: {e}")
+                # 命中即封 IP（若开启；默认关，仅告警+蜜罐）
+                if getattr(configs, 'CRED_STUFFING_BLOCK', False):
+                    try:
+                        await ban_ip_auto(async_db_query, client_ip, 'minutes',
+                                          getattr(configs, 'IDS_IPS_AUTHFAIL_WINDOW', 30),
+                                          'credential stuffing (JA3)')
+                    except Exception as e:
+                        logging.error(f"cred stuffing ban failed: {e}")
+        except Exception as e:
+            logging.error(f"cred stuffing check failed: {e}")
 
     # 先查用户
     users = await async_db_query(
@@ -158,16 +208,56 @@ async def login():
     )
     if not users:
         # 记录失败日志
-        await _record_login_log('', owner, client_ip, user_agent, 'failed', 'User not found')
+        await _record_login_log('', owner, client_ip, user_agent, 'failed', 'User not found', ja3_hash)
+        # 蜜罐诱捕：自动化程序尝试登录「不存在的用户」→ 动态布设诱饵账号并将其诱入，
+        # 真实用户不受影响（仍返回统一错误，攻击者以为自己登录成功）。
+        # 触发条件扩展：命中凭证填充（同 JA3 批量试账号）时也布设蜜罐诱捕。
+        try:
+            if ((configs.HONEYPOT_ENABLED and configs.HONEYPOT_ON_UNKNOWN_USER
+                    and device.is_automation
+                    and 'all' not in wl_bypass and 'account_ban' not in wl_bypass)
+                or (configs.HONEYPOT_ENABLED
+                    and getattr(configs, 'CRED_STUFFING_DEPLOY_HONEYPOT', True)
+                    and stuffing and stuffing.get('stuffing')
+                    and 'all' not in wl_bypass and 'account_ban' not in wl_bypass)):
+                bait = await _honeypot.maybe_bait(
+                    owner, hash_password(password), client_ip, ja3_hash,
+                    user_agent, True, False)
+                if bait.get('deployed'):
+                    # 诱入：建立会话，攻击者进入蜜罐环境（后续请求被全程留痕+限制）
+                    try:
+                        bait_uid = bait.get('uid', '') or generate_uid()
+                        session_id = await _create_session(
+                            username=bait['bait_username'], user_uid=bait_uid,
+                            user_agent=user_agent, ip=client_ip)
+                        session['user'] = bait['bait_username']
+                        if session_id:
+                            session['session_id'] = session_id
+                        session['is_honeypot'] = True
+                        session.permanent = True
+                        logging.warning(f"蜜罐诱捕成功: {bait['bait_username']} <- {client_ip}")
+                        return jsonify({'message': 'Logged in', 'is_admin': False,
+                                        'must_change_password': False, 'honeypot': True}), 200
+                    except Exception as e:
+                        logging.error(f"honeypot lure-in failed: {e}")
+        except Exception as e:
+            logging.error(f"honeypot deploy on unknown user failed: {e}")
         # 统一错误信息，防止用户名枚举
         return jsonify({'error': 'Invalid credentials'}), 401
 
     user = users[0]
 
+    # 系统虚拟用户（UID 池 0~15）禁止任何登录，不论密码是否命中
+    from ..system_users import is_system_uid as _is_sys_uid
+    if _is_sys_uid(user.get('uid', '')):
+        await _record_login_log(user.get('uid', ''), owner, client_ip, user_agent, 'failed', 'System account login attempt', ja3_hash)
+        logging.warning(f"[security] system account login attempt blocked: {owner} from {client_ip}")
+        return jsonify({'error': 'Invalid credentials'}), 401
+
     # 验证密码（支持哈希和旧明文兼容）
     if not verify_password(password, user['user_password']):
         # 记录失败日志
-        await _record_login_log(user.get('uid', ''), owner, client_ip, user_agent, 'failed', 'Wrong password')
+        await _record_login_log(user.get('uid', ''), owner, client_ip, user_agent, 'failed', 'Wrong password', ja3_hash)
         # 规则 R1：多次输错 → 封 IP
         try:
             from ..security import enforce_failed_login_ip
@@ -180,7 +270,7 @@ async def login():
     is_banned, ban_msg = await _is_user_banned(user)
     if is_banned and 'all' not in wl_bypass and 'account_ban' not in wl_bypass:
         # 记录失败日志
-        await _record_login_log(user.get('uid', ''), owner, client_ip, user_agent, 'failed', f'Banned: {ban_msg}')
+        await _record_login_log(user.get('uid', ''), owner, client_ip, user_agent, 'failed', f'Banned: {ban_msg}', ja3_hash)
         return jsonify({'error': f'Account banned: {ban_msg}'}), 403
 
     # ---- 设备类型检测与异常风险评分 ----
@@ -252,7 +342,7 @@ async def login():
             logging.error(f"Send login alert email failed: {e}")
 
     # 记录成功日志
-    await _record_login_log(user.get('uid', ''), owner, client_ip, user_agent, 'success', '')
+    await _record_login_log(user.get('uid', ''), owner, client_ip, user_agent, 'success', '', ja3_hash)
 
     # 规则 R2：多次连续成功登录（不同 IP）→ 封账号（最低 10min，由规则引擎收敛）
     try:
@@ -291,6 +381,8 @@ async def login():
     session['user'] = owner
     if session_id:
         session['session_id'] = session_id
+    if user.get('is_honeypot'):
+        session['is_honeypot'] = True
     session.permanent = True  # 使用 PERMANENT_SESSION_LIFETIME 有效期
 
     # ③ 强制管理员首次改密：管理员且被标记需改密时，记录到会话并返回标记

@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>定时任务管理 - 管理员后台</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style nonce="{{ csp_nonce }}">
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #fafafa; color: #1a1a1a; min-height: 100vh;
+        }
+        .navbar {
+            position: fixed; top: 0; left: 0; right: 0; height: 64px;
+            background: white; border-bottom: 1px solid #f0f0f0;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 24px; z-index: 100;
+        }
+        .navbar-left { display: flex; align-items: center; gap: 12px; }
+        .logo {
+            width: 36px; height: 36px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px; display: flex; align-items: center; justify-content: center;
+        }
+        .logo svg { width: 20px; height: 20px; color: white; }
+        .logo-text { font-size: 18px; font-weight: 700; color: #1a1a1a; }
+        .main-container { display: flex; padding-top: 64px; min-height: 100vh; }
+        .sidebar {
+            width: 240px; background: white; border-right: 1px solid #f0f0f0;
+            padding: 24px 0; position: fixed; top: 64px; bottom: 0; left: 0; overflow-y: auto;
+        }
+        .sidebar-section { margin-bottom: 24px; }
+        .sidebar-section-title {
+            font-size: 11px; font-weight: 600; color: #9ca3af;
+            text-transform: uppercase; letter-spacing: 0.5px;
+            padding: 0 20px; margin-bottom: 8px;
+        }
+        .sidebar-item {
+            display: flex; align-items: center; gap: 12px;
+            padding: 10px 20px; cursor: pointer; transition: all 0.15s;
+            font-size: 14px; color: #666; border-left: 3px solid transparent;
+            text-decoration: none;
+        }
+        .sidebar-item:hover { background: #fafafa; color: #1a1a1a; }
+        .sidebar-item.active {
+            background: #f0f2ff; color: #667eea; border-left-color: #667eea; font-weight: 500;
+        }
+        .sidebar-item i { font-size: 18px; width: 20px; text-align: center; }
+        .content { flex: 1; margin-left: 240px; padding: 32px; }
+        .page-header {
+            margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center;
+        }
+        .page-title { font-size: 24px; font-weight: 700; color: #1a1a1a; }
+        .page-subtitle { font-size: 14px; color: #666; margin-top: 4px; }
+        .btn {
+            padding: 10px 20px; font-size: 14px; font-weight: 500;
+            border-radius: 10px; cursor: pointer; transition: all 0.2s;
+            border: none; display: inline-flex; align-items: center; gap: 8px;
+            text-decoration: none;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+        }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4); }
+        .btn-secondary { background: #f5f5f5; color: #333; }
+        .btn-secondary:hover { background: #eee; }
+        .btn-danger { background: #fef2f2; color: #dc2626; }
+        .btn-danger:hover { background: #fee2e2; }
+        .btn-sm { padding: 6px 12px; font-size: 12px; border-radius: 6px; }
+        
+        .tasks-table {
+            background: white; border-radius: 16px; overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+        .table-header {
+            display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr 1.5fr;
+            padding: 16px 20px; background: #fafafa; border-bottom: 1px solid #f0f0f0;
+            font-size: 12px; font-weight: 600; color: #666; text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .table-row {
+            display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr 1.5fr;
+            padding: 16px 20px; border-bottom: 1px solid #f0f0f0;
+            align-items: center; transition: background 0.15s;
+        }
+        .table-row:hover { background: #fafafa; }
+        .table-row:last-child { border-bottom: none; }
+        
+        .task-name { font-weight: 600; color: #1a1a1a; font-size: 14px; }
+        .task-desc { font-size: 12px; color: #9ca3af; margin-top: 4px; }
+        
+        .status-badge {
+            display: inline-block; padding: 4px 10px; border-radius: 20px;
+            font-size: 12px; font-weight: 500;
+        }
+        .status-active { background: #dcfce7; color: #166534; }
+        .status-paused { background: #fef3c7; color: #92400e; }
+        .status-completed { background: #e0e7ff; color: #3730a3; }
+        .status-error { background: #fee2e2; color: #991b1b; }
+        
+        .task-actions { display: flex; gap: 8px; justify-content: flex-end; }
+        
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.5); display: none; align-items: center; justify-content: center;
+            z-index: 1000;
+        }
+        .modal-overlay.show { display: flex; }
+        .modal {
+            background: white; border-radius: 16px; width: 90%; max-width: 600px;
+            max-height: 90vh; overflow-y: auto;
+        }
+        .modal-header {
+            padding: 24px; border-bottom: 1px solid #f0f0f0;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .modal-title { font-size: 18px; font-weight: 600; color: #1a1a1a; }
+        .modal-close {
+            width: 32px; height: 32px; border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; color: #9ca3af; transition: all 0.2s;
+        }
+        .modal-close:hover { background: #f5f5f5; color: #333; }
+        .modal-body { padding: 24px; }
+        .modal-footer {
+            padding: 16px 24px; border-top: 1px solid #f0f0f0;
+            display: flex; justify-content: flex-end; gap: 12px;
+        }
+        
+        .form-group { margin-bottom: 20px; }
+        .form-label {
+            display: block; font-size: 14px; font-weight: 500;
+            color: #333; margin-bottom: 8px;
+        }
+        .form-input, .form-select {
+            width: 100%; padding: 10px 14px; border: 1px solid #e5e7eb;
+            border-radius: 10px; font-size: 14px; outline: none; transition: border-color 0.2s;
+            font-family: inherit;
+        }
+        .form-input:focus, .form-select:focus {
+            border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        
+        .logs-container {
+            max-height: 400px; overflow-y: auto;
+        }
+        .log-item {
+            padding: 12px 16px; border-bottom: 1px solid #f0f0f0;
+            font-size: 13px;
+        }
+        .log-item:last-child { border-bottom: none; }
+        .log-time { color: #9ca3af; font-size: 12px; margin-bottom: 4px; }
+        .log-result { font-weight: 500; margin-bottom: 4px; }
+        .log-result.success { color: #16a34a; }
+        .log-result.failed { color: #dc2626; }
+        .log-output { color: #666; line-height: 1.5; }
+        
+        .empty-state {
+            text-align: center; padding: 60px 20px; color: #9ca3af;
+        }
+        .empty-state i { font-size: 48px; margin-bottom: 16px; opacity: 0.5; }
+        .empty-state p { font-size: 14px; }
+        
+        .toast {
+            position: fixed; top: 80px; right: 24px; padding: 12px 20px;
+            background: white; border-radius: 10px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            font-size: 14px; z-index: 1000; transform: translateX(120%); transition: transform 0.3s;
+        }
+        .toast.show { transform: translateX(0); }
+        .toast.success { border-left: 4px solid #16a34a; }
+        .toast.error { border-left: 4px solid #dc2626; }
+        
+        .filter-bar {
+            display: flex; gap: 12px; margin-bottom: 20px; align-items: center;
+        }
+        .filter-select {
+            padding: 8px 12px; border: 1px solid #e5e7eb;
+            border-radius: 8px; font-size: 13px; outline: none;
+        }
+    </style>
+{% include "_navbar_css.html" %}
+</head>
+<body>
+    {% include "_navbar.html" %}
+
+    <div class="main-container">
+        {% with active_page = 'tasks' %}
+        {% include "_sidebar.html" %}
+        {% endwith %}
+
+        <main class="content">
+            <div class="page-header">
+                <div>
+                    <h1 class="page-title">定时任务管理</h1>
+                    <p class="page-subtitle">管理系统定时任务，支持多种任务类型和执行频率</p>
+                </div>
+                <button class="btn btn-primary" data-action="openCreateModal">
+                    <i class="bi bi-plus-lg"></i>
+                    创建任务
+                </button>
+            </div>
+
+            <div class="filter-bar">
+                <select class="filter-select" id="statusFilter" data-action="loadTasks" data-on="change">
+                    <option value="all">全部状态</option>
+                    <option value="active">运行中</option>
+                    <option value="paused">已暂停</option>
+                    <option value="completed">已完成</option>
+                </select>
+                <button class="btn btn-secondary btn-sm" data-action="loadTasks">
+                    <i class="bi bi-arrow-clockwise"></i>
+                    刷新
+                </button>
+            </div>
+
+            <div class="tasks-table">
+                <div class="table-header">
+                    <div>任务名称</div>
+                    <div>类型</div>
+                    <div>频率</div>
+                    <div>状态</div>
+                    <div>下次执行</div>
+                    <div>操作</div>
+                </div>
+                <div id="tasksList">
+                    <!-- 任务列表将通过 JS 动态加载 -->
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 创建任务模态框 -->
+    <div class="modal-overlay" id="createModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title">创建定时任务</h3>
+                <div class="modal-close" data-action="closeCreateModal">
+                    <i class="bi bi-x-lg"></i>
+                </div>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">任务名称</label>
+                    <input type="text" class="form-input" id="taskName" placeholder="请输入任务名称">
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">行为类型</label>
+                        <select class="form-select" id="taskBehavior" data-action="updateParamsFields" data-on="change">
+                            <option value="user_balence_add">增加用户余额</option>
+                            <option value="user_balence_subtract">扣除用户余额</option>
+                            <option value="user_ban">封禁用户</option>
+                            <option value="user_unban">解禁用户</option>
+                            <option value="post_approve">审核通过帖子</option>
+                            <option value="post_reject">拒绝帖子</option>
+                            <option value="system_notice">系统公告</option>
+                            <option value="dsl">DSL 动作（可编程）</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">影响范围</label>
+                        <select class="form-select" id="taskScope">
+                            <option value="all_users">所有用户</option>
+                            <option value="specific_user">指定用户</option>
+                            <option value="all_posts">所有帖子</option>
+                            <option value="specific_post">指定帖子</option>
+                            <option value="none">无（DSL 自动）</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">执行频率</label>
+                        <select class="form-select" id="taskFrequency">
+                            <option value="once">一次性</option>
+                            <option value="minute">每分钟</option>
+                            <option value="hourly">每小时</option>
+                            <option value="daily">每天</option>
+                            <option value="weekly">每周</option>
+                            <option value="monthly">每月</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">开始时间</label>
+                        <input type="datetime-local" class="form-input" id="startTime">
+                    </div>
+                </div>
+
+                <div id="paramsContainer">
+                    <!-- 动态参数字段 -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-action="closeCreateModal">取消</button>
+                <button class="btn btn-primary" data-action="createTask">创建任务</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 日志模态框 -->
+    <div class="modal-overlay" id="logsModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title">任务执行日志</h3>
+                <div class="modal-close" data-action="closeLogsModal">
+                    <i class="bi bi-x-lg"></i>
+                </div>
+            </div>
+            <div class="modal-body">
+                <div class="logs-container" id="logsContainer">
+                    <!-- 日志将通过 JS 动态加载 -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-action="closeLogsModal">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script nonce="{{ csp_nonce }}">
+        let currentTaskId = null;
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            loadTasks();
+            updateParamsFields();
+            
+            // 设置默认开始时间为当前时间
+            const now = new Date();
+            now.setMinutes(now.getMinutes() + 1);
+            document.getElementById('startTime').value = now.toISOString().slice(0, 16);
+        });
+
+        async function loadTasks() {
+            const status = document.getElementById('statusFilter').value;
+            
+            try {
+                const res = await fetch(`/api/tasks?status=${status}`);
+                const data = await res.json();
+                
+                if (res.ok) {
+                    renderTasks(data.tasks);
+                } else {
+                    showToast(data.error || '加载失败', 'error');
+                }
+            } catch (e) {
+                showToast('网络错误', 'error');
+            }
+        }
+
+        function renderTasks(tasks) {
+            const container = document.getElementById('tasksList');
+            
+            if (!tasks || tasks.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state" style="grid-column: 1 / -1;">
+                        <i class="bi bi-clock-history"></i>
+                        <p>暂无定时任务</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = tasks.map(task => `
+                <div class="table-row">
+                    <div>
+                        <div class="task-name">${escapeHtml(task.task_name)}</div>
+                        <div class="task-desc">ID: ${task.id} | 执行次数: ${task.run_count || 0}</div>
+                    </div>
+                    <div>${getBehaviorLabel(task.behavior)}</div>
+                    <div>${getFrequencyLabel(task.frequency)}</div>
+                    <div>
+                        <span class="status-badge status-${task.status}">${getStatusLabel(task.status)}</span>
+                    </div>
+                    <div>${task.next_run_at ? formatTime(task.next_run_at) : '-'}</div>
+                    <div class="task-actions">
+                        <button class="btn btn-secondary btn-sm" data-action="viewLogs" data-args="${task.id}">
+                            <i class="bi bi-list-ul"></i>
+                        </button>
+                        <button class="btn btn-secondary btn-sm" data-action="runTask" data-args="${task.id}">
+                            <i class="bi bi-play-fill"></i>
+                        </button>
+                        ${task.status === 'active' ? 
+                            `<button class="btn btn-secondary btn-sm" data-action="pauseTask" data-args="${task.id}">
+                                <i class="bi bi-pause-fill"></i>
+                            </button>` :
+                            `<button class="btn btn-secondary btn-sm" data-action="resumeTask" data-args="${task.id}">
+                                <i class="bi bi-play-fill"></i>
+                            </button>`
+                        }
+                        <button class="btn btn-danger btn-sm" data-action="deleteTask" data-args="${task.id}">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function getBehaviorLabel(behavior) {
+            const labels = {
+                'user_balence_add': '增加余额',
+                'user_balence_subtract': '扣除余额',
+                'user_ban': '封禁用户',
+                'user_unban': '解禁用户',
+                'post_approve': '审核帖子',
+                'post_reject': '拒绝帖子',
+                'system_notice': '系统公告',
+                'custom_command': '自定义命令',
+                'dsl': 'DSL 动作'
+            };
+            return labels[behavior] || behavior;
+        }
+
+        function getFrequencyLabel(frequency) {
+            const labels = {
+                'once': '一次性',
+                'minute': '每分钟',
+                'hourly': '每小时',
+                'daily': '每天',
+                'weekly': '每周',
+                'monthly': '每月',
+                'cron': 'Cron表达式'
+            };
+            return labels[frequency] || frequency;
+        }
+
+        function getStatusLabel(status) {
+            const labels = {
+                'active': '运行中',
+                'paused': '已暂停',
+                'completed': '已完成',
+                'error': '错误'
+            };
+            return labels[status] || status;
+        }
+
+        function updateParamsFields() {
+            const behavior = document.getElementById('taskBehavior').value;
+            const container = document.getElementById('paramsContainer');
+            const scopeSelect = document.getElementById('taskScope');
+            
+            // DSL 行为自动切 scope 为 none
+            if (behavior === 'dsl') {
+                scopeSelect.value = 'none';
+                scopeSelect.disabled = true;
+            } else {
+                scopeSelect.disabled = false;
+            }
+            
+            let html = '';
+            
+            if (behavior === 'user_balence_add' || behavior === 'user_balence_subtract') {
+                html = `
+                    <div class="form-group">
+                        <label class="form-label">金额（元）</label>
+                        <input type="number" class="form-input" id="paramAmount" placeholder="请输入金额" step="0.01" min="0">
+                    </div>
+                `;
+            } else if (behavior === 'user_ban') {
+                html = `
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">用户UID</label>
+                            <input type="text" class="form-input" id="paramUid" placeholder="指定用户时必填">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">封禁天数（可选）</label>
+                            <input type="number" class="form-input" id="paramDays" placeholder="留空为永久封禁">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">封禁原因</label>
+                        <input type="text" class="form-input" id="paramReason" placeholder="请输入封禁原因">
+                    </div>
+                `;
+            } else if (behavior === 'user_unban') {
+                html = `
+                    <div class="form-group">
+                        <label class="form-label">用户UID</label>
+                        <input type="text" class="form-input" id="paramUid" placeholder="请输入用户UID">
+                    </div>
+                `;
+            } else if (behavior === 'post_reject') {
+                html = `
+                    <div class="form-group">
+                        <label class="form-label">拒绝原因</label>
+                        <input type="text" class="form-input" id="paramReason" placeholder="请输入拒绝原因">
+                    </div>
+                `;
+            } else if (behavior === 'system_notice') {
+                html = `
+                    <div class="form-group">
+                        <label class="form-label">公告内容</label>
+                        <textarea class="form-input" id="paramContent" rows="3" placeholder="请输入公告内容"></textarea>
+                    </div>
+                `;
+            } else if (behavior === 'dsl') {
+                html = `
+                    <div class="form-group">
+                        <label class="form-label">条件（留空 = 恒真）</label>
+                        <input type="text" class="form-input" id="paramCondition" placeholder="如 hour() >= 22">
+                    </div>
+                    <div class="form-group" style="margin-top:12px">
+                        <label class="form-label">动作（; 分隔多个）</label>
+                        <textarea class="form-input" id="paramActions" rows="4" placeholder='如 send_announcement("提醒", "系统维护"); notify_admin("定时任务已执行")'></textarea>
+                    </div>
+                    <div style="margin-top:8px;font-size:13px;color:#888">
+                        可用动作：send_message, add_balence, sub_balence, ban_user, unban_user, send_announcement, notify_admin, block_ip, log 等。
+                        可用函数：hour(), weekday(), now(), len(), 算术与比较运算。
+                    </div>
+                `;
+            }
+            
+            container.innerHTML = html;
+        }
+
+        function openCreateModal() {
+            document.getElementById('createModal').classList.add('show');
+        }
+
+        function closeCreateModal() {
+            document.getElementById('createModal').classList.remove('show');
+        }
+
+        async function createTask() {
+            const taskName = document.getElementById('taskName').value.trim();
+            const behavior = document.getElementById('taskBehavior').value;
+            const scope = document.getElementById('taskScope').value;
+            const frequency = document.getElementById('taskFrequency').value;
+            const startTime = document.getElementById('startTime').value;
+            
+            if (!taskName) {
+                showToast('请输入任务名称', 'error');
+                return;
+            }
+            
+            if (!startTime) {
+                showToast('请选择开始时间', 'error');
+                return;
+            }
+            
+            // 收集参数
+            const params = {};
+            
+            const amountEl = document.getElementById('paramAmount');
+            if (amountEl) params.amount = parseFloat(amountEl.value) || 0;
+            
+            const uidEl = document.getElementById('paramUid');
+            if (uidEl) params.uid = uidEl.value.trim();
+            
+            const daysEl = document.getElementById('paramDays');
+            if (daysEl && daysEl.value) params.days = parseInt(daysEl.value);
+            
+            const reasonEl = document.getElementById('paramReason');
+            if (reasonEl) params.reason = reasonEl.value.trim();
+            
+            const contentEl = document.getElementById('paramContent');
+            if (contentEl) params.content = contentEl.value.trim();
+            
+            const conditionEl = document.getElementById('paramCondition');
+            if (conditionEl) params.condition = conditionEl.value.trim();
+            
+            const actionsEl = document.getElementById('paramActions');
+            if (actionsEl) params.actions = actionsEl.value.trim();
+            
+            try {
+                const res = await fetch('/api/tasks', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        task_name: taskName,
+                        behavior,
+                        scope,
+                        frequency,
+                        start_time: startTime.replace('T', ' ') + ':00',
+                        params
+                    })
+                });
+                
+                const data = await res.json();
+                
+                if (res.ok) {
+                    showToast('任务创建成功', 'success');
+                    closeCreateModal();
+                    loadTasks();
+                } else {
+                    showToast(data.error || '创建失败', 'error');
+                }
+            } catch (e) {
+                showToast('网络错误', 'error');
+            }
+        }
+
+        async function pauseTask(taskId) {
+            if (!confirm('确定要暂停此任务吗？')) return;
+            
+            try {
+                const res = await fetch(`/api/tasks/${taskId}/pause`, { method: 'POST' });
+                const data = await res.json();
+                
+                if (res.ok) {
+                    showToast('任务已暂停', 'success');
+                    loadTasks();
+                } else {
+                    showToast(data.error || '操作失败', 'error');
+                }
+            } catch (e) {
+                showToast('网络错误', 'error');
+            }
+        }
+
+        async function resumeTask(taskId) {
+            try {
+                const res = await fetch(`/api/tasks/${taskId}/resume`, { method: 'POST' });
+                const data = await res.json();
+                
+                if (res.ok) {
+                    showToast('任务已恢复', 'success');
+                    loadTasks();
+                } else {
+                    showToast(data.error || '操作失败', 'error');
+                }
+            } catch (e) {
+                showToast('网络错误', 'error');
+            }
+        }
+
+        async function deleteTask(taskId) {
+            if (!confirm('确定要删除此任务吗？此操作不可恢复。')) return;
+            
+            try {
+                const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
+                const data = await res.json();
+                
+                if (res.ok) {
+                    showToast('任务已删除', 'success');
+                    loadTasks();
+                } else {
+                    showToast(data.error || '删除失败', 'error');
+                }
+            } catch (e) {
+                showToast('网络错误', 'error');
+            }
+        }
+
+        async function runTask(taskId) {
+            if (!confirm('确定要立即执行此任务吗？')) return;
+            
+            try {
+                const res = await fetch(`/api/tasks/${taskId}/run`, { method: 'POST' });
+                const data = await res.json();
+                
+                if (res.ok) {
+                    showToast(data.success ? '执行成功' : '执行失败', data.success ? 'success' : 'error');
+                    loadTasks();
+                } else {
+                    showToast(data.error || '执行失败', 'error');
+                }
+            } catch (e) {
+                showToast('网络错误', 'error');
+            }
+        }
+
+        async function viewLogs(taskId) {
+            currentTaskId = taskId;
+            document.getElementById('logsModal').classList.add('show');
+            
+            try {
+                const res = await fetch(`/api/tasks/${taskId}/logs?limit=50`);
+                const data = await res.json();
+                
+                if (res.ok) {
+                    renderLogs(data.logs);
+                }
+            } catch (e) {
+                // 忽略错误
+            }
+        }
+
+        function renderLogs(logs) {
+            const container = document.getElementById('logsContainer');
+            
+            if (!logs || logs.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <i class="bi bi-file-text"></i>
+                        <p>暂无执行日志</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = logs.map(log => `
+                <div class="log-item">
+                    <div class="log-time">${formatTime(log.executed_at)} | 耗时: ${log.duration_ms || 0}ms</div>
+                    <div class="log-result ${log.result}">${log.result === 'success' ? '成功' : '失败'}</div>
+                    <div class="log-output">${escapeHtml(log.output || '')}</div>
+                </div>
+            `).join('');
+        }
+
+        function closeLogsModal() {
+            document.getElementById('logsModal').classList.remove('show');
+        }
+
+        function formatTime(timeStr) {
+            if (!timeStr) return '-';
+            const date = new Date(timeStr.replace(' ', 'T'));
+            return date.toLocaleString('zh-CN');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast ${type} show`;
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        // 点击模态框外部关闭
+        document.querySelectorAll('.modal-overlay').forEach(overlay => {
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) {
+                    overlay.classList.remove('show');
+                }
+            });
+        });
+    </script>
+</body>
+</html>

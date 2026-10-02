@@ -1,0 +1,1048 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>聊天 - 社区</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style nonce="{{ csp_nonce }}">
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #fafafa;
+            color: #1a1a1a;
+        }
+        .navbar {
+            position: fixed; top: 0; left: 0; right: 0; height: 64px;
+            background: white; border-bottom: 1px solid #f0f0f0;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 24px; z-index: 100;
+        }
+        .navbar-left { display: flex; align-items: center; gap: 12px; }
+        .logo {
+            width: 36px; height: 36px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px; display: flex; align-items: center; justify-content: center;
+        }
+        .logo svg { width: 20px; height: 20px; color: white; }
+        .logo-text { font-size: 18px; font-weight: 700; color: #1a1a1a; }
+        .navbar-right { display: flex; align-items: center; gap: 16px; }
+        .balence-display {
+            display: flex; align-items: center; gap: 8px;
+            background: #f0f2ff; padding: 8px 16px; border-radius: 20px;
+        }
+        .balence-icon { color: #667eea; font-size: 16px; }
+        .balence-amount { font-size: 14px; font-weight: 600; color: #667eea; }
+        .user-avatar {
+            width: 40px; height: 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            color: white; font-weight: 600; font-size: 16px; cursor: pointer;
+        }
+        .main-container { display: flex; padding-top: 64px; height: 100vh; box-sizing: border-box; }
+        .sidebar {
+            width: 240px; background: white; border-right: 1px solid #f0f0f0;
+            padding: 24px 0; overflow-y: auto; flex-shrink: 0;
+        }
+        .sidebar-section { margin-bottom: 24px; }
+        .sidebar-section-title {
+            font-size: 11px; font-weight: 600; color: #9ca3af;
+            text-transform: uppercase; letter-spacing: 0.5px;
+            padding: 0 20px; margin-bottom: 8px;
+        }
+        .sidebar-item {
+            display: flex; align-items: center; gap: 12px;
+            padding: 10px 20px; cursor: pointer; transition: all 0.15s;
+            font-size: 14px; color: #666; border-left: 3px solid transparent;
+            text-decoration: none;
+        }
+        .sidebar-item:hover { background: #fafafa; color: #1a1a1a; }
+        .sidebar-item.active {
+            background: #f0f2ff; color: #667eea; border-left-color: #667eea; font-weight: 500;
+        }
+        .sidebar-item i { font-size: 18px; width: 20px; text-align: center; }
+        .chat-container {
+            flex: 1; display: flex; flex-direction: column;
+            background: white; border-right: 1px solid #f0f0f0;
+            width: 280px; flex-shrink: 0;
+            min-height: 0;
+        }
+        .chat-header {
+            padding: 16px 20px; border-bottom: 1px solid #f0f0f0;
+            font-size: 16px; font-weight: 600;
+        }
+        .chat-list { flex: 1; min-height: 0; overflow-y: auto; }
+        .chat-item {
+            display: flex; align-items: center; gap: 12px;
+            padding: 12px 20px; cursor: pointer;
+            border-bottom: 1px solid #f8f8f8;
+            transition: all 0.15s;
+        }
+        .chat-item:hover { background: #fafafa; }
+        .chat-item.active { background: #f0f2ff; }
+        .chat-avatar {
+            width: 44px; height: 44px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            color: white; font-weight: 600; font-size: 16px;
+            flex-shrink: 0;
+        }
+        .chat-info { flex: 1; min-width: 0; }
+        .chat-name { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+        .chat-last-msg { font-size: 12px; color: #9ca3af; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .chat-time { font-size: 11px; color: #9ca3af; flex-shrink: 0; }
+        .chat-unread {
+            background: #ef4444; color: white;
+            font-size: 11px; font-weight: 600;
+            min-width: 18px; height: 18px;
+            border-radius: 9px;
+            display: flex; align-items: center; justify-content: center;
+            padding: 0 5px;
+            flex-shrink: 0;
+        }
+        .message-container {
+            flex: 1; display: flex; flex-direction: column;
+            background: #fafafa;
+            min-height: 0;
+        }
+        .message-header {
+            padding: 16px 24px;
+            background: white;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .message-header-avatar {
+            width: 40px; height: 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            color: white; font-weight: 600; font-size: 15px;
+        }
+        .message-header-name { font-size: 15px; font-weight: 600; }
+        .message-header-actions { margin-left: auto; display: flex; gap: 8px; }
+        .icon-btn {
+            width: 36px; height: 36px;
+            border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+            color: #666;
+            transition: all 0.15s;
+            background: transparent;
+            border: none;
+        }
+        .icon-btn:hover { background: #f3f4f6; color: #1a1a1a; }
+        .messages {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            padding: 20px 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        .message {
+            display: flex;
+            gap: 10px;
+            max-width: 70%;
+        }
+        .message.sent {
+            align-self: flex-end;
+            flex-direction: row-reverse;
+        }
+        .message-avatar {
+            width: 36px; height: 36px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            color: white; font-weight: 600; font-size: 14px;
+            flex-shrink: 0;
+        }
+        .message.sent .message-avatar {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        }
+        .message-bubble {
+            padding: 10px 14px;
+            border-radius: 14px;
+            font-size: 14px;
+            line-height: 1.5;
+            word-break: break-word;
+        }
+        .message.received .message-bubble {
+            background: white;
+            border-bottom-left-radius: 4px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+        }
+        .message.sent .message-bubble {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+        .message-time {
+            font-size: 11px;
+            color: #9ca3af;
+            margin-top: 4px;
+        }
+        .message.sent .message-time {
+            text-align: right;
+        }
+        .transfer-msg, .redpacket-msg {
+            background: white;
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+            min-width: 200px;
+        }
+        .message.sent .transfer-msg,
+        .message.sent .redpacket-msg {
+            background: #f0fdf4;
+        }
+        .transfer-icon, .redpacket-icon {
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
+        .transfer-icon { color: #10b981; }
+        .redpacket-icon { color: #f59e0b; }
+        .transfer-amount, .redpacket-amount {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        .transfer-amount { color: #10b981; }
+        .redpacket-amount { color: #f59e0b; }
+        .transfer-desc, .redpacket-desc {
+            font-size: 12px;
+            color: #666;
+        }
+        .redpacket-claim-btn {
+            margin-top: 12px;
+            padding: 8px 16px;
+            background: #f59e0b;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+        }
+        .redpacket-claim-btn:hover { background: #d97706; }
+        .redpacket-claimed {
+            margin-top: 8px;
+            font-size: 12px;
+            color: #10b981;
+            font-weight: 500;
+        }
+        .input-area {
+            padding: 16px 24px;
+            background: white;
+            border-top: 1px solid #f0f0f0;
+        }
+        .input-actions {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        .action-btn {
+            padding: 6px 12px;
+            background: #f3f4f6;
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            color: #374151;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.15s;
+        }
+        .action-btn:hover { background: #e5e7eb; }
+        .action-btn.transfer { color: #10b981; }
+        .action-btn.redpacket { color: #f59e0b; }
+        .input-row {
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+        }
+        .message-input {
+            flex: 1;
+            padding: 10px 14px;
+            border: 1.5px solid #e5e7eb;
+            border-radius: 10px;
+            font-size: 14px;
+            font-family: inherit;
+            background: #fafafa;
+            resize: none;
+            min-height: 40px;
+            max-height: 120px;
+            transition: all 0.2s;
+        }
+        .message-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            background: white;
+        }
+        .send-btn {
+            padding: 10px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s;
+        }
+        .send-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3); }
+        .send-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .empty-chat {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #9ca3af;
+        }
+        .empty-chat i { font-size: 64px; margin-bottom: 16px; opacity: 0.3; }
+        .empty-chat p { font-size: 14px; }
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: none; align-items: center; justify-content: center;
+            z-index: 1000;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal {
+            background: white; border-radius: 16px;
+            padding: 24px; width: 100%; max-width: 400px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+        .modal-title { font-size: 18px; font-weight: 700; margin-bottom: 20px; }
+        .form-group { margin-bottom: 16px; }
+        .form-label { font-size: 13px; font-weight: 500; color: #374151; margin-bottom: 6px; display: block; }
+        .form-input {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1.5px solid #e5e7eb;
+            border-radius: 10px;
+            font-size: 14px;
+            font-family: inherit;
+            background: #fafafa;
+            transition: all 0.2s;
+        }
+        .form-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            background: white;
+        }
+        .modal-actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 20px; }
+        .btn {
+            padding: 10px 20px; font-size: 14px; font-weight: 500;
+            border-radius: 10px; cursor: pointer; transition: all 0.2s;
+            border: none; display: inline-flex; align-items: center; gap: 8px;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+        .btn-primary:hover { transform: translateY(-1px); }
+        .btn-secondary {
+            background: #f3f4f6; color: #374151;
+        }
+        .btn-secondary:hover { background: #e5e7eb; }
+        .toast {
+            position: fixed; top: 80px; right: 24px;
+            padding: 12px 20px; border-radius: 10px;
+            font-size: 14px; font-weight: 500;
+            z-index: 2000;
+            transform: translateX(120%);
+            transition: transform 0.3s ease;
+        }
+        .toast.show { transform: translateX(0); }
+        .toast.success { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+        .toast.error { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+    </style>
+{% include "_navbar_css.html" %}
+</head>
+<body>
+    <!-- 导航栏 -->
+    {% include "_navbar.html" %}
+
+    <div class="main-container">
+        {% with active_page = 'chat' %}
+        {% include "_sidebar.html" %}
+        {% endwith %}
+
+        <!-- 会话列表 -->
+        <div class="chat-container">
+            <div class="chat-header">消息</div>
+            <div class="chat-list" id="chatList">
+                <div style="padding: 40px 20px; text-align: center; color: #9ca3af;">
+                    <i class="bi bi-chat-dots" style="font-size: 32px; margin-bottom: 12px; opacity: 0.5;"></i>
+                    <p style="font-size: 13px;">加载中...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 聊天区域 -->
+        <div class="message-container">
+            <div class="message-header" id="messageHeader" style="display: none;">
+                <div class="message-header-avatar" id="chatAvatar">U</div>
+                <div>
+                    <div class="message-header-name" id="chatName">选择一个会话开始聊天</div>
+                </div>
+                <div class="message-header-actions">
+                    <button class="icon-btn" data-action="showTransferModal" title="转账">
+                        <i class="bi bi-send"></i>
+                    </button>
+                    <button class="icon-btn" data-action="showRedpacketModal" title="红包">
+                        <i class="bi bi-gift"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="messages" id="messages">
+                <div class="empty-chat">
+                    <i class="bi bi-chat-dots"></i>
+                    <p>选择一个会话开始聊天</p>
+                </div>
+            </div>
+            <div class="input-area" id="inputArea" style="display: none;">
+                <div class="input-actions">
+                    <button class="action-btn transfer" data-action="showTransferModal">
+                        <i class="bi bi-send"></i>
+                        转账
+                    </button>
+                    <button class="action-btn redpacket" data-action="showRedpacketModal">
+                        <i class="bi bi-gift"></i>
+                        红包
+                    </button>
+                </div>
+                <div class="input-row">
+                    <textarea class="message-input" id="messageInput" placeholder="输入消息..." rows="1" data-action="handleKeyDown" data-on="keydown" data-arg-event></textarea>
+                    <button class="send-btn" data-action="sendMessage">
+                        <i class="bi bi-send"></i>
+                        发送
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 转账弹窗 -->
+    <div class="modal-overlay" id="transferModal">
+        <div class="modal">
+            <h3 class="modal-title">转账</h3>
+            <div class="form-group">
+                <label class="form-label">转账金额（元）</label>
+                <input type="number" class="form-input" id="transferAmount" placeholder="请输入金额" step="0.01" min="0.01">
+            </div>
+            <div class="form-group">
+                <label class="form-label">备注（可选）</label>
+                <input type="text" class="form-input" id="transferRemark" placeholder="转账备注">
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" data-action="hideTransferModal">取消</button>
+                <button class="btn btn-primary" data-action="sendTransfer">确认转账</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 红包弹窗 -->
+    <div class="modal-overlay" id="redpacketModal">
+        <div class="modal">
+            <h3 class="modal-title">发红包</h3>
+            <div class="form-group">
+                <label class="form-label">红包金额（元）</label>
+                <input type="number" class="form-input" id="redpacketAmount" placeholder="请输入金额" step="0.01" min="0.01">
+            </div>
+            <div class="form-group">
+                <label class="form-label">祝福语（可选）</label>
+                <input type="text" class="form-input" id="redpacketMessage" placeholder="恭喜发财，大吉大利">
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" data-action="hideRedpacketModal">取消</button>
+                <button class="btn btn-primary" data-action="sendRedpacket">塞钱进红包</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast 提示 -->
+    <div class="toast" id="toast"></div>
+
+    <script nonce="{{ csp_nonce }}">
+        let currentFriend = null;
+        let conversations = [];
+        let messages = [];
+        let currentUser = null;
+        // 用户滚动状态：用户主动往上滚动后，暂停自动滚动，直到滚回底部
+        let userScrolledUp = false;
+        let lastScrollTop = 0;
+
+        // 页面加载
+        document.addEventListener('DOMContentLoaded', function() {
+            loadUserInfo();
+            loadConversations();
+            
+            // 检查 URL 参数是否有指定好友
+            const urlParams = new URLSearchParams(window.location.search);
+            const friendUid = urlParams.get('friend');
+            if (friendUid) {
+                // 延迟一下，等会话列表加载完再选择
+                setTimeout(() => selectFriend(friendUid), 500);
+            }
+        });
+
+        // 加载用户信息
+        async function loadUserInfo() {
+            try {
+                const data = await window.getUserInfo();
+                if (data) {
+                    currentUser = { uid: data.uid, user_name: data.username, balence: data.balence };
+                    document.getElementById('balenceAmount').textContent = '¥' + parseFloat(data.balence || 0).toFixed(2);
+                    document.getElementById('userAvatar').textContent = data.user_name.charAt(0).toUpperCase();
+                }
+            } catch (e) {
+                console.error('加载用户信息失败:', e);
+            }
+        }
+
+        // 加载会话列表
+        async function loadConversations() {
+            try {
+                const res = await fetch('/api/chat/conversations');
+                const data = await res.json();
+                if (data.conversations) {
+                    conversations = data.conversations;
+                    renderConversations();
+                }
+            } catch (e) {
+                console.error('加载会话列表失败:', e);
+                document.getElementById('chatList').innerHTML = `
+                    <div style="padding: 40px 20px; text-align: center; color: #9ca3af;">
+                        <i class="bi bi-exclamation-circle" style="font-size: 32px; margin-bottom: 12px; opacity: 0.5;"></i>
+                        <p style="font-size: 13px;">加载失败</p>
+                    </div>
+                `;
+            }
+        }
+
+        // 渲染会话列表
+        function renderConversations() {
+            const container = document.getElementById('chatList');
+            if (conversations.length === 0) {
+                container.innerHTML = `
+                    <div style="padding: 40px 20px; text-align: center; color: #9ca3af;">
+                        <i class="bi bi-chat-dots" style="font-size: 32px; margin-bottom: 12px; opacity: 0.5;"></i>
+                        <p style="font-size: 13px;">暂无消息</p>
+                        <p style="font-size: 12px; margin-top: 4px;">去添加好友开始聊天吧</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = conversations.map(conv => {
+                const lastMsg = conv.last_message;
+                const lastMsgText = lastMsg ? (lastMsg.type === 'text' ? lastMsg.content : 
+                    lastMsg.type === 'transfer' ? '[转账]' : 
+                    lastMsg.type === 'redpacket' ? '[红包]' : '[系统消息]') : '暂无消息';
+                const unread = conv.unread_count || 0;
+                const time = lastMsg ? formatTime(lastMsg.created_at) : '';
+                const isActive = currentFriend && currentFriend.uid === conv.friend_uid;
+                
+                return `
+                    <div class="chat-item ${isActive ? 'active' : ''}" data-action="selectFriend" data-args="'${conv.friend_uid}'">
+                        <div class="chat-avatar">${conv.friend_name.charAt(0).toUpperCase()}</div>
+                        <div class="chat-info">
+                            <div class="chat-name">${conv.friend_name}</div>
+                            <div class="chat-last-msg">${lastMsgText}</div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px;">
+                            <span class="chat-time">${time}</span>
+                            ${unread > 0 ? `<div class="chat-unread">${unread}</div>` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // 选择好友
+        async function selectFriend(friendUid) {
+            // 确保用户信息（含 uid）已加载，避免渲染时 currentUser 为 null 导致消息判定崩溃
+            try { await loadUserInfo(); } catch (e) {}
+            // 找到好友信息
+            const conv = conversations.find(c => c.friend_uid === friendUid);
+            if (!conv) {
+                // 如果会话列表里没有，可能是新好友
+                currentFriend = { uid: friendUid, friend_name: '好友' };
+            } else {
+                currentFriend = { uid: friendUid, friend_name: conv.friend_name };
+            }
+
+            // 更新 UI
+            document.getElementById('messageHeader').style.display = 'flex';
+            document.getElementById('inputArea').style.display = 'block';
+            document.getElementById('chatAvatar').textContent = currentFriend.friend_name.charAt(0).toUpperCase();
+            document.getElementById('chatName').textContent = currentFriend.friend_name;
+
+            // 重新渲染会话列表以高亮当前选中
+            renderConversations();
+
+            // 加载消息（后端会一并标记已读）
+            await loadMessages(friendUid);
+
+            // 重新拉取会话列表，刷新未读徽标
+            loadConversations();
+
+            // 立即清除未读红点
+            refreshUnread();
+
+            // 启动消息轮询
+            startMessagePolling(friendUid);
+        }
+
+        let messagePollingTimer = null;
+        let chatStream = null;
+        let _lastMsgReload = 0;
+        const POLLING_INTERVAL = 5000; // SSE 不可用时的兜底轮询间隔
+
+        // 通过 SSE 事件驱动消息刷新（替代原先每 3s 轮询，减少日志噪音、更实时）
+        function startMessagePolling(friendUid) {
+            // 清除之前的定时器 / 监听器
+            if (messagePollingTimer) { clearInterval(messagePollingTimer); messagePollingTimer = null; }
+            if (chatStream) { try { chatStream.close(); } catch (e) {} chatStream = null; }
+            document.removeEventListener('unread-update', _onUnreadPush);
+            document.addEventListener('unread-update', _onUnreadPush);
+            // 兜底：若浏览器不支持 SSE 或侧边栏 SSE 未连上，降级为轮询
+            if (typeof EventSource === 'undefined' || !window.__unreadSSEAlive) {
+                startMessageFallbackPolling(friendUid);
+            }
+        }
+
+        function _onUnreadPush() {
+            if (!currentFriend) return;
+            if (document.hidden) return;
+            const now = Date.now();
+            if (now - _lastMsgReload < 1500) return; // 节流，避免事件密集时频繁刷新
+            _lastMsgReload = now;
+            loadMessages(currentFriend.uid);
+        }
+
+        function startMessageFallbackPolling(friendUid) {
+            messagePollingTimer = setInterval(async () => {
+                if (document.hidden) return;
+                if (!currentFriend || currentFriend.uid !== friendUid) return;
+                await loadMessages(friendUid);
+            }, POLLING_INTERVAL);
+        }
+
+        // 页面可见性变化时处理
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden && currentFriend) {
+                // 页面重新可见时，立即刷新一次
+                loadMessages(currentFriend.uid);
+            }
+        });
+
+        // 页面卸载时清除定时器
+        window.addEventListener('beforeunload', () => {
+            if (messagePollingTimer) {
+                clearInterval(messagePollingTimer);
+            }
+        });
+
+        // 初始化消息容器滚动监听（幂等：重复调用只绑定一次）
+        // 用户往上滚动查看历史时置 userScrolledUp = true，新消息到达不打扰滚动位置
+        let _scrollListenerInited = false;
+        function initScrollListener() {
+            if (_scrollListenerInited) return;
+            const c = document.getElementById('messages');
+            if (!c) return;
+            _scrollListenerInited = true;
+            c.addEventListener('scroll', () => {
+                userScrolledUp = c.scrollTop + c.clientHeight < c.scrollHeight - 30;
+            }, { passive: true });
+        }
+
+        // 加载消息
+        async function loadMessages(friendUid) {
+            try {
+                const res = await fetch('/api/chat/messages/' + friendUid);
+                const data = await res.json();
+                if (data.messages) {
+                    const msgContainer = document.getElementById('messages');
+                    // 记录滚动状态
+                    const isAtBottom = msgContainer.scrollTop + msgContainer.clientHeight >= msgContainer.scrollHeight - 30;
+                    const oldScrollTop = msgContainer.scrollTop;
+                    const oldScrollHeight = msgContainer.scrollHeight;
+
+                    messages = data.messages;
+                    initScrollListener();
+                    try {
+                        renderMessages();
+                    } catch (renderErr) {
+                        // 渲染缺陷不应伪装成「加载失败」：消息数据已到手
+                        console.error('渲染消息失败:', renderErr);
+                    }
+                    
+                    // 只有用户在底部时才自动滚动到底部
+                    setTimeout(() => {
+                        // 自动滚动规则：
+                        // 1. 用户主动往上滚动过 → 不自动滚动，保持位置
+                        // 2. 用户本来就在底部 → 自动滚动到底部
+                        // 3. 用户在看历史记录 → 保持相对位置
+                        if (userScrolledUp) {
+                            // 用户主动往上滚了，保持绝对位置，不打扰
+                            msgContainer.scrollTop = oldScrollTop;
+                        } else if (isAtBottom) {
+                            // 用户在底部，自动跟随新消息
+                            msgContainer.scrollTop = msgContainer.scrollHeight;
+                        } else {
+                            // 用户在中间位置，保持相对位置
+                            const newScrollHeight = msgContainer.scrollHeight;
+                            msgContainer.scrollTop = oldScrollTop + (newScrollHeight - oldScrollHeight);
+                        }
+                    }, 100);
+                }
+            } catch (e) {
+                console.error('加载消息失败:', e);
+                showToast('加载消息失败', 'error');
+            }
+        }
+
+        // 渲染消息
+        function renderMessages() {
+            const container = document.getElementById('messages');
+            if (messages.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-chat">
+                        <i class="bi bi-chat-dots"></i>
+                        <p>开始聊天吧</p>
+                    </div>
+                `;
+                return;
+            }
+
+            // 按 created_at 正序排序，确保最新消息在底部
+            const sorted = [...messages].sort((a, b) => {
+                const ta = parseTime(a.created_at).getTime();
+                const tb = parseTime(b.created_at).getTime();
+                return ta - tb;
+            });
+
+            container.innerHTML = sorted.map(msg => {
+                const isSent = currentUser && msg.from_uid === currentUser.uid;
+                const time = formatTime(msg.created_at);
+                
+                let content = '';
+                if (msg.type === 'text') {
+                    content = `<div class="message-bubble">${escapeHtml(msg.content)}</div>`;
+                } else if (msg.type === 'recalled') {
+                    content = `<div class="message-bubble" style="opacity: 0.6; font-style: italic;">${escapeHtml(msg.content)}</div>`;
+                } else if (msg.type === 'transfer') {
+                    content = `
+                        <div class="transfer-msg">
+                            <div class="transfer-icon"><i class="bi bi-send-fill"></i></div>
+                            <div class="transfer-amount">¥${parseFloat(msg.amount).toFixed(2)}</div>
+                            <div class="transfer-desc">${msg.content || '转账'}</div>
+                        </div>
+                    `;
+                } else if (msg.type === 'redpacket') {
+                    const isClaimed = msg.status === 'claimed';
+                    const canClaim = !isSent && !isClaimed;
+                    content = `
+                        <div class="redpacket-msg">
+                            <div class="redpacket-icon"><i class="bi bi-gift-fill"></i></div>
+                            <div class="redpacket-amount">¥${parseFloat(msg.amount).toFixed(2)}</div>
+                            <div class="redpacket-desc">${msg.content || '恭喜发财，大吉大利'}</div>
+                            ${canClaim ? `<button class="redpacket-claim-btn" data-action="claimRedpacket" data-args="'${msg.message_id}'">领取红包</button>` : ''}
+                            ${isClaimed ? `<div class="redpacket-claimed"><i class="bi bi-check-circle"></i> 已领取</div>` : ''}
+                        </div>
+                    `;
+                } else if (msg.type === 'announcement') {
+                    content = `<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:12px 14px;max-width:92%;">
+                        <div style="font-size:12px;font-weight:600;color:#2563eb;margin-bottom:4px;"><i class="bi bi-megaphone-fill"></i> 系统公告</div>
+                        <div style="font-size:14px;line-height:1.5;white-space:pre-wrap;word-break:break-word;">${escapeHtml(msg.content)}</div>
+                    </div>`;
+                } else {
+                    content = `<div class="message-bubble">[系统消息]</div>`;
+                }
+                
+                return `
+                    <div class="message ${isSent ? 'sent' : 'received'}">
+                        <div class="message-avatar">${isSent ? currentUser.user_name.charAt(0).toUpperCase() : currentFriend.friend_name.charAt(0).toUpperCase()}</div>
+                        <div>
+                            ${content}
+                            <div style="display: flex; align-items: center; gap: 8px; justify-content: ${isSent ? 'flex-end' : 'flex-start'};">
+                                <div class="message-time">${time}</div>
+                                ${isSent && msg.type === 'text' ? `
+                                    <button data-action="revokeMessage" data-args="'${msg.message_id}'" style="background: none; border: none; color: #999; cursor: pointer; font-size: 12px; padding: 0;" title="撤回">
+                                        撤回
+                                    </button>
+                                ` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // 撤回消息
+        async function revokeMessage(msgId) {
+            if (!confirm('确定要撤回这条消息吗？')) {
+                return;
+            }
+            
+            try {
+                const res = await fetch(`/api/chat/messages/${msgId}/revoke`, { method: 'POST' });
+                const data = await res.json();
+                
+                if (res.ok) {
+                    showToast('消息已撤回', 'success');
+                    // 重新加载消息
+                    loadMessages(currentFriend.friend_uid);
+                } else {
+                    showToast(data.error || '撤回失败', 'error');
+                }
+            } catch (e) {
+                console.error('撤回消息失败:', e);
+                showToast('撤回失败', 'error');
+            }
+        }
+
+        // 发送消息
+        async function sendMessage() {
+            if (!currentFriend) return;
+            
+            const input = document.getElementById('messageInput');
+            const content = input.value.trim();
+            if (!content) return;
+
+            try {
+                const res = await fetch('/api/chat/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        to_uid: currentFriend.uid,
+                        content: content
+                    })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    input.value = '';
+                    // 重新加载消息
+                    await loadMessages(currentFriend.uid);
+                    // 重新加载会话列表
+                    await loadConversations();
+                    // 刷新余额
+                    await loadUserInfo();
+                } else {
+                    showToast(data.error || '发送失败', 'error');
+                }
+            } catch (e) {
+                showToast('发送失败，请重试', 'error');
+            }
+        }
+
+        // 处理键盘事件
+        function handleKeyDown(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage();
+            }
+        }
+
+        // 显示转账弹窗
+        function showTransferModal() {
+            if (!currentFriend) {
+                showToast('请先选择一个好友', 'error');
+                return;
+            }
+            document.getElementById('transferModal').classList.add('active');
+            document.getElementById('transferAmount').value = '';
+            document.getElementById('transferRemark').value = '';
+            document.getElementById('transferAmount').focus();
+        }
+
+        // 隐藏转账弹窗
+        function hideTransferModal() {
+            document.getElementById('transferModal').classList.remove('active');
+        }
+
+        // 发送转账
+        async function sendTransfer() {
+            if (!currentFriend) return;
+            
+            const amount = parseFloat(document.getElementById('transferAmount').value);
+            const remark = document.getElementById('transferRemark').value;
+            
+            if (!amount || amount <= 0) {
+                showToast('请输入有效金额', 'error');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/chat/transfer', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        to_uid: currentFriend.uid,
+                        amount: amount,
+                        remark: remark
+                    })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    showToast('转账成功', 'success');
+                    hideTransferModal();
+                    await loadMessages(currentFriend.uid);
+                    await loadConversations();
+                    await loadUserInfo();
+                } else {
+                    showToast(data.error || '转账失败', 'error');
+                }
+            } catch (e) {
+                showToast('转账失败，请重试', 'error');
+            }
+        }
+
+        // 显示红包弹窗
+        function showRedpacketModal() {
+            if (!currentFriend) {
+                showToast('请先选择一个好友', 'error');
+                return;
+            }
+            document.getElementById('redpacketModal').classList.add('active');
+            document.getElementById('redpacketAmount').value = '';
+            document.getElementById('redpacketMessage').value = '';
+            document.getElementById('redpacketAmount').focus();
+        }
+
+        // 隐藏红包弹窗
+        function hideRedpacketModal() {
+            document.getElementById('redpacketModal').classList.remove('active');
+        }
+
+        // 发送红包
+        async function sendRedpacket() {
+            if (!currentFriend) return;
+            
+            const amount = parseFloat(document.getElementById('redpacketAmount').value);
+            const message = document.getElementById('redpacketMessage').value;
+            
+            if (!amount || amount <= 0) {
+                showToast('请输入有效金额', 'error');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/chat/redpacket', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        to_uid: currentFriend.uid,
+                        amount: amount,
+                        message: message
+                    })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    showToast('红包发送成功', 'success');
+                    hideRedpacketModal();
+                    await loadMessages(currentFriend.uid);
+                    await loadConversations();
+                    await loadUserInfo();
+                } else {
+                    showToast(data.error || '发送失败', 'error');
+                }
+            } catch (e) {
+                showToast('发送失败，请重试', 'error');
+            }
+        }
+
+        // 领取红包
+        async function claimRedpacket(messageId) {
+            try {
+                const res = await fetch('/api/chat/redpacket/' + messageId + '/claim', {
+                    method: 'POST'
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    showToast('领取成功，获得 ¥' + parseFloat(data.amount || 0).toFixed(2), 'success');
+                    await loadMessages(currentFriend.uid);
+                    await loadUserInfo();
+                } else {
+                    showToast(data.error || '领取失败', 'error');
+                }
+            } catch (e) {
+                showToast('领取失败，请重试', 'error');
+            }
+        }
+
+        // 健壮解析时间：后端 created_at 形如 "2026-08-20 11:52:14"（空格分隔、无 T），
+        // 部分浏览器 new Date() 会解析为 Invalid Date，导致时间显示 NaN/NaN、排序错乱。
+        function parseTime(s) {
+            if (!s) return new Date(NaN);
+            let d = new Date(String(s).replace(' ', 'T'));
+            if (isNaN(d.getTime())) {
+                const m = String(s).match(/(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
+                if (m) d = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+            }
+            return d;
+        }
+
+        // 格式化时间
+        function formatTime(timeStr) {
+            if (!timeStr) return '';
+            const date = parseTime(timeStr);
+            const now = new Date();
+            const diff = now - date;
+            
+            if (diff < 60000) return '刚刚';
+            if (diff < 3600000) return Math.floor(diff / 60000) + '分钟前';
+            if (diff < 86400000) {
+                return date.getHours().toString().padStart(2, '0') + ':' + date.getMinutes().toString().padStart(2, '0');
+            }
+            if (diff < 604800000) {
+                const days = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+                return days[date.getDay()];
+            }
+            
+            return (date.getMonth() + 1) + '/' + date.getDate();
+        }
+
+        // HTML 转义
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // 显示 Toast
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = 'toast ' + type + ' show';
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        // 点击弹窗外部关闭
+        document.getElementById('transferModal').addEventListener('click', function(e) {
+            if (e.target === this) hideTransferModal();
+        });
+        document.getElementById('redpacketModal').addEventListener('click', function(e) {
+            if (e.target === this) hideRedpacketModal();
+        });
+    </script>
+    <!-- 未读红点由 _sidebar.html 统一提供 -->
+</body>
+</html>

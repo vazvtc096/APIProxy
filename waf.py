@@ -42,8 +42,9 @@ CLOUDFLARE_TRUSTED = _CFG_CF_TRUSTED
 # 请求体免检路径前缀（承载自由文本 / 流式响应 / 管理类，避免误杀）
 BODY_EXEMPT_PREFIXES = (
     '/api/chat', '/api/chat/completions', '/v1/chat', '/v1/chat/completions',
-    '/v1/responses', '/v1/models', '/api/models', '/api/posts', '/api/transfer',
-    '/api/friend', '/api/social', '/api/recharge', '/api/admin/', '/api/rcon',
+    '/v1/responses', '/v1/messages', '/v1/models', '/api/models', '/api/posts',
+    '/api/transfer', '/api/friend', '/api/social', '/api/recharge', '/api/admin/',
+    '/api/rcon', '/v1/completions', '/v1/embeddings', '/v1/rerank',
 )
 
 

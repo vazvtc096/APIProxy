@@ -113,10 +113,11 @@ def pre_check_approval(command: str, operator: str) -> dict | None:
         return None
     try:
         conn = _conn()
-        row = conn.execute(
-            "SELECT ticket_id FROM bastion_approvals "
-            "WHERE operator=? AND command=? AND status='approved' ORDER BY id DESC LIMIT 1",
-            (operator or "unknown", command)).fetchone()
+        with conn:
+            row = conn.execute(
+                "SELECT ticket_id FROM bastion_approvals "
+                "WHERE operator=? AND command=? AND status='approved' ORDER BY id DESC LIMIT 1",
+                (operator or "unknown", command)).fetchone()
         if row:
             return None  # 已有已批准工单，放行
     except Exception:
@@ -175,9 +176,10 @@ def deny_ticket(ticket_id: str, reviewer: str, note: str = "") -> bool:
 def pending_approvals() -> list:
     try:
         conn = _conn()
-        rows = conn.execute(
-            "SELECT ticket_id, operator, command, args, created_at FROM bastion_approvals "
-            "WHERE status='pending' ORDER BY id DESC").fetchall()
+        with conn:
+            rows = conn.execute(
+                "SELECT ticket_id, operator, command, args, created_at FROM bastion_approvals "
+                "WHERE status='pending' ORDER BY id DESC").fetchall()
         return [dict(r) for r in rows]
     except Exception as e:
         logger.error(f"bastion pending_approvals failed: {e}")
@@ -238,9 +240,10 @@ def record_admin_access(operator: str, path: str, method: str,
 def list_sessions(limit: int = 20) -> list:
     try:
         conn = _conn()
-        rows = conn.execute(
-            "SELECT session_id, operator, remote_ip, started_at, command_count "
-            "FROM bastion_sessions ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        with conn:
+            rows = conn.execute(
+                "SELECT session_id, operator, remote_ip, started_at, command_count "
+                "FROM bastion_sessions ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
         return [dict(r) for r in rows]
     except Exception as e:
         logger.error(f"bastion list_sessions failed: {e}")
@@ -250,9 +253,10 @@ def list_sessions(limit: int = 20) -> list:
 def get_session_audit(session_id: str) -> list:
     try:
         conn = _conn()
-        rows = conn.execute(
-            "SELECT id, created_at, operator, target, command, args, result_ok, output, risk "
-            "FROM bastion_audit WHERE session_id=? ORDER BY id ASC", (session_id,)).fetchall()
+        with conn:
+            rows = conn.execute(
+                "SELECT id, created_at, operator, target, command, args, result_ok, output, risk "
+                "FROM bastion_audit WHERE session_id=? ORDER BY id ASC", (session_id,)).fetchall()
         return [dict(r) for r in rows]
     except Exception as e:
         logger.error(f"bastion get_session_audit failed: {e}")

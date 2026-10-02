@@ -1,0 +1,76 @@
+server:
+  port: 5000          # 与 Python 版一致
+  servlet:
+    session:
+      timeout: 24h     # 会话超时（对应 Python permanent_session_lifetime）
+      cookie:
+        http-only: true
+        secure: false  # 生产环境经 nginx 反代后设 true
+        same-site: lax
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/apiproxy
+    username: postgres
+    password: ${DB_PASSWORD:Y0Hxs5ePfKoL8CNwyckIhUWJ}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 50    # 对齐 Python 版池上限
+      minimum-idle: 2
+
+  jpa:
+    hibernate:
+      ddl-auto: validate       # 仅校验 schema，不自动改表（由 Alembic 管理）
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        jdbc.lob.non_contextual_creation: true
+        format_sql: false
+    show-sql: false
+
+  thymeleaf:
+    prefix: classpath:/templates/
+    suffix: .html
+    cache: false               # 开发期关闭缓存；生产可设 true
+
+  servlet:
+    multipart:
+      max-request-size: 50MB   # 对齐 Python MAX_CONTENT_LENGTH
+
+# APIProxy 业务配置（对应 Python config.yaml）
+apiproxy:
+  # 安全
+  waf:
+    enabled: true
+  ids-ips:
+    enabled: true
+  rate-limit:
+    enabled: true
+    default-rpm: 60            # 每分钟请求数上限
+  # 上游 API（启动时从 DB upstreams 表加载；此为回退默认值）
+  upstreams:
+    - name: default
+      base-url: ""
+      api-key: ""
+      priority: 100
+      enabled: true
+  # 计费
+  billing:
+    allow-overdraft: false
+    max-overdraft: 0.0
+  # OAuth2
+  oauth:
+    issuer: http://localhost:5000
+    default-client: default
+    # OAuth access token 签名密钥（对应 Python configs.OAUTH_JWT_SECRET / env OAUTH_JWT_SECRET）
+    jwt-secret: ${OAUTH_JWT_SECRET:}
+  # RCON
+  rcon:
+    enabled: true
+
+logging:
+  level:
+    com.apiproxy: INFO
+    org.springframework.security: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"

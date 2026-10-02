@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>调用模型 - 管理员后台</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style nonce="{{ csp_nonce }}">
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #fafafa; color: #1a1a1a; min-height: 100vh; }
+        .main-container { display: flex; padding-top: 64px; min-height: 100vh; }
+        .content { flex: 1; margin-left: 240px; padding: 32px; }
+        .page-title { font-size: 24px; font-weight: 700; color: #1a1a1a; }
+        .page-subtitle { font-size: 14px; color: #666; margin-top: 4px; }
+        .btn { padding: 10px 20px; font-size: 14px; font-weight: 500; border-radius: 10px; cursor: pointer; transition: all 0.2s; border: none; display: inline-flex; align-items: center; gap: 8px; text-decoration: none; }
+        .btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; box-shadow: 0 2px 8px rgba(102,126,234,0.3); }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(102,126,234,0.4); }
+        .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+        .card { background: white; border-radius: 16px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 24px; }
+        .card h3 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+        .card .hint { font-size: 12px; color: #9ca3af; margin-bottom: 16px; }
+        select, input[type=text], input[type=number] { padding: 8px 12px; font-size: 14px; border: 1px solid #e5e7eb; border-radius: 8px; outline: none; transition: border-color 0.15s; background: white; }
+        select:focus, input[type=text]:focus, input[type=number]:focus { border-color: #667eea; }
+        textarea { width: 100%; min-height: 220px; padding: 12px; font-size: 13px; font-family: Consolas, Menlo, monospace; border: 1px solid #e5e7eb; border-radius: 10px; outline: none; resize: vertical; }
+        textarea:focus { border-color: #667eea; }
+        .form-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
+        .form-row label { font-size: 13px; color: #666; }
+        pre.resp { background: #0f172a; color: #e2e8f0; border-radius: 12px; padding: 16px; font-size: 12.5px; font-family: Consolas, Menlo, monospace; overflow: auto; max-height: 480px; white-space: pre-wrap; word-break: break-word; }
+        .usage-bar { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 12px; font-size: 13px; color: #444; }
+        .usage-bar b { color: #1a1a1a; }
+        .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 500; }
+        .badge-ok { background: #f0fdf4; color: #16a34a; }
+        .badge-err { background: #fef2f2; color: #dc2626; }
+        .toast { position: fixed; top: 80px; right: 24px; background: #1a1a1a; color: white; padding: 12px 20px; border-radius: 10px; font-size: 14px; opacity: 0; transform: translateY(-10px); transition: all 0.25s; z-index: 200; }
+        .toast.show { opacity: 1; transform: translateY(0); }
+        .toast.error { background: #dc2626; }
+
+        /* 侧边栏基础样式（与 admin_bans 等页统一） */
+        .sidebar { width: 240px; background: white; border-right: 1px solid #f0f0f0; padding: 24px 0; position: fixed; top: 64px; bottom: 0; left: 0; overflow-y: auto; }
+        .sidebar-section { margin-bottom: 24px; }
+        .sidebar-section-title { font-size: 11px; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.5px; padding: 0 20px; margin-bottom: 8px; }
+        .sidebar-item { display: flex; align-items: center; gap: 12px; padding: 10px 20px; cursor: pointer; transition: all 0.15s; font-size: 14px; color: #666; border-left: 3px solid transparent; text-decoration: none; }
+        .sidebar-item:hover { background: #fafafa; color: #1a1a1a; }
+        .sidebar-item.active { background: #f0f2ff; color: #667eea; border-left-color: #667eea; font-weight: 500; }
+        .sidebar-item i { font-size: 18px; width: 20px; text-align: center; }
+    </style>
+</head>
+<body>
+    {% include "_navbar_css.html" %}
+    {% include "_navbar.html" %}
+    <div class="main-container">
+        {% with active_page = 'playground-builder' %}
+        {% include "_sidebar.html" %}
+        {% endwith %}
+
+        <main class="content">
+            <div class="page-title">请求构建器</div>
+            <div class="page-subtitle">在网页端直接发起一次模型调用，完整经过模型映射、负载均衡与计费链路（按当前账号正常扣费）</div>
+
+            <div class="card">
+                <h3>快速构建</h3>
+                <div class="hint">填写下方参数后点击「生成请求体」，会自动填充到下方请求区；熟悉接口的用户也可以直接手写 JSON。</div>
+                <div class="form-row">
+                    <label>系统提示词：</label>
+                    <input type="text" id="pb-system" placeholder="可选，设定模型的角色与行为" style="width:420px;">
+                </div>
+                <div class="form-row">
+                    <label>用户消息：</label>
+                    <input type="text" id="pb-message" placeholder="你要发送给模型的内容" style="width:420px;">
+                </div>
+                <div class="form-row">
+                    <label>温度：</label>
+                    <input type="number" id="pb-temp" step="0.1" min="0" max="2" value="0.7" style="width:80px;" title="0 = 确定性输出，2 = 最随机">
+                    <label>最大输出 Token：</label>
+                    <input type="number" id="pb-maxtok" step="1" min="1" value="1024" style="width:100px;">
+                    <button class="btn btn-secondary btn-sm" data-action="pbBuild">生成请求体</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>请求</h3>
+                <div class="hint">选择端点后自动填入对应模板，body 为 OpenAI 兼容 JSON（model 会经映射后发给上游）。</div>
+                <div class="form-row">
+                    <label>端点：</label>
+                    <select id="pg-endpoint">
+                        <option value="chat">/v1/chat/completions</option>
+                        <option value="completions">/v1/completions</option>
+                        <option value="embeddings">/v1/embeddings</option>
+                    </select>
+                    <label>模型：</label>
+                    <input type="text" id="pg-model" list="pg-model-list" placeholder="deepseek-flash" style="width:240px;">
+                    <datalist id="pg-model-list"></datalist>
+                    <button class="btn btn-primary" id="pg-send" data-action="pgSend">发送请求</button>
+                </div>
+                <textarea id="pg-body" spellcheck="false"></textarea>
+            </div>
+
+            <div class="card">
+                <h3>响应</h3>
+                <div class="hint">原始 JSON 响应 + 最近一条用量日志（计费明细）。</div>
+                <div class="form-row" id="pg-status" style="display:none;">
+                    <span class="badge badge-ok" id="pg-status-badge">200</span>
+                </div>
+                <pre class="resp" id="pg-resp">（尚未发送）</pre>
+                <div class="usage-bar" id="pg-usage" style="display:none;"></div>
+            </div>
+        </main>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script nonce="{{ csp_nonce }}">
+        'use strict';
+        var TEMPLATES = {
+            chat: { model: '', messages: [{ role: 'user', content: '你好，请用一句话介绍你自己。' }] },
+            completions: { model: '', prompt: '一句话介绍 Python：', max_tokens: 64 },
+            embeddings: { model: '', input: '这是一段测试文本' }
+        };
+        function $(id) { return document.getElementById(id); }
+        function toast(msg, cls) {
+            var t = $('toast');
+            t.textContent = msg; t.className = 'toast show ' + (cls || '');
+            setTimeout(function () { t.className = 'toast ' + (cls || ''); }, 2600);
+        }
+        function esc(s) {
+            return String(s).replace(/[&<>"']/g, function (c) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+            });
+        }
+        function fillTemplate() {
+            var ep = $('pg-endpoint').value;
+            var tpl = JSON.parse(JSON.stringify(TEMPLATES[ep]));
+            tpl.model = $('pg-model').value || tpl.model;
+            $('pg-body').value = JSON.stringify(tpl, null, 2);
+        }
+        // 按快速构建表单生成 chat 请求体并填充到请求区
+        function buildFromForm() {
+            var msg = $('pb-message').value.trim();
+            if (!msg) { toast('请填写用户消息', 'error'); return; }
+            var body = { model: $('pg-model').value || '', messages: [] };
+            var sys = $('pb-system').value.trim();
+            if (sys) body.messages.push({ role: 'system', content: sys });
+            body.messages.push({ role: 'user', content: msg });
+            var temp = parseFloat($('pb-temp').value);
+            if (!isNaN(temp)) body.temperature = temp;
+            var mt = parseInt($('pb-maxtok').value, 10);
+            if (!isNaN(mt) && mt > 0) body.max_tokens = mt;
+            $('pg-endpoint').value = 'chat';
+            $('pg-body').value = JSON.stringify(body, null, 2);
+            toast('请求体已生成', 'ok');
+        }
+        async function loadModels() {
+            try {
+                var r = await fetch('/api/models', { credentials: 'same-origin' });
+                var j = await r.json();
+                var ids = (j.data || []).map(function (d) { return d.id; });
+                var dl = $('pg-model-list');
+                dl.innerHTML = ids.map(function (m) { return '<option value="' + esc(m) + '"></option>'; }).join('');
+            } catch (e) { /* 模型列表加载失败不阻塞 */ }
+        }
+        async function send() {
+            var btn = $('pg-send');
+            var body;
+            try { body = JSON.parse($('pg-body').value); }
+            catch (e) { toast('JSON 解析失败：' + e.message, 'error'); return; }
+            if (!body.model) { toast('请填写 model', 'error'); return; }
+            $('pg-model').value = body.model;
+            btn.disabled = true;
+            $('pg-resp').textContent = '请求中…';
+            try {
+                var r = await fetch('/api/admin/playground', {
+                    method: 'POST', credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ endpoint: $('pg-endpoint').value, body: body })
+                });
+                var j = await r.json();
+                $('pg-status').style.display = 'flex';
+                var badge = $('pg-status-badge');
+                badge.textContent = r.status;
+                badge.className = 'badge ' + (r.ok ? 'badge-ok' : 'badge-err');
+                $('pg-resp').textContent = JSON.stringify(j, null, 2);
+                var u = j.last_usage;
+                var ub = $('pg-usage');
+                if (u) {
+                    ub.style.display = 'flex';
+                    ub.innerHTML = '<span>模型 <b>' + esc(u.model) + '</b></span>' +
+                        '<span>上游 <b>' + esc(u.upstream || '-') + '</b></span>' +
+                        '<span>输入 <b>' + esc(u.input_tokens) + '</b> 字符</span>' +
+                        '<span>输出 <b>' + esc(u.output_tokens) + '</b> 字符</span>' +
+                        '<span>费用 <b>¥' + esc(u.cost) + '</b></span>';
+                } else {
+                    ub.style.display = 'none';
+                }
+            } catch (e) {
+                $('pg-resp').textContent = '请求失败：' + e.message;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+        document.addEventListener('click', function (ev) {
+            var el = ev.target.closest('[data-action]');
+            if (!el) return;
+            if (el.dataset.action === 'pgSend') { ev.preventDefault(); send(); }
+            if (el.dataset.action === 'pbBuild') { ev.preventDefault(); buildFromForm(); }
+        });
+        $('pg-endpoint').addEventListener('change', fillTemplate);
+        fillTemplate();
+        loadModels();
+    </script>
+</body>
+</html>

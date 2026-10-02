@@ -391,6 +391,16 @@
             color: #9ca3af;
             font-family: monospace;
         }
+        .sys-tag {
+            font-size: 10px;
+            font-weight: 600;
+            color: #6d28d9;
+            background: #ede9fe;
+            border: 1px solid #c4b5fd;
+            border-radius: 4px;
+            padding: 1px 5px;
+            margin-left: 6px;
+        }
         .friend-actions {
             display: flex;
             gap: 8px;
@@ -824,16 +834,17 @@
                 <div class="friend-item" data-nav="/chat?uid=${friend.uid}">
                     <div class="friend-avatar">${friend.user_name.charAt(0).toUpperCase()}</div>
                     <div class="friend-info">
-                        <div class="friend-name">${escapeHtml(friend.user_name)}</div>
+                        <div class="friend-name">${escapeHtml(friend.user_name)}${friend.is_system ? ' <span class="sys-tag">系统</span>' : ''}</div>
                         <div class="friend-uid">${friend.uid}</div>
                     </div>
                     <div class="friend-actions">
                         <button class="icon-btn" data-nav="/chat?uid=${friend.uid}" data-stop title="发消息">
                             <i class="bi bi-chat-dots"></i>
                         </button>
+                        ${friend.is_system ? '' : `
                         <button class="icon-btn danger" data-action="deleteFriend" data-args="${friend.uid}${escapeHtml(friend.user_name)}" data-stop title="删除好友">
                             <i class="bi bi-person-x"></i>
-                        </button>
+                        </button>`}
                     </div>
                 </div>
             `).join('');

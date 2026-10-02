@@ -1,6 +1,7 @@
 """社交路由：帖子/好友/聊天/转账"""
 import asyncio
 import json
+import logging
 
 from quart import Blueprint, request, session, jsonify, Response, render_template, redirect, url_for
 from ..app import app
@@ -8,6 +9,8 @@ from ..core import *
 from .. import social, oauth, upstreams, pricing
 from .. import hooks as _hooks
 from .. import announcements as _ann
+from .. import notifications as _ntf
+from .. import system_users as _su
 from ..apikey import APIKey, hash_password, verify_password, generate_uid, _get_user_by_name, _verify_user_password
 from ..configs import BASEURL, APIKEY, RCON_ENABLED, RCON_SECRET, SSL_ENABLED, SESSION_SECRET, OAUTH_JWT_SECRET, SMTP_CONFIGURED
 from .. import configs
@@ -387,11 +390,12 @@ async def search_users():
         (f'%{keyword}%', f'%{keyword}%')
     )
     
-    # 移除当前用户
+    # 移除当前用户与系统虚拟用户（UID 池 0~15 不可搜索、不可加好友）
     current_user = await _get_current_user()
     if current_user:
         users = [u for u in users if u['uid'] != current_user['uid']]
-    
+    users = [u for u in users if not _su.is_system_uid(u['uid'])]
+
     return jsonify({'users': users})
 
 
@@ -434,7 +438,41 @@ async def list_friends():
             (friend['uid'], user['uid'])
         )
         friend['unread_count'] = unread[0]['cnt'] if unread else 0
-    
+
+    # 注入与系统虚拟用户（UID 池 0~15）的会话：有消息往来才出现，免好友关系
+    try:
+        sys_uids = list(_su.SYSTEM_USERS.keys())
+        ph = ','.join('?' * len(sys_uids))
+        sys_rows = await async_db_query(
+            f"""SELECT from_uid, COUNT(*) as cnt FROM chat_messages
+                WHERE to_uid = ? AND from_uid IN ({ph}) AND COALESCE(is_read, 0) = 0
+                GROUP BY from_uid""",
+            tuple([user['uid']] + sys_uids)
+        ) or []
+        sys_unread = {r['from_uid']: r['cnt'] for r in sys_rows}
+        for s_uid in sys_uids:
+            s_last = await async_db_query(
+                """SELECT * FROM chat_messages
+                   WHERE (from_uid = ? AND to_uid = ?) OR (from_uid = ? AND to_uid = ?)
+                   ORDER BY created_at DESC LIMIT 1""",
+                (user['uid'], s_uid, s_uid, user['uid'])
+            )
+            if not s_last and not sys_unread.get(s_uid):
+                continue  # 无消息往来不出现在列表
+            _uname, display = _su.get_system_user(s_uid)
+            friends.append({
+                'uid': s_uid,
+                'user_name': display,
+                'remark': _su.SYSTEM_USERS[s_uid][2],
+                'accepted_at': None,
+                'last_message': s_last[0] if s_last else None,
+                'unread_count': sys_unread.get(s_uid, 0),
+                'is_system': True,
+                'is_protected': True,
+            })
+    except Exception as e:
+        logging.warning(f'inject system conversations to /api/friends failed: {e}')
+
     return jsonify({'friends': friends})
 
 
@@ -513,6 +551,10 @@ async def send_friend_request():
     # 不能加自己为好友
     if friend_uid == user['uid']:
         return jsonify({'error': 'Cannot add yourself as friend'}), 400
+
+    # 系统虚拟用户不可加好友（聊天入口由会话列表自动注入，无需好友关系）
+    if _su.is_system_uid(friend_uid):
+        return jsonify({'error': '系统用户不可添加为好友'}), 400
     
     # 检查对方用户是否存在
     target_users = await async_db_query(
@@ -744,7 +786,33 @@ async def list_conversations():
             'last_message': last_msg[0] if last_msg else None,
             'unread_count': unread_map.get(friend['uid'], 0)
         })
-    
+
+    # 注入与系统虚拟用户（UID 池 0~15）的会话：有消息往来才出现，免好友关系
+    try:
+        sys_uids = list(_su.SYSTEM_USERS.keys())
+        for s_uid in sys_uids:
+            s_last = await async_db_query(
+                """SELECT * FROM chat_messages
+                   WHERE (from_uid = ? AND to_uid = ?) OR (from_uid = ? AND to_uid = ?)
+                   ORDER BY created_at DESC LIMIT 1""",
+                (user['uid'], s_uid, s_uid, user['uid'])
+            )
+            s_unread = unread_map.get(s_uid, 0)
+            if not s_last and not s_unread:
+                continue  # 无消息往来不出现在会话列表
+            _uname, display = _su.get_system_user(s_uid)
+            conversations.append({
+                'friend_uid': s_uid,
+                'friend_name': display,
+                'is_protected': True,
+                'is_admin': False,
+                'is_system': True,
+                'last_message': s_last[0] if s_last else None,
+                'unread_count': s_unread
+            })
+    except Exception as e:
+        logging.warning(f'inject system conversations failed: {e}')
+
     # 排序：受保护的通知渠道置顶，其余按最后消息时间倒序
     conversations.sort(
         key=lambda x: (
@@ -818,19 +886,20 @@ async def get_chat_messages(friend_uid):
     if not user:
         return jsonify({'error': 'User not found'}), 404
     
-    # 检查是否是好友
-    friends = await async_db_query(
-        "SELECT id FROM friends WHERE user_uid = ? AND friend_uid = ? AND status = 'accepted'",
-        (user['uid'], friend_uid)
-    )
-    if not friends:
-        return jsonify({'error': 'Not friends'}), 403
-    
+    # 检查是否是好友（系统虚拟用户免好友关系：会话由系统通知自动建立）
+    if not _su.is_system_uid(friend_uid):
+        friends = await async_db_query(
+            "SELECT id FROM friends WHERE user_uid = ? AND friend_uid = ? AND status = 'accepted'",
+            (user['uid'], friend_uid)
+        )
+        if not friends:
+            return jsonify({'error': 'Not friends'}), 403
+
     # 获取分页参数
     page = int(request.args.get('page', 1))
     page_size = min(int(request.args.get('page_size', 50)), 200)
     offset = (page - 1) * page_size
-    
+
     # 获取消息（按时间倒序，然后前端反转显示）
     messages = await async_db_query(
         """SELECT * FROM chat_messages 
@@ -913,14 +982,15 @@ async def send_message():
     if len(content) > 2000:
         return jsonify({'error': 'Message too long (max 2000 chars)'}), 400
     
-    # 检查是否是好友
-    friends = await async_db_query(
-        "SELECT id FROM friends WHERE user_uid = ? AND friend_uid = ? AND status = 'accepted'",
-        (user['uid'], to_uid)
-    )
-    if not friends:
-        return jsonify({'error': 'Not friends'}), 403
-    
+    # 检查是否是好友（系统虚拟用户免好友关系；回复系统消息不报 403）
+    if not _su.is_system_uid(to_uid):
+        friends = await async_db_query(
+            "SELECT id FROM friends WHERE user_uid = ? AND friend_uid = ? AND status = 'accepted'",
+            (user['uid'], to_uid)
+        )
+        if not friends:
+            return jsonify({'error': 'Not friends'}), 403
+
     # 获取对方用户名
     target_users = await async_db_query(
         "SELECT user_name FROM users WHERE uid = ?",
@@ -928,10 +998,11 @@ async def send_message():
     )
     if not target_users:
         # 对方账号已注销，但好友关系残留：清理悬空引用，避免持续报错
-        await async_db_query(
-            "DELETE FROM friends WHERE (user_uid = ? AND friend_uid = ?) OR (user_uid = ? AND friend_uid = ?)",
-            (user['uid'], to_uid, to_uid, user['uid'])
-        )
+        if not _su.is_system_uid(to_uid):
+            await async_db_query(
+                "DELETE FROM friends WHERE (user_uid = ? AND friend_uid = ?) OR (user_uid = ? AND friend_uid = ?)",
+                (user['uid'], to_uid, to_uid, user['uid'])
+            )
         return jsonify({'error': '对方账号已注销'}), 404
     
     target_name = target_users[0]['user_name']
@@ -1138,12 +1209,13 @@ async def _build_userinfo_payload(owner: str) -> dict:
 
 @social_bp.route('/api/stream', methods=['GET'])
 async def unified_events_stream():
-    """统一 SSE 长连接：以具名事件推送未读、用户信息，替代前端每页 fetch('/userinfo') 与
-    每 15s 轮询 /api/chat/unread，显著降低访问日志噪音与服务端请求量。
+    """统一 SSE 长连接：以具名事件推送未读、用户信息、通知列表，替代前端每页 fetch('/userinfo')、
+    每 15s 轮询 /api/chat/unread 与每 30s 轮询 /api/notifications，显著降低访问日志噪音与服务端请求量。
 
     客户端用 EventSource('/api/stream') 订阅，按 event 名分发：
-      event: unread   data: {未读快照}        -> 红点（复用 applyUnread）
-      event: userinfo data: {余额/用户名/UID/管理员标记...} -> 导航栏 + 各页面
+      event: unread        data: {未读快照}        -> 红点（复用 applyUnread）
+      event: userinfo      data: {余额/用户名/UID/管理员标记...} -> 导航栏 + 各页面
+      event: notifications data: {通知列表 + 未读数} -> 右上角通知铃铛
     服务端每 3s 重算快照，仅在变化时推送，避免无效流量。GET 请求天然豁免 CSRF。
     """
     if 'user' not in session:
@@ -1158,6 +1230,7 @@ async def unified_events_stream():
     async def gen():
         last_unread = None
         last_userinfo = None
+        last_notifs = None
         while True:
             try:
                 if await request.is_disconnected():
@@ -1181,6 +1254,17 @@ async def unified_events_stream():
                     if s2 != last_userinfo:
                         last_userinfo = s2
                         yield 'event: userinfo\ndata: ' + s2 + '\n\n'
+            except Exception:
+                pass
+            # 通知快照（铃铛列表 + 未读数，变化时推送）
+            try:
+                items = await _ntf.get_notifications(uid, limit=20)
+                n_unread = await _ntf.unread_count(uid)
+                s3 = json.dumps({'notifications': items, 'unread_count': n_unread},
+                                ensure_ascii=False, default=str)
+                if s3 != last_notifs:
+                    last_notifs = s3
+                    yield 'event: notifications\ndata: ' + s3 + '\n\n'
             except Exception:
                 pass
             await asyncio.sleep(3)
@@ -1338,10 +1422,12 @@ async def send_transfer():
             
             conn.commit()
             return True, 'Transfer successful', msg_id, new_sender_balence
-            
+
         except Exception as e:
             conn.rollback()
             return False, str(e), None, None
+        finally:
+            conn.close()  # 归还连接池：finally 兜底，覆盖余额不足的提前 return
     
     success, msg, msg_id, new_balence = await asyncio.to_thread(_do_transfer)
     
@@ -1468,10 +1554,12 @@ async def send_redpacket():
             
             conn.commit()
             return True, 'Red packet sent', msg_id, new_sender_balence
-            
+
         except Exception as e:
             conn.rollback()
             return False, str(e), None, None
+        finally:
+            conn.close()  # 归还连接池：finally 兜底，覆盖余额不足的提前 return
     
     success, msg, msg_id, new_balence = await asyncio.to_thread(_do_redpacket)
     
@@ -1564,11 +1652,13 @@ async def claim_redpacket(message_id):
             
             conn.commit()
             return True, 'Red packet claimed', new_balence
-            
+
         except Exception as e:
             conn.rollback()
             return False, str(e), None
-    
+        finally:
+            conn.close()
+
     success, result_msg, new_balence = await asyncio.to_thread(_do_claim)
     
     if not success:
@@ -1630,8 +1720,9 @@ async def friends_page():
 
 
 @social_bp.route('/social/friends/requests')
+@social_bp.route('/social/friend_requests')
 async def friend_requests_page():
-    """好友请求页面"""
+    """好友请求页面（/social/friend_requests 为兼容别名，避免旧链接 404）"""
     if 'user' not in session:
         return redirect(url_for('login_page'))
     return await render_template('social_friend_requests.html')

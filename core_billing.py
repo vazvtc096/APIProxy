@@ -7,28 +7,74 @@ import logging
 from typing import Literal
 
 from . import db
+from . import configs
 from . import pricing
 from .apikey import generate_uid
 from .constants import CHAR_PRICE_LOOKUP, UNEXCEPT_CHAR
 from .core_db import _get_conn, async_db_query
 
 
+def _ensure_real_token_columns():
+    """幂等补列：上游真实 usage token（NULL = 该次请求未捕获到上游 usage）。
+
+    与字符计费口径并存：input_tokens/output_tokens 继续存字符数（计费口径），
+    real_prompt_tokens/real_completion_tokens 存上游返回的真实 token 数，
+    供管理端做「字符估算 vs 真实 token」偏差校准报表。
+    """
+    try:
+        conn = _get_conn()
+        from . import db as _db
+        if _db.is_postgres():
+            conn.set_autocommit(True)
+        cur = conn.cursor()
+        for col in ('real_prompt_tokens', 'real_completion_tokens',
+                    'real_reasoning_tokens', 'real_cache_hit_tokens'):
+            try:
+                cur.execute(f"ALTER TABLE usage_logs ADD COLUMN {col} INTEGER")
+            except Exception:
+                pass
+        try:
+            conn.commit()
+        except Exception:
+            pass
+        conn.close()
+    except Exception as e:
+        logging.warning(f"ensure real token columns failed: {e}")
+
+
+_ensure_real_token_columns()
+
+
 async def _record_usage_log(owner: str, model: str, input_text: str, output_text: str,
                             total_cost: float, is_stream: bool, upstream_name: str,
-                            status: str = 'success', endpoint: str = 'chat.completions'):
-    """写入一条用量与费用明细到 usage_logs（统计图表的数据源）"""
+                            status: str = 'success', endpoint: str = 'chat.completions',
+                            real_prompt_tokens: int = None, real_completion_tokens: int = None,
+                            real_reasoning_tokens: int = None, real_cache_hit_tokens: int = None):
+    """写入一条用量与费用明细到 usage_logs（统计图表的数据源）
+
+    input_tokens/output_tokens 存字符数（计费口径）；real_* 存上游真实
+    token 数（未捕获到时为 NULL）：prompt/completion 为基本用量，
+    reasoning 为推理思考量（completion 的子集），cache_hit 为缓存命中输入
+    （prompt 的子集，按 token_billing.cache_hit_ratio 折扣计价）。
+    """
     try:
         in_chars = len(input_text or '')
         out_chars = len(output_text or '')
         await async_db_query(
             """INSERT INTO usage_logs
                (log_id, user_uid, user_name, model, endpoint, input_tokens, output_tokens,
-                total_tokens, cost, is_stream, status, upstream, created_at)
-               SELECT ?, (SELECT uid FROM users WHERE user_name = ?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP""",
+                total_tokens, cost, is_stream, status, upstream, created_at,
+                real_prompt_tokens, real_completion_tokens,
+                real_reasoning_tokens, real_cache_hit_tokens)
+               SELECT ?, (SELECT uid FROM users WHERE user_name = ?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?""",
             ('ul_' + generate_uid(), owner, owner, model, endpoint,
              in_chars, out_chars, in_chars + out_chars,
              round(float(total_cost or 0.0), 6), 1 if is_stream else 0, status,
-             upstream_name or '')
+             upstream_name or '',
+             int(real_prompt_tokens) if real_prompt_tokens is not None else None,
+             int(real_completion_tokens) if real_completion_tokens is not None else None,
+             int(real_reasoning_tokens) if real_reasoning_tokens is not None else None,
+             int(real_cache_hit_tokens) if real_cache_hit_tokens is not None else None)
         )
     except Exception as e:
         logging.error(f'record usage_log failed: {e}')
@@ -156,6 +202,67 @@ def _atomic_add_balence(owner: str, amount: float) -> float:
         return 0.0
     finally:
         conn.close()
+
+
+def _token_based_cost(model: str, upstream_name: str, real_in, real_out,
+                      cache_hit) -> float | None:
+    """按上游真实 usage 计算费用（每百万 token 口径，复用 pricing 时段/DB 兜底价）。
+
+    - 输入：(real_in - cache_hit) + cache_hit * cache_hit_ratio
+      （缓存命中输入按折扣计，DeepSeek 缓存命中价约为未命中 1/10）
+    - 输出：real_out（reasoning_tokens 已包含在 completion_tokens 内，无需另算）
+    - TOKEN_BILLING.enabled 为 False 或缺少真实 usage 时返回 None（沿用字符计费）。
+    """
+    tb = getattr(configs, 'TOKEN_BILLING', None) or {}
+    if not tb.get('enabled'):
+        return None
+    if real_in is None and real_out is None:
+        return None
+    try:
+        ratio = float(tb.get('cache_hit_ratio', 0.1) or 0.1)
+        ratio = min(max(ratio, 0.0), 1.0)
+        rin = max(0, int(real_in or 0))
+        rout = max(0, int(real_out or 0))
+        chit = min(max(0, int(cache_hit or 0)), rin)   # 命中数不能超过输入总量
+        eff_in = (rin - chit) + chit * ratio
+        in_price, out_price = pricing.resolve_price(model, upstream_name)
+        return round((eff_in * in_price + rout * out_price) / 1_000_000.0, 6)
+    except Exception as e:
+        logging.error(f"token-based cost calc failed for {model}: {e}")
+        return None
+
+
+def reconcile_token_billing(owner: str, model: str, upstream_name: str,
+                            real_in, real_out, cache_hit,
+                            charged_cost: float, mult: float = 1.0) -> dict | None:
+    """真实 token 计费对账：响应完成后按真实 usage 多退少补。
+
+    - charged_cost: 已按字符口径扣掉的总费用（含分组倍率）
+    - 返回 {'token_cost', 'delta', 'effective_cost', 'balance'}；
+      未启用/无真实 usage/差额可忽略时返回 None（保持字符计费结果）。
+    - 幂等旁路：任何异常只记日志不抛出，绝不影响主链路。
+    """
+    try:
+        tc = _token_based_cost(model, upstream_name, real_in, real_out, cache_hit)
+        if tc is None:
+            return None
+        if mult != 1.0:
+            tc = round(tc * mult, 6)
+        delta = round(tc - float(charged_cost or 0.0), 6)
+        if abs(delta) < 1e-6:
+            return None
+        if delta > 0:
+            balance = _atomic_force_deduct_balence(owner, delta)
+        else:
+            balance = _atomic_add_balence(owner, -delta)
+        logging.info(f"token billing reconcile {owner}/{model}: char={charged_cost} "
+                     f"token={tc} delta={delta}")
+        return {'token_cost': tc, 'delta': delta,
+                'effective_cost': round(float(charged_cost or 0.0) + delta, 6),
+                'balance': balance}
+    except Exception as e:
+        logging.error(f"token billing reconcile failed for {owner}: {e}")
+        return None
 
 
 def _calculate_cost(content: str, model: str, type: Literal["input", "output"] = "input",

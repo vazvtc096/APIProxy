@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>好友请求 - 社区</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style nonce="{{ csp_nonce }}">
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #fafafa;
+            color: #1a1a1a;
+            min-height: 100vh;
+        }
+        .navbar {
+            position: fixed; top: 0; left: 0; right: 0; height: 64px;
+            background: white; border-bottom: 1px solid #f0f0f0;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 24px; z-index: 100;
+        }
+        .navbar-left { display: flex; align-items: center; gap: 12px; }
+        .logo {
+            width: 36px; height: 36px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px; display: flex; align-items: center; justify-content: center;
+        }
+        .logo svg { width: 20px; height: 20px; color: white; }
+        .logo-text { font-size: 18px; font-weight: 700; color: #1a1a1a; }
+        .navbar-right { display: flex; align-items: center; gap: 16px; }
+        .balence-display {
+            display: flex; align-items: center; gap: 8px;
+            background: #f0f2ff; padding: 8px 16px; border-radius: 20px;
+        }
+        .balence-icon { color: #667eea; font-size: 16px; }
+        .balence-amount { font-size: 14px; font-weight: 600; color: #667eea; }
+        .user-avatar {
+            width: 40px; height: 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            color: white; font-weight: 600; font-size: 16px; cursor: pointer;
+        }
+        .main-container { display: flex; padding-top: 64px; min-height: 100vh; }
+        .sidebar {
+            width: 240px; background: white; border-right: 1px solid #f0f0f0;
+            padding: 24px 0; position: fixed; top: 64px; bottom: 0; left: 0; overflow-y: auto;
+        }
+        .sidebar-section { margin-bottom: 24px; }
+        .sidebar-section-title {
+            font-size: 11px; font-weight: 600; color: #9ca3af;
+            text-transform: uppercase; letter-spacing: 0.5px;
+            padding: 0 20px; margin-bottom: 8px;
+        }
+        .sidebar-item {
+            display: flex; align-items: center; gap: 12px;
+            padding: 10px 20px; cursor: pointer; transition: all 0.15s;
+            font-size: 14px; color: #666; border-left: 3px solid transparent;
+            text-decoration: none;
+        }
+        .sidebar-item:hover { background: #fafafa; color: #1a1a1a; }
+        .sidebar-item.active {
+            background: #f0f2ff; color: #667eea; border-left-color: #667eea; font-weight: 500;
+        }
+        .sidebar-item i { font-size: 18px; width: 20px; text-align: center; }
+        .sidebar-badge {
+            margin-left: auto;
+            background: #fef3c7;
+            color: #d97706;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 10px;
+        }
+        .content { flex: 1; margin-left: 240px; padding: 32px; }
+        .page-header { margin-bottom: 24px; }
+        .page-title { font-size: 24px; font-weight: 700; color: #1a1a1a; }
+        .page-subtitle { font-size: 14px; color: #666; margin-top: 4px; }
+        .btn {
+            padding: 10px 20px; font-size: 14px; font-weight: 500;
+            border-radius: 10px; cursor: pointer; transition: all 0.2s;
+            border: none; display: inline-flex; align-items: center; gap: 8px;
+            text-decoration: none;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4); }
+        .btn-secondary {
+            background: #f3f4f6; color: #374151;
+        }
+        .btn-secondary:hover { background: #e5e7eb; }
+        .btn-success {
+            background: #f0fdf4; color: #16a34a;
+        }
+        .btn-success:hover { background: #dcfce7; }
+        .btn-danger {
+            background: #fef2f2; color: #dc2626;
+        }
+        .btn-danger:hover { background: #fee2e2; }
+        .btn-sm { padding: 6px 12px; font-size: 13px; }
+        .card {
+            background: white; border-radius: 16px; padding: 24px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+            margin-bottom: 20px;
+        }
+        .card-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; color: #1a1a1a; }
+        .request-item {
+            display: flex; align-items: center; gap: 16px;
+            padding: 16px; border-radius: 12px;
+            transition: all 0.15s;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .request-item:last-child { border-bottom: none; }
+        .request-avatar {
+            width: 48px; height: 48px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            color: white; font-weight: 600; font-size: 18px;
+            flex-shrink: 0;
+        }
+        .request-info { flex: 1; min-width: 0; }
+        .request-name { font-size: 15px; font-weight: 600; color: #1a1a1a; margin-bottom: 4px; }
+        .request-time { font-size: 13px; color: #9ca3af; }
+        .request-actions { display: flex; gap: 8px; }
+        .tabs {
+            display: flex; gap: 8px; margin-bottom: 20px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .tab {
+            padding: 12px 20px;
+            font-size: 14px;
+            font-weight: 500;
+            color: #666;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.15s;
+        }
+        .tab:hover { color: #1a1a1a; }
+        .tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #9ca3af;
+        }
+        .empty-state i { font-size: 48px; margin-bottom: 16px; opacity: 0.5; }
+        .empty-state p { font-size: 14px; }
+        .toast {
+            position: fixed; top: 80px; right: 24px;
+            padding: 12px 20px; border-radius: 10px;
+            font-size: 14px; font-weight: 500;
+            z-index: 2000;
+            transform: translateX(120%);
+            transition: transform 0.3s ease;
+        }
+        .toast.show { transform: translateX(0); }
+        .toast.success { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+        .toast.error { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+    </style>
+{% include "_navbar_css.html" %}
+</head>
+<body>
+    <!-- 导航栏 -->
+    {% include "_navbar.html" %}
+
+    <div class="main-container">
+        {% with active_page = 'friend_requests' %}
+        {% include "_sidebar.html" %}
+        {% endwith %}
+
+        <!-- 主内容区 -->
+        <main class="content">
+            <div class="page-header">
+                <h1 class="page-title">好友请求</h1>
+                <p class="page-subtitle">管理收到的和发出的好友请求</p>
+            </div>
+
+            <div class="card">
+                <div class="tabs">
+                    <div class="tab active" data-action="switchTab" data-args="'received'">收到的请求</div>
+                    <div class="tab" data-action="switchTab" data-args="'sent'">发出的请求</div>
+                </div>
+                <div id="requestList">
+                    <div class="empty-state">
+                        <i class="bi bi-person-plus"></i>
+                        <p>加载中...</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Toast 提示 -->
+    <div class="toast" id="toast"></div>
+
+    <script nonce="{{ csp_nonce }}">
+        let currentTab = 'received';
+        let receivedRequests = [];
+        let sentRequests = [];
+
+        // 页面加载
+        document.addEventListener('DOMContentLoaded', function() {
+            loadUserInfo();
+            loadRequests();
+        });
+
+        // 加载用户信息
+        async function loadUserInfo() {
+            try {
+                const data = await window.getUserInfo();
+                if (data) {
+                    document.getElementById('balenceAmount').textContent = '¥' + parseFloat(data.balence || 0).toFixed(2);
+                    document.getElementById('userAvatar').textContent = data.user_name.charAt(0).toUpperCase();
+                }
+            } catch (e) {
+                console.error('加载用户信息失败:', e);
+            }
+        }
+
+        // 加载好友请求
+        async function loadRequests() {
+            try {
+                const res = await fetch('/api/friends/requests');
+                const data = await res.json();
+                if (data.received && data.sent) {
+                    receivedRequests = data.received;
+                    sentRequests = data.sent;
+                    
+                    const count = receivedRequests.length;
+                    const badge = document.getElementById('requestBadge');
+                    badge.textContent = count;
+                    badge.style.display = count > 0 ? 'flex' : 'none';
+                    
+                    renderRequests();
+                }
+            } catch (e) {
+                console.error('加载好友请求失败:', e);
+                document.getElementById('requestList').innerHTML = `
+                    <div class="empty-state">
+                        <i class="bi bi-exclamation-circle"></i>
+                        <p>加载失败，请刷新重试</p>
+                    </div>
+                `;
+            }
+        }
+
+        // 切换标签
+        function switchTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+            renderRequests();
+        }
+
+        // 渲染请求列表
+        function renderRequests() {
+            const container = document.getElementById('requestList');
+            const requests = currentTab === 'received' ? receivedRequests : sentRequests;
+
+            if (requests.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <i class="bi bi-person-plus"></i>
+                        <p>${currentTab === 'received' ? '暂无收到的好友请求' : '暂无发出的好友请求'}</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = requests.map(req => {
+                const name = currentTab === 'received' ? req.from_name : req.to_name;
+                const uid = currentTab === 'received' ? req.from_uid : req.to_uid;
+                const time = formatTime(req.created_at);
+                
+                let actions = '';
+                if (currentTab === 'received') {
+                    actions = `
+                        <div class="request-actions">
+                            <button class="btn btn-success btn-sm" data-action="acceptRequest" data-args="${req.id}">
+                                <i class="bi bi-check"></i>
+                                接受
+                            </button>
+                            <button class="btn btn-danger btn-sm" data-action="rejectRequest" data-args="${req.id}">
+                                <i class="bi bi-x"></i>
+                                拒绝
+                            </button>
+                        </div>
+                    `;
+                } else {
+                    actions = `<span style="font-size: 13px; color: #9ca3af;">等待对方处理</span>`;
+                }
+                
+                return `
+                    <div class="request-item">
+                        <div class="request-avatar">${name.charAt(0).toUpperCase()}</div>
+                        <div class="request-info">
+                            <div class="request-name">${name}</div>
+                            <div class="request-time">${time}</div>
+                        </div>
+                        ${actions}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // 接受好友请求
+        async function acceptRequest(requestId) {
+            try {
+                const res = await fetch('/api/friends/requests/' + requestId + '/accept', {
+                    method: 'POST'
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    showToast('已接受好友请求', 'success');
+                    loadRequests();
+                } else {
+                    showToast(data.error || '操作失败', 'error');
+                }
+            } catch (e) {
+                showToast('操作失败，请重试', 'error');
+            }
+        }
+
+        // 拒绝好友请求
+        async function rejectRequest(requestId) {
+            try {
+                const res = await fetch('/api/friends/requests/' + requestId + '/reject', {
+                    method: 'POST'
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    showToast('已拒绝好友请求', 'success');
+                    loadRequests();
+                } else {
+                    showToast(data.error || '操作失败', 'error');
+                }
+            } catch (e) {
+                showToast('操作失败，请重试', 'error');
+            }
+        }
+
+        // 格式化时间
+        function formatTime(timeStr) {
+            if (!timeStr) return '';
+            const date = new Date(timeStr);
+            const now = new Date();
+            const diff = now - date;
+            
+            if (diff < 60000) return '刚刚';
+            if (diff < 3600000) return Math.floor(diff / 60000) + '分钟前';
+            if (diff < 86400000) return Math.floor(diff / 3600000) + '小时前';
+            if (diff < 604800000) return Math.floor(diff / 86400000) + '天前';
+            
+            return date.toLocaleDateString();
+        }
+
+        // 显示 Toast
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = 'toast ' + type + ' show';
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

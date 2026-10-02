@@ -43,9 +43,9 @@
   <aside class="doc-sidebar">
     <div class="doc-brand">Cloud LLM API 代理</div>
     <div class="doc-nav-title">文档</div>
-    <a class="doc-nav-link" href="/docs">文档中心</a>
+    <a class="doc-nav-link" href="/docs" target="_blank" rel="noopener">文档中心</a>
     {% for d in docs %}
-    <a class="doc-nav-link{% if d.slug == active %} active{% endif %}" href="/docs/{{ d.slug }}">{{ d.title }}</a>
+    <a class="doc-nav-link{% if d.slug == active %} active{% endif %}" href="/docs/{{ d.slug }}" target="_blank" rel="noopener">{{ d.title }}</a>
     {% endfor %}
   </aside>
   <div class="doc-body">

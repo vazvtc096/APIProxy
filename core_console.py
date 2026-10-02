@@ -281,9 +281,13 @@ def _cmd_announce(args) -> dict:
             cur = conn.cursor()
             cur.execute("SELECT uid, user_name FROM users WHERE is_admin = 1 ORDER BY id LIMIT 1")
             admin = cur.fetchone()
-            sender_uid = admin["uid"] if admin else "system"
+            # 兜底发件人：系统虚拟用户 0x0「系统」（恒定 UID，可进聊天）
+            sender_uid = admin["uid"] if admin else "000000000000"
             sender_name = admin["user_name"] if admin else "系统"
-            cur.execute("SELECT uid, user_name FROM users WHERE uid IS NOT NULL AND uid != ''")
+            # 收件人排除系统虚拟用户（UID 池 0~15），避免系统给自己投递副本
+            cur.execute(
+                "SELECT uid, user_name FROM users WHERE uid IS NOT NULL AND uid != '' "
+                "AND (LENGTH(uid) != 12 OR SUBSTR(uid, 1, 11) != '00000000000')")
             recipients = cur.fetchall()
             aid = "ann_" + __import__("uuid").uuid4().hex[:12]
             cur.execute(
@@ -559,6 +563,49 @@ def _cmd_bastion_replay(args) -> dict:
     return {"success": True, "output": "\n".join(lines), "data": {"audit": rows}}
 
 
+def _cmd_ip_audit(args) -> dict:
+    """IP 审计模式：列出访问申请（含 pending/approved/denied）。"""
+    from . import ip_audit
+    rows = ip_audit.list_records()
+    st = ip_audit.status_summary()
+    if not rows:
+        return {"success": True, "output": "无 IP 访问申请记录", "data": st}
+    lines = [f"IP 访问申请（共 {st['total']}：pending {st['pending']} / "
+             f"approved {st['approved']} / denied {st['denied']}）：", ""]
+    for r in rows:
+        import time as _t
+        exp = _t.strftime("%m-%d %H:%M", _t.localtime(r["created_at"] + r["expires_in"]))
+        lines.append(f"  {r['access_id']}  [{r['status']:8s}]  ip={r['ip']}  "
+                     f"申请于 {exp}  剩余 {r['expires_in']//60}min"
+                     + (f"  Token有效" if r["token_valid"] else ""))
+    lines += ["", "审批：ip_audit_approve <AccessID>  拒绝/吊销：ip_audit_deny <AccessID>"]
+    return {"success": True, "output": "\n".join(lines), "data": st}
+
+
+def _cmd_ip_audit_approve(args) -> dict:
+    if not args:
+        return {"success": False, "output": "用法：ip_audit_approve <AccessID>", "data": {}}
+    from . import ip_audit
+    from .configs import IP_AUDIT_TOKEN_TTL_HOURS
+    token, err = ip_audit.approve_access(args[0].strip(), "console")
+    if not token:
+        return {"success": False, "output": f"批准失败：{err}（{args[0]}）", "data": {}}
+    return {"success": True,
+            "output": f"已批准 {args[0].strip()}，访客将在等待页收到加密 Token"
+                      f"（{IP_AUDIT_TOKEN_TTL_HOURS} 小时有效，绑定其 IP）",
+            "data": {"access_id": args[0].strip()}}
+
+
+def _cmd_ip_audit_deny(args) -> dict:
+    if not args:
+        return {"success": False, "output": "用法：ip_audit_deny <AccessID> [note]", "data": {}}
+    from . import ip_audit
+    ok, err = ip_audit.deny_access(args[0].strip(), "console", " ".join(args[1:]))
+    if not ok:
+        return {"success": False, "output": f"拒绝失败：{err}（{args[0]}）", "data": {}}
+    return {"success": True, "output": f"已拒绝/吊销 {args[0].strip()}", "data": {"access_id": args[0].strip()}}
+
+
 def _cmd_bastion_pending(args) -> dict:
     from . import bastion
     rows = bastion.pending_approvals()
@@ -699,6 +746,367 @@ def _cmd_selftest(args) -> dict:
     return {"success": True, "output": "\n".join(lines), "data": res}
 
 
+# --------------------------------------------------------------------------- #
+# 序列异常检测 / JA3 指纹 / 蜜罐账号 运维命令
+# --------------------------------------------------------------------------- #
+def _cmd_seq_anomaly_status(args) -> dict:
+    from . import seq_anomaly
+    st = seq_anomaly.status()
+    lines = ["序列异常检测（Tiny GRU/Transformer）：",
+             f"  启用     : {st['enabled']}",
+             f"  计算后端 : {st.get('backend', 'python')}"
+             + (f"（{st.get('backend_reason', '')}）" if st.get('backend_reason') else ""),
+             f"  模型     : {st['model']}（gru | transformer | both）"
+             + (f"  numpy={st['numpy_version']}" if st.get('numpy_version') else "")
+             + (f"  torch={st['torch_version']}" if st.get('torch_version') else ""),
+             f"  隐藏维度 : {st['hidden']}  窗口: {st['window']}",
+             f"  异常阈值 : surprise > 基线×{st['anomaly_factor']} 且 >1.0",
+             f"  最少样本 : {st['min_samples']}",
+             f"  词表大小 : {st['vocab_size']}",
+             f"  跟踪键数 : {st['tracked_keys']}  已标记异常键: {st['flagged_keys']}"]
+    for t in st.get("tracked_top", [])[:8]:
+        lines.append(f"    {t['key']:24} 样本={t['samples']} 基线={t['baseline']}")
+    return {"success": True, "output": "\n".join(lines), "data": st}
+
+
+# 可通过 CLI 动态切换的安全开关白名单（运行时生效，重启恢复 config.yaml 值）
+_SEC_TOGGLE_KEYS = {
+    "JA3_ENABLED", "JA3_FLAG_NOVEL", "JA3_SYNTHETIC_FALLBACK", "JA3_TRUST_CLOUDFLARE",
+    "HONEYPOT_ENABLED", "HONEYPOT_ON_UNKNOWN_USER", "HONEYPOT_ON_AUTOMATION_LOGIN",
+    "HONEYPOT_TRAP_ACTIONS", "SEQ_ANOMALY_ENABLED", "SEQ_ANOMALY_BLOCK_ON_ANOMALY",
+    "JA3_RL_ENABLED", "JA3_RL_BLOCK",
+    "CRED_STUFFING_ENABLED", "CRED_STUFFING_DEPLOY_HONEYPOT", "CRED_STUFFING_BLOCK",
+    "BOT_SCORE_ENABLED", "BOT_SCORE_BLOCK",
+    "HSTS_ENABLED",
+    "LEAK_GUARD_ENABLED", "WAF_FEED_SEQ_ANOMALY", "WAF_FEED_JA3_THREAT",
+    "JA3_RL_APPLY_SYNTHETIC", "CRED_STUFFING_APPLY_SYNTHETIC",
+}
+
+
+def _cmd_security_set(args) -> dict:
+    """动态切换安全开关（运行时生效；重启后恢复 config.yaml 的值）。
+    用法：sec_set <KEY> <true|false>   仅给 <KEY> 则查询当前值
+    可选 KEY：JA3_ENABLED / JA3_FLAG_NOVEL / JA3_SYNTHETIC_FALLBACK / JA3_TRUST_CLOUDFLARE /
+              HONEYPOT_ENABLED / HONEYPOT_ON_UNKNOWN_USER / HONEYPOT_ON_AUTOMATION_LOGIN /
+              HONEYPOT_TRAP_ACTIONS / SEQ_ANOMALY_ENABLED / SEQ_ANOMALY_BLOCK_ON_ANOMALY /
+              JA3_RL_ENABLED / JA3_RL_BLOCK /
+              CRED_STUFFING_ENABLED / CRED_STUFFING_DEPLOY_HONEYPOT / CRED_STUFFING_BLOCK /
+              BOT_SCORE_ENABLED / BOT_SCORE_BLOCK / HSTS_ENABLED /
+              LEAK_GUARD_ENABLED / WAF_FEED_SEQ_ANOMALY / WAF_FEED_JA3_THREAT /
+              JA3_RL_APPLY_SYNTHETIC / CRED_STUFFING_APPLY_SYNTHETIC
+    """
+    if not args:
+        return {"success": False,
+                "output": "用法：sec_set <KEY> [true|false]\n可选 KEY:\n  " + "\n  ".join(sorted(_SEC_TOGGLE_KEYS)),
+                "data": {}}
+    key = args[0].strip().upper()
+    if key not in _SEC_TOGGLE_KEYS:
+        return {"success": False, "output": f"未知或不可动态修改的开关：{key}", "data": {}}
+    if len(args) < 2:
+        cur = getattr(configs, key, None)
+        return {"success": True, "output": f"{key} = {cur}", "data": {key: cur}}
+    val = args[1].strip().lower()
+    if val not in ("true", "false", "1", "0", "on", "off"):
+        return {"success": False, "output": "值必须是 true/false（或 1/0/on/off）", "data": {}}
+    new_val = val in ("true", "1", "on")
+    try:
+        setattr(configs, key, new_val)
+        configs._RAW[key] = new_val  # 运行期缓存；reload 会重读 yaml 覆盖
+        return {"success": True,
+                "output": f"{key} = {new_val}\n（运行时已生效；重启后恢复 config.yaml 的值）",
+                "data": {key: new_val}}
+    except Exception as e:
+        return {"success": False, "output": f"设置失败：{e}", "data": {}}
+
+
+def _cmd_ja3_status(args) -> dict:
+    from . import ja3
+    st = ja3.status()
+    lines = ["JA3/JA4 客户端指纹：",
+             f"  启用           : {st['enabled']}",
+             f"  陌生指纹告警   : {st['flag_novel']}",
+             f"  合成指纹兜底   : {st['synthetic_fallback']}",
+             f"  信任 Cloudflare : {st['trust_cloudflare']}",
+             f"  登记指纹总数   : {st['total']}  已标记: {st['flagged']}"]
+    return {"success": True, "output": "\n".join(lines), "data": st}
+
+
+def _cmd_ja3_list(args) -> dict:
+    from . import ja3
+    limit = int(args[0]) if args and args[0].isdigit() else 20
+    only_flagged = bool(args and args[0] in ("flagged", "--flagged", "-f"))
+    rows = ja3.list_fingerprints(limit, only_flagged)
+    if not rows:
+        return {"success": True, "output": "暂无 JA3 指纹", "data": {"fingerprints": []}}
+    lines = [f"最近 JA3 指纹（{len(rows)} 条）：", ""]
+    for r in rows:
+        tag = "  [陌生]" if r.get("is_flagged") else ""
+        lines.append(f"  {r['hash']}{tag}  见={r.get('seen_count')}  ja4={r.get('ja4') or '-'}")
+        lines.append(f"      {r.get('note') or ''}  末见={r.get('last_seen')}")
+    return {"success": True, "output": "\n".join(lines), "data": {"fingerprints": rows}}
+
+
+def _cmd_honeypot_list(args) -> dict:
+    from . import honeypot
+    rows = honeypot.list_honeypots()
+    if not rows:
+        return {"success": True, "output": "暂无蜜罐账号", "data": {"honeypots": []}}
+    lines = [f"蜜罐账号（{len(rows)} 个）：", ""]
+    for r in rows:
+        dis = " [已拆除]" if r.get("is_disarmed") else ""
+        lines.append(f"  {r['bait_username']}{dis}  IP={r.get('attacker_ip')}  JA3={r.get('ja3_hash') or '-'}")
+        lines.append(f"      原因={r.get('reason')}  到期={r.get('expires_at')}  假余额={r.get('balence')}")
+    return {"success": True, "output": "\n".join(lines), "data": {"honeypots": rows}}
+
+
+def _cmd_honeypot_disarm(args) -> dict:
+    if not args:
+        return {"success": False, "output": "用法：honeypot_disarm <bait_username>", "data": {}}
+    from . import honeypot
+    name = args[0].strip()
+    res = _run_coro(honeypot.disarm_honeypot(name))
+    return {"success": res.get("disarmed", False),
+            "output": f"蜜罐 {name} 已拆除" if res.get("disarmed") else f"拆除失败：{res.get('error')}",
+            "data": res}
+
+
+def _cmd_honeypot_expire(args) -> dict:
+    from . import honeypot
+    n = _run_coro(honeypot.expire_honeypots())
+    return {"success": True, "output": f"已清理 {n} 个过期蜜罐账号", "data": {"cleaned": n}}
+
+
+def _cmd_ja3_threat_status(args) -> dict:
+    """JA3 维度限流 + 凭证填充检测的运行状态与配置。"""
+    from . import ja3_threat
+    st = ja3_threat.status()
+    lines = ["JA3 维度限流 + 凭证填充检测（攻击识别层）：",
+             "  [JA3 维度限流]",
+             f"    启用         : {st['ja3_rl_enabled']}",
+             f"    触发即拦截   : {st['ja3_rl_block']}（默认关，仅记录）",
+             f"    窗口         : {st['ja3_rl_window']}s",
+             f"    请求数上限   : {st['ja3_rl_max_req']}（超即限流）",
+             f"    不同 IP 上限 : {st['ja3_rl_max_ips']}（超即判分布式）",
+             "  [凭证填充检测]",
+             f"    启用         : {st['cred_stuffing_enabled']}",
+             f"    命中即封 IP  : {st['cred_stuffing_block']}（默认关，仅告警+蜜罐）",
+             f"    窗口         : {st['cred_stuffing_window']}s",
+             f"    不同账号上限 : {st['cred_stuffing_max_users']}（超即判 stuffing）",
+             f"  [合成指纹参与度]",
+             f"    限流纳入合成 : {getattr(configs, 'JA3_RL_APPLY_SYNTHETIC', False)}"
+             f"（默认否，syn- 跨用户聚合防误报）",
+             f"    填充纳入合成 : {getattr(configs, 'CRED_STUFFING_APPLY_SYNTHETIC', False)}"
+             f"（默认否，NAT 多人共用同浏览器指纹）",
+             f"  内存追踪指纹数 : {st['tracked_fingerprints']}"]
+    return {"success": True, "output": "\n".join(lines), "data": st}
+
+
+def _cmd_ja3_threat_list(args) -> dict:
+    """列出当前风险最高的 JA3 指纹（按 不同账号数 > 不同 IP 数 > 请求数 排序）。"""
+    from . import ja3_threat
+    limit = int(args[0]) if args and args[0].isdigit() else 30
+    rows = ja3_threat.list_threats(limit)
+    if not rows:
+        return {"success": True, "output": "暂无活跃威胁指纹", "data": {"threats": []}}
+    lines = [f"风险最高的 JA3 指纹（{len(rows)} 条）：", ""]
+    for r in rows:
+        lines.append(f"  {r['ja3_hash']}")
+        lines.append(f"      请求={r['req_count']}  不同IP={r['distinct_ips']}  "
+                     f"不同账号={r['distinct_users']}")
+    return {"success": True, "output": "\n".join(lines), "data": {"threats": rows}}
+
+
+def _cmd_bot_score_status(args) -> dict:
+    """自动化/bot 评分 + 同 Token 多 JA3/IP 并发检测的运行状态。"""
+    from . import bot_score
+    st = bot_score.status()
+    lines = ["自动化/bot 评分 + 同 Token 多 JA3/IP 检测：",
+             f"  启用         : {st['enabled']}",
+             f"  判 bot 阈值  : {st['threshold']}（>= 此分判为 bot）",
+             f"  命中即拦截   : {st['block']}（默认关，仅评分+告警）",
+             f"  绑定表会话数 : {st['tracked_sessions']} / 上限 {st['max_sessions']}"]
+    return {"success": True, "output": "\n".join(lines), "data": st}
+
+
+def _cmd_bot_score_list(args) -> dict:
+    """列出跨 JA3/跨 IP 复用的可疑会话（会话/token 被盗用嫌疑）。"""
+    from . import bot_score
+    limit = int(args[0]) if args and args[0].isdigit() else 20
+    rows = bot_score.list_risky(limit)
+    if not rows:
+        return {"success": True, "output": "暂无跨 JA3/跨 IP 复用的可疑会话", "data": {"risky": []}}
+    lines = [f"可疑会话（{len(rows)} 个，按风险降序）：", ""]
+    for r in rows:
+        lines.append(f"  {r['session_id']}  用户={r.get('user') or '-'}")
+        lines.append(f"      不同JA3={r['distinct_ja3']}  不同IP={r['distinct_ips']}  "
+                     f"风险={r['risk']}")
+    return {"success": True, "output": "\n".join(lines), "data": {"risky": rows}}
+
+
+def _cmd_hsts_status(args) -> dict:
+    """HSTS（HTTP Strict Transport Security）头部下发状态。"""
+    lines = ["HSTS（Strict-Transport-Security）：",
+             f"  启用           : {configs.HSTS_ENABLED}",
+             f"  max-age        : {configs.HSTS_MAX_AGE}s",
+             f"  includeSubDom. : {configs.HSTS_INCLUDE_SUBDOMAINS}",
+             f"  preload        : {configs.HSTS_PRELOAD}",
+             f"  SSL_ENABLED    : {configs.SSL_ENABLED}（HSTS_ENABLED=None 时跟随它）"]
+    return {"success": True, "output": "\n".join(lines),
+            "data": {"hsts_enabled": configs.HSTS_ENABLED, "max_age": configs.HSTS_MAX_AGE,
+                     "include_subdomains": configs.HSTS_INCLUDE_SUBDOMAINS,
+                     "preload": configs.HSTS_PRELOAD}}
+
+
+def _cmd_kill_on(args) -> dict:
+    """激活全局熔断：kill_on [ttl_min] [reason...]
+    ttl_min 省略 = 手动解除前一直生效；reason 供安全事件与 503 响应展示。"""
+    from . import kill_switch
+    ttl = 0
+    rest = list(args or [])
+    if rest and rest[0].isdigit():
+        ttl = int(rest[0])
+        rest = rest[1:]
+    reason = " ".join(rest).strip()
+    if len(reason) > 200:
+        reason = reason[:200]
+    st = kill_switch.activate(reason=reason, ttl_min=ttl)
+    remain = f"，{st['remain_sec']}s 后自动解除" if st["remain_sec"] else "（需手动 kill_off）"
+    return {"success": True,
+            "output": f"KILL SWITCH 已激活，全站对外请求 503{remain}\n"
+                      f"  原因: {st['reason'] or '(未填写)'}\n"
+                      f"  豁免: 回环 + 内网={st['allow_private']}（/api/console/exec 始终放行）",
+            "data": st}
+
+
+def _cmd_kill_off(args) -> dict:
+    from . import kill_switch
+    st = kill_switch.deactivate()
+    return {"success": True, "output": "KILL SWITCH 已解除，流量恢复", "data": st}
+
+
+def _cmd_kill_status(args) -> dict:
+    from . import kill_switch
+    st = kill_switch.status()
+    if st["active"]:
+        remain = f"{st['remain_sec']}s" if st["remain_sec"] else "无 TTL（手动解除）"
+        out = (f"KILL SWITCH: 【激活中】\n"
+               f"  原因     : {st['reason'] or '(未填写)'}\n"
+               f"  剩余时间 : {remain}\n"
+               f"  激活人   : {st['activated_by']}\n"
+               f"  豁免     : 回环 + 内网={st['allow_private']} + /api/console/exec")
+    else:
+        out = "KILL SWITCH: 未激活（正常服务）"
+    return {"success": True, "output": out, "data": st}
+
+
+def _cmd_leak_status(args) -> dict:
+    """响应侧泄露防护（LLM 出口扫描）运行状态。"""
+    from . import leak_guard
+    st = leak_guard.status()
+    critical = [r["type"] for r in st["rules"] if r["severity"] == "critical"]
+    warn = [r["type"] for r in st["rules"] if r["severity"] == "warn"]
+    lines = ["响应侧泄露防护（leak_guard）：",
+             f"  启用       : {st['enabled']}",
+             f"  模式       : {st['mode']}（monitor=仅告警 redact=critical 脱敏）",
+             f"  已扫描响应 : {st['scanned']}",
+             f"  命中响应   : {st['hits']}（脱敏 {st['redacted']} 处）",
+             f"  内存留痕   : {st['findings_kept']} / 上限 {st['findings_cap']}",
+             f"  critical 规则: {', '.join(critical)}",
+             f"  warn 规则    : {', '.join(warn)}"]
+    if st.get("by_type"):
+        lines.append("  按类型统计 : " + ", ".join(f"{k}={v}" for k, v in st["by_type"].items()))
+    return {"success": True, "output": "\n".join(lines), "data": st}
+
+
+def _cmd_leak_list(args) -> dict:
+    """最近的泄露命中记录（新→旧）。"""
+    from . import leak_guard
+    limit = int(args[0]) if args and args[0].isdigit() else 20
+    rows = leak_guard.list_findings(limit)
+    if not rows:
+        return {"success": True, "output": "暂无泄露命中记录", "data": {"findings": []}}
+    lines = [f"最近泄露命中（{len(rows)} 条，新→旧）：", ""]
+    for r in rows:
+        ts = time.strftime("%m-%d %H:%M:%S", time.localtime(r["ts"]))
+        lines.append(f"  #{r['id']} [{r['severity']}] {r['type']} sample={r['sample']} "
+                     f"action={r['action']}")
+        lines.append(f"      {ts}  user={r.get('user') or '-'} model={r.get('model') or '-'} "
+                     f"stream={r.get('stream')}")
+    return {"success": True, "output": "\n".join(lines), "data": {"findings": rows}}
+
+
+def _cmd_sec_timeline(args) -> dict:
+    """安全事件时间线：按小时桶聚合 security_events，附最近高危事件。
+    用法：sec_timeline [hours]（默认 24，最大 720）"""
+    hours = int(args[0]) if args and args[0].isdigit() else 24
+    hours = max(1, min(hours, 720))
+    import time as _time_mod
+    from .core import async_db_query
+    since = _time_mod.time() - hours * 3600
+
+    def _parse_ts(v):
+        if v is None:
+            return 0.0
+        if isinstance(v, (int, float)):
+            return float(v)
+        try:
+            from datetime import datetime
+            s = str(v).replace("T", " ")
+            for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S",
+                        "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+                try:
+                    return datetime.strptime(s[:26] if "%f" in fmt else s[:19], fmt).timestamp()
+                except ValueError:
+                    continue
+            return datetime.fromisoformat(str(v)).timestamp()
+        except Exception:
+            return 0.0
+
+    try:
+        rows = _run_coro(async_db_query(
+            "SELECT event_type, severity, risk_score, client_ip, details, action_taken, created_at "
+            "FROM security_events ORDER BY id DESC LIMIT 5000"))
+    except Exception as e:
+        return {"success": False, "output": f"查询 security_events 失败：{e}", "data": {}}
+
+    buckets = {}          # (hour_key) -> {event_type: cnt}
+    total = 0
+    recent_critical = []
+    for r in rows or []:
+        ts = _parse_ts(r.get("created_at"))
+        if not ts or ts < since:
+            continue
+        total += 1
+        hk = _time_mod.strftime("%m-%d %H时", _time_mod.localtime(ts))
+        b = buckets.setdefault(hk, {})
+        et = r.get("event_type") or "unknown"
+        b[et] = b.get(et, 0) + 1
+        if str(r.get("severity")).lower() in ("critical", "high"):
+            recent_critical.append(r)
+
+    lines = [f"安全事件时间线（近 {hours} 小时，共 {total} 条）：", ""]
+    if not buckets:
+        lines.append("  （该时段无安全事件）")
+    for hk in sorted(buckets.keys(), reverse=True)[:48]:
+        summary = "  ".join(f"{k}×{v}" for k, v in
+                            sorted(buckets[hk].items(), key=lambda x: -x[1]))
+        bar = "#" * min(40, sum(buckets[hk].values()))
+        lines.append(f"  {hk}  {bar}")
+        lines.append(f"      {summary}")
+    if recent_critical:
+        lines.append("")
+        lines.append(f"最近高危事件（critical/high，最多 10 条）：")
+        for r in recent_critical[:10]:
+            ts = _parse_ts(r.get("created_at"))
+            tstr = _time_mod.strftime("%m-%d %H:%M:%S", _time_mod.localtime(ts)) if ts else str(r.get("created_at"))
+            det = str(r.get("details") or "")[:80]
+            lines.append(f"  [{tstr}] [{r.get('severity')}] {r.get('event_type')} "
+                         f"ip={r.get('client_ip') or '-'} {det}")
+    return {"success": True, "output": "\n".join(lines),
+            "data": {"total": total, "hours": hours,
+                     "buckets": buckets, "recent_critical": recent_critical[:10]}}
+
+
 NODE_HANDLERS = {
     "whoami": _cmd_whoami,
     "nodes": _cmd_nodes,
@@ -747,6 +1155,30 @@ NODE_HANDLERS = {
     "auth_introspect": _cmd_auth_introspect,
     # 启动自检 / 监控
     "selftest": _cmd_selftest,
+    # 序列异常检测 / JA3 指纹 / 蜜罐账号
+    "seq_anomaly_status": _cmd_seq_anomaly_status,
+    "ja3_status": _cmd_ja3_status,
+    "sec_set": _cmd_security_set,
+    "ja3_list": _cmd_ja3_list,
+    "honeypot_list": _cmd_honeypot_list,
+    "honeypot_disarm": _cmd_honeypot_disarm,
+    "honeypot_expire": _cmd_honeypot_expire,
+    "ja3_threat_status": _cmd_ja3_threat_status,
+    "ja3_threat_list": _cmd_ja3_threat_list,
+    "bot_score_status": _cmd_bot_score_status,
+    "bot_score_list": _cmd_bot_score_list,
+    "hsts_status": _cmd_hsts_status,
+    # 全局熔断 / 响应侧泄露防护 / 安全事件时间线
+    "kill_on": _cmd_kill_on,
+    "kill_off": _cmd_kill_off,
+    "kill_status": _cmd_kill_status,
+    "leak_status": _cmd_leak_status,
+    "leak_list": _cmd_leak_list,
+    "sec_timeline": _cmd_sec_timeline,
+    # IP 直接访问审计（audit 模式审批）
+    "ip_audit": _cmd_ip_audit,
+    "ip_audit_approve": _cmd_ip_audit_approve,
+    "ip_audit_deny": _cmd_ip_audit_deny,
 }
 
 

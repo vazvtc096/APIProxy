@@ -17,7 +17,7 @@ import time
 import logging
 import urllib.request
 
-from quart import request
+from quart import request, g
 from .configs import (
     CLOUDFLARE_TRUSTED,
     CLOUDFLARE_IP_REFRESH_ENABLED,
@@ -232,27 +232,89 @@ def get_client_ip() -> str:
 
     安全前提：仅当请求确实来自可信代理（Cloudflare 或直连/内部反代）时，
     才信任客户端可控头（CF-Connecting-IP / X-Forwarded-For / X-Real-IP）。
+
+    性能：中间件同一请求内多处调用本函数，此处做请求级缓存，
+    避免每处都重新解析 XFF 并扫描 Cloudflare 网段。
+    """
+    _MISS = object()
+    try:
+        cached = getattr(g, "_client_ip_cached", _MISS)
+        if cached is not _MISS:
+            return cached
+    except RuntimeError:
+        pass  # 无请求上下文（后台任务等），直接解析
+
+    ip = _resolve_client_ip()
+
+    try:
+        g._client_ip_cached = ip
+    except RuntimeError:
+        pass
+    return ip
+
+
+def _is_valid_ip(v: str) -> bool:
+    if not v:
+        return False
+    try:
+        ipaddress.ip_address(v)
+        return True
+    except ValueError:
+        return False
+
+
+def _pick_proxy_ip(headers, remote: str) -> str:
+    """本机可信代理（cloudflared / tls_front，均从 127.0.0.1 连入）场景下解析真实客户端 IP。
+
+    优先级：
+      1. CF-Connecting-IP —— 经 CF 隧道时由边缘权威覆盖（客户端伪造值到不了这里）；
+      2. X-Forwarded-For 取【最右】合法 IP —— CF 边缘把真实直连者追加在末尾，
+         客户端自带的伪造段在前部；tls_front 则只注入单个真实 peer；
+         绝不能取最左项（那正是客户端可控的伪造位）。
+      3. X-Real-IP —— tls_front 强制覆盖注入，可信。
+    所有取出的值必须能解析为合法 IP，否则继续降级，最终回落 remote。
+    """
+    cf_ip = (headers.get("CF-Connecting-IP") or "").strip()
+    if _is_valid_ip(cf_ip):
+        return cf_ip
+    xff = (headers.get("X-Forwarded-For") or "").strip()
+    if xff:
+        parts = [p.strip() for p in xff.split(",") if p.strip()]
+        for p in reversed(parts):
+            if _is_valid_ip(p):
+                return p
+    xri = (headers.get("X-Real-IP") or "").strip()
+    if _is_valid_ip(xri):
+        return xri
+    return remote or "unknown"
+
+
+def _resolve_client_ip() -> str:
+    """实际解析逻辑（由 get_client_ip 包裹请求级缓存）。
+
+    安全核心：客户端可控头（CF-Connecting-IP / X-Forwarded-For / X-Real-IP）
+    仅当请求来自【本机回环】这一可信代理时才解析。历史版本曾对一切来源取
+    XFF 最左项——任何直连/经隧道的攻击者带一个伪造 XFF 就能冒充任意 IP
+    （限流、封禁、ip_audit 的 IP 绑定全部失效），已修复。
     """
     remote = request.remote_addr or ""
 
     if is_cloudflare_request():
+        # remote 落在 CF 官方网段：CF 头权威
         cf_ip = (request.headers.get("CF-Connecting-IP") or "").strip()
         if cf_ip:
             return cf_ip
-        xff = (request.headers.get("X-Forwarded-For") or "").strip()
-        if xff:
-            return xff.split(",")[0].strip()
-        xri = (request.headers.get("X-Real-IP") or "").strip()
-        if xri:
-            return xri
-        return remote or "unknown"
+        return _pick_proxy_ip(request.headers, remote)
 
-    xff = (request.headers.get("X-Forwarded-For") or "").strip()
-    if xff:
-        return xff.split(",")[0].strip()
-    xri = (request.headers.get("X-Real-IP") or "").strip()
-    if xri:
-        return xri
+    # 本机回环 = 唯一可信代理链路（cloudflared / tls_front 都从 127.0.0.1 连入）
+    try:
+        raddr = ipaddress.ip_address(remote)
+    except ValueError:
+        raddr = None
+    if raddr is not None and raddr.is_loopback:
+        return _pick_proxy_ip(request.headers, remote)
+
+    # 其余一切来源（公网直连 / 局域网直连）：客户端可控头一律无视
     return remote or "unknown"
 
 

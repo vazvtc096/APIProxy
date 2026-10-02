@@ -605,29 +605,49 @@
             alert.classList.remove('show');
         }
 
-        // 加载用户信息
+        // 加载用户信息（字段全部做空值兜底，避免上游数据异常时抛错留下占位符）
+        function fmtTime(s) {
+            if (!s) return '-';
+            const d = new Date(String(s).replace(' ', 'T'));
+            if (isNaN(d.getTime())) return String(s);
+            return d.toLocaleString('zh-CN', { hour12: false });
+        }
+        function applyUserInfo(data) {
+            if (!data || !data.username) return false;
+            const uname = String(data.username);
+            const bal = Number(data.balence || 0);
+
+            // 更新导航栏
+            document.getElementById('balenceAmount').textContent = '¥' + bal.toFixed(6);
+            document.getElementById('avatarText').textContent = (uname.charAt(0) || 'U').toUpperCase();
+            document.getElementById('userName').textContent = uname;
+            document.getElementById('userUid').textContent = 'UID: ' + (data.uid || '-');
+
+            // 更新账户信息
+            document.getElementById('infoUsername').textContent = uname;
+            document.getElementById('infoUid').textContent = data.uid || '-';
+            document.getElementById('infoEmail').textContent = data.email || '未绑定';
+            document.getElementById('infoBalance').textContent = '¥' + bal.toFixed(6);
+            document.getElementById('infoCreatedAt').textContent = fmtTime(data.created_at);
+            document.getElementById('infoApiKeys').textContent = ((data.apikeys || []).length) + ' / 10';
+            return true;
+        }
         async function loadUserInfo() {
             try {
-                const data = await window.getUserInfo();
-                if (!data) {
-                    window.location.href = '/login';
-                    return;
+                let data = await window.getUserInfo();
+                // SSE 快照异常或缺字段时，直接拉取一次 /userinfo 兜底
+                if (!applyUserInfo(data)) {
+                    try {
+                        const r = await fetch('/userinfo');
+                        if (r.ok) data = await r.json();
+                    } catch (e) { /* ignore */ }
+                    if (!applyUserInfo(data)) {
+                        window.location.href = '/login';
+                        return;
+                    }
                 }
-
-                // 更新导航栏
-                document.getElementById('balenceAmount').textContent = '¥' + Number(data.balence).toFixed(6);
-                document.getElementById('avatarText').textContent = data.username.charAt(0).toUpperCase();
-                document.getElementById('userName').textContent = data.username;
-                document.getElementById('userUid').textContent = 'UID: ' + (data.uid || '-');
-
-                // 更新账户信息
-                document.getElementById('infoUsername').textContent = data.username;
-                document.getElementById('infoUid').textContent = data.uid || '-';
-                document.getElementById('infoEmail').textContent = data.email || '未绑定';
-                document.getElementById('infoBalance').textContent = '¥' + Number(data.balence).toFixed(6);
-                document.getElementById('infoCreatedAt').textContent = data.created_at || '-';
-                document.getElementById('infoApiKeys').textContent = (data.apikeys ? data.apikeys.length : 0) + ' / 10';
-
+                // 后续余额/资料变化由统一 SSE 推送实时刷新
+                document.addEventListener('userinfo-update', (e) => { if (e.detail) applyUserInfo(e.detail); });
             } catch (e) {
                 console.error('加载用户信息失败:', e);
             }

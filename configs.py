@@ -74,6 +74,14 @@ def _get_int(key, default=0):
         return default
 
 
+def _get_float(key, default=0.0):
+    try:
+        v = _RAW.get(key, None)
+        return float(v) if v is not None else default
+    except (TypeError, ValueError):
+        return default
+
+
 def _env_str(name, key, default=""):
     """优先读裸环境变量，回退到配置文件值。"""
     v = os.getenv(name)
@@ -118,8 +126,16 @@ DATABASE_URL = os.getenv("DATABASE_URL", _get("DATABASE_URL", "")) or ""
 # 格式：redis://[:password@]host:6379/0
 REDIS_URL = os.getenv("REDIS_URL", _get("REDIS_URL", "")) or ""
 
+# ---------- 时区偏移（展示层，数据库存储不变） ----------
+# 数据库里 timestamp without time zone 存的是「本地墙钟时刻」（PG 会话时区 +
+# Python datetime.now() 本地），即服务器本地时区的时刻。
+# Quart 默认 jsonify 会把 naive datetime 序列化成 GMT 格式，前端 new Date() 再按
+# UTC 转本地，导致展示偏移错误。这里把 naive 时间标注成服务器本地时区后返回。
+# 默认 None = 自动检测当前系统本地时区；也可显式指定小时数（如 8）覆盖。
+TIMEZONE_OFFSET_HOURS = _env_int("TIMEZONE_OFFSET_HOURS", "TIMEZONE_OFFSET_HOURS", None)
+
 # ---------- 服务绑定（命令行 --host / --port / --debug 可覆盖） ----------
-BIND_HOST = os.getenv("BIND_HOST", "0.0.0.0")        # HTTP/HTTPS 监听地址
+BIND_HOST = _env_str("BIND_HOST", "BIND_HOST", "0.0.0.0")        # HTTP/HTTPS 监听地址（env > config.yaml > 默认）
 PORT = int(os.getenv("PORT", "5000"))                # 单机模式 HTTP 端口
 DEBUG = os.getenv("DEBUG", "false").strip().lower() == "true"  # 调试模式（生产禁止）
 
@@ -171,13 +187,29 @@ OAUTH_JWT_SECRET = _get("OAUTH_JWT_SECRET", "") or ""
 OAUTH_REGISTRATION_OPEN = _get_bool("OAUTH_REGISTRATION_OPEN", True)
 
 # ---------- SMTP ----------
-SMTP_SERVER = _get("SMTP_SERVER", "smtp.163.com")
-SMTP_PORT = _get_int("SMTP_PORT", 465)
-SMTP_USER = _get("SMTP_USER", "") or ""
-SMTP_PASS = _get("SMTP_PASS", "") or ""
-SMTP_FROM = _get("SMTP_FROM", "Cloud LLM API 代理")
-# SMTP 是否已配置（用户名 + 密码均非空才视为可用）
-SMTP_CONFIGURED = bool(SMTP_USER and SMTP_PASS)
+# SMTP_SETTINGS 为运行时可变字典（系统设置页 WebUI 热改）；下面的 SMTP_* 常量
+# 仅为兼容旧引用的 import 时快照，热路径应读 SMTP_SETTINGS / smtp_configured()。
+SMTP_SETTINGS = {
+    "server": _get("SMTP_SERVER", "smtp.163.com"),
+    "port": _get_int("SMTP_PORT", 465),
+    "user": _get("SMTP_USER", "") or "",
+    "pass": _get("SMTP_PASS", "") or "",
+    "from": _get("SMTP_FROM", "Cloud LLM API 代理"),
+}
+
+
+def smtp_configured() -> bool:
+    """SMTP 是否已配置（用户名 + 密码均非空才视为可用；随 WebUI 修改实时变化）。"""
+    return bool(SMTP_SETTINGS.get("user") and SMTP_SETTINGS.get("pass"))
+
+
+SMTP_SERVER = SMTP_SETTINGS["server"]
+SMTP_PORT = SMTP_SETTINGS["port"]
+SMTP_USER = SMTP_SETTINGS["user"]
+SMTP_PASS = SMTP_SETTINGS["pass"]
+SMTP_FROM = SMTP_SETTINGS["from"]
+# SMTP 是否已配置（兼容旧引用的 import 时快照，勿在热路径使用）
+SMTP_CONFIGURED = smtp_configured()
 
 # ---------- RCON 远程控制台 ----------
 RCON_ENABLED = _get_bool("RCON_ENABLED", True)
@@ -190,10 +222,57 @@ CONSOLE_ENABLED = RCON_ENABLED
 CONSOLE_SECRET = RCON_SECRET
 
 # ---------- HTTPS/SSL ----------
+# ---------- IP 直接访问策略 ----------
+# 裸 IP 访问时 TLS 证书无法匹配（证书签给域名），session cookie 可能经明文 HTTP 泄漏。
+# allow  = 不限制（旧行为）
+# secure = 允许访问，但 session cookie 强制带 Secure 属性（浏览器不再经明文 HTTP 收发 cookie）
+# deny   = 直接拒绝服务（403）；IP_ACCESS_LOCAL_EXEMPT 豁免回环地址（127.0.0.0/8 与 ::1）
+IP_ACCESS_MODE = _get("IP_ACCESS_MODE", "deny")                       # allow | secure | deny | audit
+IP_ACCESS_LOCAL_EXEMPT = _get_bool("IP_ACCESS_LOCAL_EXEMPT", True)    # deny/audit 模式豁免本地回环
+# audit 模式参数：申请 1 小时过期；批准后签发的临时 Token 绑定 IP，默认 24 小时有效
+IP_AUDIT_PENDING_TTL_HOURS = _env_int("APIPROXY_IP_AUDIT_PENDING_TTL_HOURS", "IP_AUDIT_PENDING_TTL_HOURS", 1)
+IP_AUDIT_TOKEN_TTL_HOURS = _env_int("APIPROXY_IP_AUDIT_TOKEN_TTL_HOURS", "IP_AUDIT_TOKEN_TTL_HOURS", 24)
+IP_AUDIT_MAX_PENDING = _env_int("APIPROXY_IP_AUDIT_MAX_PENDING", "IP_AUDIT_MAX_PENDING", 200)
+# ---------- HTTPS/SSL ----------
 SSL_ENABLED = _get_bool("SSL_ENABLED", False)
+# 生产服务器开关：HTTP 模式是否用 Hypercorn（ASGI）启动，而不是 Quart 自带的 Werkzeug 开发服务器。
+# HTTPS 模式本就使用 Hypercorn，此开关仅影响 HTTP 模式。可用 --hypercorn 覆盖。
+HYPERCORN_ENABLED = _get_bool("HYPERCORN_ENABLED", False)
+# config.yaml 里的 hypercorn: 段（服务器参数：backlog/keep_alive_timeout/graceful_timeout 等，
+# 键名即 hypercorn.config.Config 属性名）。优先级最高：覆盖代码默认值与环境变量。
+HYPERCORN_CONFIG: dict = _get("hypercorn", {}) or {}
+if not isinstance(HYPERCORN_CONFIG, dict):
+    HYPERCORN_CONFIG = {}
 SSL_CERT = _get("SSL_CERT", "") or ""
 SSL_KEY = _get("SSL_KEY", "") or ""
 HTTPS_PORT = _get_int("HTTPS_PORT", 5443)
+
+# ---------- HSTS（HTTP Strict Transport Security） ----------
+# 默认行为与历史版本一致：仅当 SSL_ENABLED=true 时下发 HSTS 头。
+# 部署在 Cloudflare 等边缘 HTTPS（源站仍 HTTP）后面时，浏览器侧是 HTTPS，
+# 可把 HSTS_ENABLED 显式设为 true 强制下发（浏览器对纯 HTTP 响应会忽略该头）。
+# HSTS_ENABLED: None = 跟随 SSL_ENABLED；显式 true/false = 强制开/关。
+# 注意：这些键不走顶层 APIPROXY_* 通用覆盖循环（该循环只覆盖配置文件中已存在的
+# 键），因此这里显式读环境变量，保证注释掉配置项时仍可用环境变量开关。
+_HSTS_ENV = os.getenv("APIPROXY_HSTS_ENABLED")
+_HSTS_RAW = _RAW.get("HSTS_ENABLED")
+if _HSTS_ENV is not None:
+    HSTS_ENABLED = _HSTS_ENV.strip().lower() in ("1", "true", "yes", "on")
+elif _HSTS_RAW is not None:
+    HSTS_ENABLED = _get_bool("HSTS_ENABLED", False)
+else:
+    HSTS_ENABLED = None
+HSTS_MAX_AGE = _env_int("APIPROXY_HSTS_MAX_AGE", "HSTS_MAX_AGE", 31536000)  # 1 年（RFC 建议值）
+HSTS_INCLUDE_SUBDOMAINS = _env_bool("APIPROXY_HSTS_INCLUDE_SUBDOMAINS", "HSTS_INCLUDE_SUBDOMAINS", True)
+HSTS_PRELOAD = _env_bool("APIPROXY_HSTS_PRELOAD", "HSTS_PRELOAD", False)    # 提交 hstspreload.org 前再开
+
+# ---------- 静态资源缓存 ----------
+# /static/ 响应的 Cache-Control max-age 秒数；0 = 不设置（维持旧行为）。
+# 静态文件无版本号，设短一点（10 分钟）避免改了 css/js 后浏览器读到旧缓存。
+STATIC_CACHE_MAX_AGE = _env_int("APIPROXY_STATIC_CACHE_MAX_AGE", "STATIC_CACHE_MAX_AGE", 600)
+# Hypercorn worker 回收：每处理 N 个请求后自动重启该 worker（缓解长周期内存泄漏）。
+# 0 = 关闭；仅在 HTTPS 模式且 workers > 1 时生效。可用 --web-max-requests 覆盖。
+WEB_MAX_REQUESTS = _get_int("WEB_MAX_REQUESTS", 0)
 
 # ---------- WAF（Web 应用防火墙）与行为监测 ----------
 WAF_ENABLED = _get_bool("WAF_ENABLED", True)
@@ -222,6 +301,94 @@ IDS_IPS_AUTHFAIL_WINDOW = _get_int("IDS_IPS_AUTHFAIL_WINDOW", 300)       # 暴�
 IDS_IPS_BLOCK_SCORE = _get_int("IDS_IPS_BLOCK_SCORE", 100)  # 累计风险分超此值（prevent）自动封禁
 IDS_IPS_DETECT_SCORE = _get_int("IDS_IPS_DETECT_SCORE", 40) # 累计风险分超此值（detect）升级告警
 IDS_IPS_PARAM_FLOOD = _get_int("IDS_IPS_PARAM_FLOOD", 200)  # 单请求参数数量上限
+
+# ---------- 序列异常检测（Tiny GRU / Tiny Transformer）----------
+# 识别「异常的接口访问顺序」：用轻量序列模型对设备/账号的 API 调用顺序做 next-token
+# 预测，把预测不到的下一步量化为 surprise 分数，持续显著高于该设备自身基线即判定异常。
+# 详见 seq_anomaly.py。默认 detect-only（仅记录告警），不拦截正常流量。
+SEQ_ANOMALY_ENABLED = _get_bool("SEQ_ANOMALY_ENABLED", True)       # 总开关
+SEQ_ANOMALY_BACKEND = _get("SEQ_ANOMALY_BACKEND", "auto")         # auto | torch | numpy | python
+SEQ_ANOMALY_MODEL = _get("SEQ_ANOMALY_MODEL", "gru")              # gru | transformer | both
+SEQ_ANOMALY_TRACK_BY = _get("SEQ_ANOMALY_TRACK_BY", "account")    # account | ip | session
+SEQ_ANOMALY_WINDOW = _get_int("SEQ_ANOMALY_WINDOW", 8)           # 近期 token 窗口长度
+SEQ_ANOMALY_HIDDEN = _get_int("SEQ_ANOMALY_HIDDEN", 16)          # 隐藏维度
+SEQ_ANOMALY_ANOMALY_FACTOR = _get_float("SEQ_ANOMALY_ANOMALY_FACTOR", 2.5)  # 超基线*factor 判异常
+SEQ_ANOMALY_MIN_SAMPLES = _get_int("SEQ_ANOMALY_MIN_SAMPLES", 5) # 至少多少样本后开始判定
+SEQ_ANOMALY_BLOCK_ON_ANOMALY = _get_bool("SEQ_ANOMALY_BLOCK_ON_ANOMALY", False)  # 异常即拦截(谨慎)
+SEQ_ANOMALY_PERSIST = _get_bool("SEQ_ANOMALY_PERSIST", True)     # 落盘快照（重启不丢基线）
+SEQ_ANOMALY_PERSIST_PATH = _get("SEQ_ANOMALY_PERSIST_PATH", "<data>/seq_anomaly.json") or ""
+
+# ---------- JA3 / JA4 客户端指纹（追溯类）----------
+# 稳定标识 TLS 客户端实现，跨 IP/账号关联同一攻击者。代理透传优先，否则合成近似指纹。
+# 详见 ja3.py。
+JA3_ENABLED = _get_bool("JA3_ENABLED", True)                     # 总开关
+JA3_FLAG_NOVEL = _get_bool("JA3_FLAG_NOVEL", True)              # 陌生指纹告警
+JA3_SYNTHETIC_FALLBACK = _get_bool("JA3_SYNTHETIC_FALLBACK", True)  # 无 TLS 可见性时合成指纹
+JA3_TRUST_CLOUDFLARE = _get_bool("JA3_TRUST_CLOUDFLARE", True)  # 信任 Cloudflare 边缘透传的真实 JA3/JA4 (cf-ja3-hash/cf-ja4)
+
+# ---------- JA3 维度限流 + 凭证填充检测（攻击识别层）----------
+# 复用 JA3 指纹识别「换 IP 但 TLS 栈不变」的脚本流量 / 批量试账号的 stuffing 扫描器。
+# 详见 ja3_threat.py。默认 detect-only：只判定+告警，是否拦截由 *_BLOCK 开关控制。
+JA3_RL_ENABLED = _get_bool("JA3_RL_ENABLED", True)              # JA3 维度限流总开关
+JA3_RL_WINDOW = _get_int("JA3_RL_WINDOW", 60)                   # 滑动窗口（秒）
+JA3_RL_MAX_REQ = _get_int("JA3_RL_MAX_REQ", 120)               # 窗口内同 JA3 请求数上限（超即限流）
+JA3_RL_MAX_IPS = _get_int("JA3_RL_MAX_IPS", 8)                 # 窗口内同 JA3 出现的不同 IP 数上限（超即判分布式）
+JA3_RL_BLOCK = _get_bool("JA3_RL_BLOCK", False)                # 触发后是否直接 429（默认关，仅记录）
+
+CRED_STUFFING_ENABLED = _get_bool("CRED_STUFFING_ENABLED", True)       # 凭证填充检测总开关
+CRED_STUFFING_WINDOW = _get_int("CRED_STUFFING_WINDOW", 300)          # 滑动窗口（秒）
+CRED_STUFFING_MAX_USERS = _get_int("CRED_STUFFING_MAX_USERS", 10)     # 窗口内同 JA3 尝试的不同账号数上限
+CRED_STUFFING_DEPLOY_HONEYPOT = _get_bool("CRED_STUFFING_DEPLOY_HONEYPOT", True)  # 命中即布设蜜罐诱捕
+CRED_STUFFING_BLOCK = _get_bool("CRED_STUFFING_BLOCK", False)         # 命中是否封 IP（默认关，仅告警+蜜罐）
+# 合成指纹（syn- 前缀）会把同浏览器/同 UA 的所有用户聚成同一个哈希，跨用户聚合
+# 会造成 JA3 限流与凭证填充的大规模误报（NAT/校园网下多人共用同指纹）。默认把
+# 合成指纹排除在「JA3 维度限流」与「凭证填充判定」之外（仅保留登记追溯）；
+# 拿到真实 JA3（CF Enterprise 或自建反代透传）后可按需开启。
+JA3_RL_APPLY_SYNTHETIC = _get_bool("JA3_RL_APPLY_SYNTHETIC", False)           # 限流是否纳入合成指纹
+CRED_STUFFING_APPLY_SYNTHETIC = _get_bool("CRED_STUFFING_APPLY_SYNTHETIC", False)  # 填充判定是否纳入合成指纹
+
+# ---------- 自动化/bot 评分 + 同 Token 多 JA3/IP 并发检测（攻击识别层·综合）----------
+# 聚合 JA3（合成/陌生）+ 序列异常 surprise + Cloudflare cf-bot-score + 会话指纹绑定，
+# 给出 0~100 机器人分；并直接识别「同一会话 token 出现在多个不同 TLS 栈(多 JA3)/
+# 多个不同 IP」这种会话被盗用强特征。详见 bot_score.py。默认 detect-only。
+BOT_SCORE_ENABLED = _get_bool("BOT_SCORE_ENABLED", True)             # 总开关
+BOT_SCORE_THRESHOLD = _get_int("BOT_SCORE_THRESHOLD", 60)            # >= 此分判为 bot
+BOT_SCORE_BLOCK = _get_bool("BOT_SCORE_BLOCK", False)               # 判 bot 后是否 429（默认关）
+BOT_SCORE_MAX_SESSIONS = _get_int("BOT_SCORE_MAX_SESSIONS", 20000)  # 绑定表 LRU 上限（防内存膨胀）
+
+# ---------- 蜜罐账号（诱捕自动化登录）----------
+# 当自动化程序尝试登录（尤其不存在的用户）时，动态创建临时诱饵账号将其诱入、全程留痕，
+# 真实用户不受影响。详见 honeypot.py。
+HONEYPOT_ENABLED = _get_bool("HONEYPOT_ENABLED", True)           # 总开关
+HONEYPOT_ON_UNKNOWN_USER = _get_bool("HONEYPOT_ON_UNKNOWN_USER", True)   # 自动化+用户不存在→布设
+HONEYPOT_ON_AUTOMATION_LOGIN = _get_bool("HONEYPOT_ON_AUTOMATION_LOGIN", False)  # 自动化登录真实账号(默认关)
+HONEYPOT_FAKE_BALANCE = _get_float("HONEYPOT_FAKE_BALANCE", 0.0) # 诱饵假余额
+HONEYPOT_TTL_MIN = _get_int("HONEYPOT_TTL_MIN", 60)             # 蜜罐生存时长（分钟）
+HONEYPOT_MAX_PER_IP = _get_int("HONEYPOT_MAX_PER_IP", 3)        # 每 IP 活跃蜜罐上限
+HONEYPOT_TRAP_ACTIONS = _get_bool("HONEYPOT_TRAP_ACTIONS", True)  # 蜜罐会话限制敏感操作并留痕
+
+# ---------- 全局熔断开关（Kill Switch，应急止血）----------
+# 与 sec_set 逐项开关互补的「最后一道闸」：激活后全站对外请求立即 503。
+# 纯内存状态（重启自动解除），支持 TTL 到期自动解除；本机回环/内网默认豁免；
+# /api/console/exec 永远放行以便远程管理员 kill_off。详见 kill_switch.py。
+# CLI：kill_on [ttl_min] [reason...] / kill_off / kill_status
+KILL_SWITCH_ALLOW_PRIVATE = _get_bool("KILL_SWITCH_ALLOW_PRIVATE", True)  # 回环/内网豁免
+
+# ---------- 响应侧泄露防护（Leak Guard，LLM 出口扫描）----------
+# LLM 回复内容不受网关控制：出站前正则扫描 API Key / JWT / 私钥块 / PII。
+# monitor = 仅告警留痕（默认零误伤）；redact = critical 命中脱敏后返回。
+# 流式按 delta 扫描 + 跨块拼接缓冲（TAIL_CHARS）。详见 leak_guard.py。
+# CLI：leak_status / leak_list
+LEAK_GUARD_ENABLED = _get_bool("LEAK_GUARD_ENABLED", True)
+LEAK_GUARD_MODE = _get("LEAK_GUARD_MODE", "monitor")                # monitor | redact
+LEAK_GUARD_TAIL_CHARS = _get_int("LEAK_GUARD_TAIL_CHARS", 64)       # 流式跨块拼接缓冲
+LEAK_GUARD_MAX_FINDINGS = _get_int("LEAK_GUARD_MAX_FINDINGS", 200)  # 内存留痕上限（LRU）
+
+# ---------- WAF 命中联动（喂给行为/追溯层）----------
+# WAF 拦截的请求序列进 seq_anomaly 独立 attack: 命名空间（攻击路径画像，
+# 不污染正常基线）；同 JA3 反复被 WAF 拦截计入指纹风险分（ja3_threat_list）。
+WAF_FEED_SEQ_ANOMALY = _get_bool("WAF_FEED_SEQ_ANOMALY", True)
+WAF_FEED_JA3_THREAT = _get_bool("WAF_FEED_JA3_THREAT", True)
 
 # ---------- 上网行为管理（Web 行为过滤 + 全站上网行为审计）----------
 # 与 WAF/IDS 互补：WAF 管攻击、IDS 管入侵，本模块管「员工/用户上网内容合规」。
@@ -338,6 +505,9 @@ def _normalize_upstreams(raw):
                 "priority": int(item.get("priority", 100)),
                 "enabled": bool(item.get("enabled", True)),
                 "disabled_models": [str(m).strip() for m in (item.get("disabled_models") or []) if str(m).strip()],
+                # 多模态声明：vision: true 的上游才允许接收图片/音频请求
+                # （modality 预检测用；DB upstreams 表未加载该列时一律 False）
+                "vision": bool(item.get("vision", False)),
             })
     # 若未配置任何 upstreams，用顶层 baseurl/apikey 兜底成单上游
     if not ups:
@@ -361,6 +531,110 @@ if UPSTREAMS:
 
 # ---------- 计费表（按模型 / 时段；可选 model@upstream 绑定） ----------
 PRICING = _RAW.get("pricing", {}) or {}
+
+# ---------- 上游定时健康探测（可关闭；routing.py 使用） ----------
+_health_raw = _RAW.get("upstream_health", {}) or {}
+UPSTREAM_HEALTH = {
+    "enabled": bool(_health_raw.get("enabled", False)),
+    "interval_seconds": max(30, int(_health_raw.get("interval_seconds", 300))),
+    "max_tokens": max(1, min(100, int(_health_raw.get("max_tokens", 1)))),
+    "probe_model": str(_health_raw.get("probe_model") or "").strip() or None,
+}
+
+# ---------- 多媒体计价（images / audio 端点；¥ 计价） ----------
+_media_raw = (PRICING.get("media") or {}) if isinstance(PRICING, dict) else {}
+MEDIA_PRICING = {
+    "image_per_unit": float(_media_raw.get("image_per_unit", 0.1)),   # 每张图
+    "audio_per_kb": float(_media_raw.get("audio_per_kb", 0.002)),     # 每 KB 音频
+    "rerank_per_doc": float(_media_raw.get("rerank_per_doc", 0.0001)),  # rerank 每文档
+}
+
+# ---------- 余额预警（扣费后余额低于阈值 -> 站内通知 + 邮件，冷却期去重） ----------
+_bal_alert_raw = _RAW.get("balance_alert", {}) or {}
+BALANCE_ALERT = {
+    "enabled": bool(_bal_alert_raw.get("enabled", True)),
+    "threshold": float(_bal_alert_raw.get("threshold", 5.0)),          # 余额低于该值（¥）触发
+    "cooldown_hours": max(1, int(_bal_alert_raw.get("cooldown_hours", 24))),  # 同一用户两次提醒最小间隔
+    "email": bool(_bal_alert_raw.get("email", True)),                  # 是否同时发邮件（需 SMTP）
+}
+
+# ---------- PostgreSQL 定时备份（pg_backup.py 使用；仅 DB_TYPE=postgres 时生效） ----------
+_db_backup_raw = _RAW.get("db_backup", {}) or {}
+DB_BACKUP = {
+    "enabled": bool(_db_backup_raw.get("enabled", True)),
+    "hour": int(_db_backup_raw.get("hour", 3)),                        # 每天几点备份（本地时间）
+    "keep_days": int(_db_backup_raw.get("keep_days", 14)),             # 备份保留天数
+    "dir": str(_db_backup_raw.get("dir", "backups")),                  # 输出目录（相对项目根）
+}
+
+# ---------- 日志保留策略（retention.py 使用；usage_logs/audit_log 定期清理） ----------
+_ret_raw = _RAW.get("retention", {}) or {}
+RETENTION = {
+    "enabled": bool(_ret_raw.get("enabled", True)),
+    "hour": int(_ret_raw.get("hour", 4)),                              # 每天几点执行（本地时间）
+    "usage_days": int(_ret_raw.get("usage_days", 90)),                 # usage_logs 保留天数，0 = 不清理
+    "audit_days": int(_ret_raw.get("audit_days", 180)),                # audit_log 保留天数，0 = 不清理
+    "batch": int(_ret_raw.get("batch", 5000)),                         # 单批删除行数
+}
+
+# ---------- NapCat（OneBot 11）QQ 消息推送（notify.py 使用） ----------
+# 事件源：余额预警（balance_alert）+ 上游进冷却/恢复（routing）。均异步旁路。
+_nap_raw = _RAW.get("napcat", {}) or {}
+NAPCAT = {
+    "enabled": bool(_nap_raw.get("enabled", False)),
+    "base_url": str(_nap_raw.get("base_url", "http://127.0.0.1:3000")).rstrip("/"),
+    "token": str(_nap_raw.get("token", "")),
+    "user_ids": str(_nap_raw.get("user_ids", "")),     # 接收消息的 QQ 号，逗号分隔
+    "group_ids": str(_nap_raw.get("group_ids", "")),   # 接收消息的群号，逗号分隔
+}
+
+# ---------- 真实 token 计费（core_billing.reconcile_token_billing 使用） ----------
+# enabled=False 时沿用字符口径（chars/3 近似 token）；开启后响应完成时按
+# 上游真实 usage 多退少补，缓存命中输入按 cache_hit_ratio 折扣计价。
+_tb_raw = _RAW.get("token_billing", {}) or {}
+TOKEN_BILLING = {
+    "enabled": bool(_tb_raw.get("enabled", False)),
+    "cache_hit_ratio": float(_tb_raw.get("cache_hit_ratio", 0.1)),  # 缓存命中输入价/未命中价
+}
+
+# ---------- 请求参数治理（max_tokens 上限 + temperature/top_p 范围，parampolicy.py） ----------
+_pl_raw = _RAW.get("param_limits", {}) or {}
+try:
+    _pl_temp_range = [float(x) for x in (_pl_raw.get("temperature_range") or [0, 2])]
+    _pl_topp_range = [float(x) for x in (_pl_raw.get("top_p_range") or [0, 1])]
+except (TypeError, ValueError):
+    _pl_temp_range, _pl_topp_range = [0.0, 2.0], [0.0, 1.0]
+PARAM_LIMITS = {
+    "enabled": bool(_pl_raw.get("enabled", True)),
+    "max_tokens_cap": int(_pl_raw.get("max_tokens_cap", 16384)),       # 0 = 不限制
+    "temperature_range": _pl_temp_range,
+    "top_p_range": _pl_topp_range,
+}
+
+# ---------- Playground（调用模型页，playground_chat.py） ----------
+_pg_raw = _RAW.get("playground", {}) or {}
+PLAYGROUND = {
+    # 随请求携带的历史消息条数上限；0 = 不限制（超长由上游模型报错，状态码原样透传）
+    "context_limit": int(_pg_raw.get("context_limit", 0)),
+    # 单条消息落库最大字符数；0 = 不限制
+    "msg_max_len": int(_pg_raw.get("msg_max_len", 0)),
+}
+
+# ---------- analogBank 商户支付网关（余额在线充值） ----------
+_bank_pay = _RAW.get("bank_pay", {}) or {}
+BANK_PAY = {
+    "enabled": bool(_bank_pay.get("enabled")),
+    "api_url": str(_bank_pay.get("api_url") or "").rstrip("/"),
+    # 用户侧收银台前缀（给浏览器跳转用）；未配置时回退 api_url
+    "public_url": str(_bank_pay.get("public_url") or _bank_pay.get("api_url") or "").rstrip("/"),
+    "api_key": str(_bank_pay.get("api_key") or ""),
+    "api_secret": str(_bank_pay.get("api_secret") or ""),
+    # 银行服务器异步回调本服务的地址（同机部署走 127.0.0.1:PORT）
+    "callback_url": str(_bank_pay.get("callback_url")
+                        or "http://127.0.0.1:%s/api/recharge/bank/callback" % _get("PORT", 5000)),
+}
+BANK_PAY_ENABLED = bool(BANK_PAY["enabled"] and BANK_PAY["api_url"]
+                        and BANK_PAY["api_key"] and BANK_PAY["api_secret"])
 
 
 # ---------- 启动时密钥检查 ----------

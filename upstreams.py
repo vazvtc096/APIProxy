@@ -14,8 +14,14 @@ from openai import AsyncOpenAI
 
 from . import configs
 
-# 名称 -> AsyncOpenAI 客户端
+# 名称 -> AsyncOpenAI 客户端（主 key；兼容旧引用：get_client / 健康探测 / playground）
 _CLIENTS = {}
+# 名称 -> [(key_id, client), ...] 密钥池（api_key + api_keys 逐把构建）
+_KEY_CLIENTS = {}
+# key_id -> 冷却截止时间戳（认证类失败冷却，期内轮换跳过该把 key）
+_KEY_COOLDOWN: dict = {}
+_KEY_COOLDOWN_SECONDS = 600
+_KEY_RR = {"n": 0}   # 全局轮换计数（跨上游共享即可，目的只是打散）
 # 名称 -> 该上游支持模型集合（拉取成功后填充；None 表示尚未拉取 = 未知）
 _UPSTREAM_MODELS = {}
 # 模型 -> 可服务该模型的上游名称列表（按优先级升序）
@@ -28,31 +34,132 @@ _CACHE_LOCK = asyncio.Lock()
 
 
 def _build_clients():
-    """根据配置重建客户端注册表（幂等）。"""
+    """根据配置重建客户端注册表（幂等）。
+
+    密钥池：api_key 为主 key，api_keys（逗号/换行分隔）为备用 key；
+    每把 key 独立构建一个 AsyncOpenAI 客户端，请求时按轮换挑一把
+    （认证类失败的单把 key 进入短冷却，见 report_upstream_error）。
+    """
+    _KEY_CLIENTS.clear()
     for u in configs.UPSTREAMS:
         name = u["name"]
-        if not u.get("api_key"):
+        keys = _upstream_keys(u)
+        if not keys:
             # 没有密钥的上游不参与代理（但仍可在目录里占位？这里直接跳过）
             continue
-        try:
-            _CLIENTS[name] = AsyncOpenAI(
-                api_key=u["api_key"],
-                base_url=u["base_url"] or None,
-            )
-        except Exception as e:
-            logging.error(f"Failed to build upstream client '{name}': {e}")
+        pool = []
+        for i, key in enumerate(keys):
+            kid = f"{name}#k{i}" if len(keys) > 1 else name
+            try:
+                client = AsyncOpenAI(api_key=key, base_url=u["base_url"] or None)
+                client._apiproxy_key_id = kid
+                pool.append((kid, client))
+            except Exception as e:
+                logging.error(f"Failed to build upstream client '{name}' (key#{i}): {e}")
+        if not pool:
+            continue
+        _KEY_CLIENTS[name] = pool
+        _CLIENTS[name] = pool[0][1]   # 主 key 客户端（兼容旧引用）
+
+
+def _upstream_keys(u: dict) -> list:
+    """合并主 key 与备用 key 列表（去重、保序）。"""
+    keys = [u.get("api_key") or ""]
+    extra = u.get("api_keys") or []
+    if isinstance(extra, str):
+        extra = [x for x in extra.replace("\n", ",").split(",")]
+    for k in extra:
+        k = (k or "").strip()
+        if k:
+            keys.append(k)
+    out, seen = [], set()
+    for k in keys:
+        k = (k or "").strip()
+        if k and k not in seen:
+            seen.add(k)
+            out.append(k)
+    return out
+
+
+def _key_pool(name: str) -> list:
+    return _KEY_CLIENTS.get(name) or []
+
+
+def pick_client(name: str):
+    """为一次请求挑选该上游的客户端（密钥池轮换；认证失败冷却的 key 跳过）。
+
+    全部 key 都在冷却中时仍返回主 key 客户端（尽力而为，与上游健康
+    冷却「降权不是拉黑」的语义一致）。
+    """
+    pool = _key_pool(name)
+    if not pool:
+        return _CLIENTS.get(name)
+    if len(pool) == 1:
+        return pool[0][1]
+    now = time.time()
+    alive = [(kid, c) for kid, c in pool if _KEY_COOLDOWN.get(kid, 0) <= now]
+    if not alive:
+        return pool[0][1]
+    _KEY_RR["n"] = (_KEY_RR["n"] + 1) % len(alive)
+    return alive[_KEY_RR["n"]][1]
+
+
+_AUTH_ERR_MARKERS = ('401', '403', 'invalid_api_key', 'invalid api key',
+                     'incorrect api key', 'unauthorized', 'authentication',
+                     'api key not valid', 'permission')
+
+
+def report_upstream_error(client, err) -> bool:
+    """上游调用失败时上报：认证类错误 -> 该把 key 进入冷却。
+
+    client 即请求时用到的实例（自带 _apiproxy_key_id），无需额外传 key 身份。
+    返回是否触发了 key 冷却。
+    """
+    kid = getattr(client, '_apiproxy_key_id', None)
+    if not kid:
+        return False
+    msg = str(err or '').lower()
+    if not any(m in msg for m in _AUTH_ERR_MARKERS):
+        return False
+    _KEY_COOLDOWN[kid] = time.time() + _KEY_COOLDOWN_SECONDS
+    logging.warning(f"upstream key '{kid}' auth failure, cooldown {_KEY_COOLDOWN_SECONDS}s")
+    return True
+
+
+def report_upstream_ok(client):
+    """上游调用成功：清除该把 key 的冷却（可能只是上游抖动后恢复了）。"""
+    kid = getattr(client, '_apiproxy_key_id', None)
+    if kid and kid in _KEY_COOLDOWN:
+        _KEY_COOLDOWN.pop(kid, None)
+
+
+def key_pool_snapshot() -> dict:
+    """供管理端查看的密钥池状态（key_id -> {cooled, cooldown_remaining}）。"""
+    now = time.time()
+    out = {}
+    for name, pool in _KEY_CLIENTS.items():
+        out[name] = [{
+            'key_id': kid,
+            'cooled': _KEY_COOLDOWN.get(kid, 0) > now,
+            'cooldown_remaining': max(0.0, _KEY_COOLDOWN.get(kid, 0) - now),
+        } for kid, _c in pool]
+    return out
 
 
 def get_client(name: str):
     return _CLIENTS.get(name)
 
 
-def select_upstream(model: str, requested_name: str = None):
-    """选择服务该模型的上游客户端。
+def upstream_models(name: str):
+    """该上游已知的模型目录（set/list）；目录未知返回 None"""
+    return _UPSTREAM_MODELS.get(name)
 
-    返回 (AsyncOpenAI 客户端, 上游名称) 或 None（无可用上游）。
-    - requested_name 非空：仅在该名称的上游中挑选（仍要求启用且未禁用该模型）。
-    - 否则：启用 + 未禁用该模型 + （已知目录则须包含该模型）中优先级最高者。
+
+def iter_candidates(model: str, requested_name: str = None) -> list:
+    """按优先级升序返回可用候选 [(client, name, priority), ...]。
+
+    过滤规则与 select_upstream 一致：启用 + 未禁用该模型 +（已知目录则须包含该模型）。
+    供 select_upstream 与 routing.build_chain（负载均衡/故障转移）复用。
     """
     candidates = []
     for u in configs.UPSTREAMS:
@@ -66,19 +173,36 @@ def select_upstream(model: str, requested_name: str = None):
         cat = _UPSTREAM_MODELS.get(u["name"])
         if cat is not None and model not in cat:
             continue
-        candidates.append(u)
-    if not candidates:
+        client = pick_client(u["name"])
+        if client is not None:
+            candidates.append((client, u["name"], u.get("priority", 0)))
+    candidates.sort(key=lambda x: x[2])
+    return candidates
+
+
+def select_upstream(model: str, requested_name: str = None):
+    """选择服务该模型的上游客户端。
+
+    返回 (AsyncOpenAI 客户端, 上游名称) 或 None（无可用上游）。
+    - requested_name 非空：仅在该名称的上游中挑选（仍要求启用且未禁用该模型）。
+    - 否则：启用 + 未禁用该模型 + （已知目录则须包含该模型）中优先级最高者。
+    """
+    cands = iter_candidates(model, requested_name)
+    if not cands:
         return None
-    if requested_name:
-        # 指定上游：取第一个匹配（已通过上面的过滤）
-        best = candidates[0]
-    else:
-        candidates.sort(key=lambda x: x["priority"])
-        best = candidates[0]
-    client = _CLIENTS.get(best["name"])
-    if client is None:
-        return None
-    return client, best["name"]
+    return cands[0][0], cands[0][1]
+
+
+def upstream_supports_vision(upstream_name: str) -> bool:
+    """上游是否声明支持多模态（视觉）输入。
+
+    上游条目可选键 vision: true 声明（config.yaml 或未来 DB 扩展）；
+    未声明一律视为纯文本上游——modality 预检测将拒绝携带图片/音频的请求。
+    """
+    for u in configs.UPSTREAMS:
+        if u.get("name") == upstream_name:
+            return bool(u.get("vision", False))
+    return False
 
 
 async def refresh_models(force: bool = False) -> list:
@@ -172,7 +296,7 @@ def reload_upstreams_from_db():
         try:
             cur = conn.cursor()
             cur.execute(
-                "SELECT name, base_url, api_key, priority, enabled, disabled_models "
+                "SELECT name, base_url, api_key, api_keys, priority, enabled, disabled_models "
                 "FROM upstreams ORDER BY priority ASC, name ASC"
             )
             rows = cur.fetchall()
@@ -192,10 +316,18 @@ def reload_upstreams_from_db():
             disabled = [str(x).strip() for x in dm if str(x).strip()]
         else:
             disabled = []
+        ak = r["api_keys"] if "api_keys" in r.keys() else None
+        if isinstance(ak, str):
+            extra_keys = [x.strip() for x in ak.replace("\n", ",").split(",") if x.strip()]
+        elif isinstance(ak, list):
+            extra_keys = [str(x).strip() for x in ak if str(x).strip()]
+        else:
+            extra_keys = []
         ups.append({
             "name": r["name"],
             "base_url": r["base_url"] or "",
             "api_key": r["api_key"] or "",
+            "api_keys": extra_keys,
             "priority": int(r["priority"] if r["priority"] is not None else 100),
             "enabled": bool(int(r["enabled"] if r["enabled"] is not None else 1)),
             "disabled_models": disabled,

@@ -201,6 +201,14 @@ def init_database() -> None:
 
 def start_background_services() -> None:
     """拉起后台服务，各项失败均不致命。"""
+    # 系统虚拟用户（UID 池 0~15）最先落库，保证后续通知有真实发件人可进聊天
+    try:
+        from . import system_users as _su
+        asyncio.run(_su.ensure_system_users())
+        logger.info("System virtual users ensured")
+    except Exception as e:
+        logger.error(f"ensure_system_users failed: {e}")
+
     try:
         asyncio.run(upstreams.startup_refresh())
         logger.info("Upstream clients initialized and model catalog refreshed")
@@ -225,6 +233,30 @@ def start_background_services() -> None:
         logger.info("Task scheduler started")
     except Exception as e:
         logger.error(f"Failed to start task scheduler: {e}")
+
+    try:
+        from .routing import start_health_prober
+        start_health_prober()
+        logger.info("Upstream health prober started")
+    except Exception as e:
+        logger.error(f"Failed to start upstream health prober: {e}")
+
+    try:
+        from .pg_backup import start_backup_loop
+        try:
+            from .ops_settings import apply_overrides
+            apply_overrides()   # WebUI 保存过的运维设置（DB）覆盖 config.yaml
+        except Exception as e:
+            logger.error(f"Failed to apply ops_settings overrides: {e}")
+        start_backup_loop()
+    except Exception as e:
+        logger.error(f"Failed to start db backup scheduler: {e}")
+
+    try:
+        from .retention import start_retention_loop
+        start_retention_loop()
+    except Exception as e:
+        logger.error(f"Failed to start log retention scheduler: {e}")
 
     try:
         from .cluster import cluster
@@ -302,7 +334,7 @@ def ensure_self_signed_cert(cert_path: str, key_path: str) -> None:
 def serve_https() -> None:
     from hypercorn.asyncio import serve
     from hypercorn.config import Config as HyperConfig
-    from .configs import HTTPS_PORT, SSL_CERT, SSL_KEY, BIND_HOST
+    from .configs import HTTPS_PORT, SSL_CERT, SSL_KEY, BIND_HOST, WEB_MAX_REQUESTS
 
     cert_path = SSL_CERT or os.path.join(BASE_DIR, 'certs', 'server.crt')
     key_path = SSL_KEY or os.path.join(BASE_DIR, 'certs', 'server.key')
@@ -321,6 +353,15 @@ def serve_https() -> None:
     config.keep_alive_timeout = 5
     # 生产并发：默认按 CPU 核数起 worker，可用 WEB_CONCURRENCY 覆盖
     config.workers = int(os.getenv('WEB_CONCURRENCY', '1'))
+    # worker 回收：每处理 N 个请求后自动重启该 worker，缓解长周期内存泄漏/资源滞留。
+    # 可用 --web-max-requests / 配置文件 / APIPROXY_WEB_MAX_REQUESTS 环境变量设置。
+    # 注意：Hypercorn 语义中 None 才是「关闭」；若传 0，首个请求完成后即触发优雅
+    # 停机，进程静默退出（退出码 0、无任何日志）——gunicorn 的「0=关闭」语义
+    # 必须在这里显式翻译成 None。
+    _max_requests = int(WEB_MAX_REQUESTS)
+    config.max_requests = _max_requests if _max_requests > 0 else None
+    # config.yaml 的 hypercorn: 段优先级最高，覆盖以上所有代码默认值
+    _apply_hypercorn_file_config(config)
 
     logger.info(f"HTTPS enabled, listening on port {HTTPS_PORT} (TLS 1.2/1.3)")
     asyncio.run(serve(app, config))
@@ -376,7 +417,62 @@ def serve_http() -> None:
     # 由 cluster._tcp_listen_loop 在真正监听后写入实际虚拟 IP（供 Worker 获取 LB 地址）。
     # 这里只设置环境变量，集群层负责实际写入。
 
+    # 生产 ASGI 服务器：用 Hypercorn 启动 HTTP 服务（而非 Quart 自带的 Werkzeug 开发服务器）。
+    # HTTPS 模式本就走 Hypercorn；此分支让 HTTP 模式也能用上 worker 并发/优雅停机等生产特性。
+    if configs.HYPERCORN_ENABLED:
+        _serve_http_hypercorn(configs.BIND_HOST, port, debug_mode)
+        return
+
     app.run(host=configs.BIND_HOST, port=port, debug=debug_mode)
+
+
+def _apply_hypercorn_file_config(cfg) -> None:
+    """把 config.yaml 的 hypercorn: 段合并进 Hypercorn Config（段内值优先级最高）。
+
+    键名即 hypercorn.config.Config 的属性名；未知键告警并忽略
+    （Hypercorn 对 setattr 未知键会静默挂上无效属性，这里显式拦截防手误）。
+    """
+    from . import configs
+    from hypercorn.config import Config as HyperConfig
+
+    section = getattr(configs, "HYPERCORN_CONFIG", None) or {}
+    if not isinstance(section, dict):
+        return
+    for key, value in section.items():
+        if not hasattr(HyperConfig, key):
+            logger.warning("config.yaml hypercorn: 段忽略未知键: %s", key)
+            continue
+        setattr(cfg, key, value)
+
+
+def _serve_http_hypercorn(host: str, port: int, debug: bool) -> None:
+    """HTTP 模式用 Hypercorn（ASGI 生产服务器）真正监听并服务。"""
+    from . import configs
+    from hypercorn.asyncio import serve
+    from hypercorn.config import Config as HyperConfig
+
+    if debug:
+        # Hypercorn 没有 Werkzeug 那种交互式调试器，仅给出提示，不阻断启动。
+        logger.warning("DEBUG 模式在 Hypercorn 下无交互式调试器（仍关闭生产 RCE 风险）")
+
+    cfg = HyperConfig()
+    cfg.bind = [f"{host}:{port}"]
+    cfg.accesslog = "-"
+    cfg.errorlog = "-"
+    # 优雅停机：收到 SIGTERM/SIGINT 后最多等待 30s 让在途请求完成再退出
+    cfg.graceful_timeout = float(os.getenv('GRACEFUL_TIMEOUT', '30'))
+    cfg.keep_alive_timeout = 5
+    # 生产并发：默认单 worker（HTTP 单机），可用 WEB_CONCURRENCY 覆盖
+    cfg.workers = int(os.getenv('WEB_CONCURRENCY', '1'))
+    # worker 回收：每处理 N 个请求后自动重启该 worker。
+    # Hypercorn 语义：None=关闭；传 0 会导致首请求后进程静默退出（见 serve_https 注释）。
+    _max_requests = int(configs.WEB_MAX_REQUESTS)
+    cfg.max_requests = _max_requests if _max_requests > 0 else None
+    # config.yaml 的 hypercorn: 段优先级最高，覆盖以上所有代码默认值
+    _apply_hypercorn_file_config(cfg)
+
+    logger.info("HTTP 服务经由 Hypercorn 启动（ASGI 生产服务器）")
+    asyncio.run(serve(app, cfg))
 
 
 def _build_arg_parser() -> "argparse.ArgumentParser":
@@ -472,6 +568,10 @@ def _build_arg_parser() -> "argparse.ArgumentParser":
     g.add_argument("--ssl-cert", dest="SSL_CERT", default=None, help="TLS 证书路径")
     g.add_argument("--ssl-key", dest="SSL_KEY", default=None, help="TLS 私钥路径")
     g.add_argument("--https-port", dest="HTTPS_PORT", type=int, default=None, help="HTTPS 监听端口")
+    g.add_argument("--hypercorn", action=argparse.BooleanOptionalAction, dest="HYPERCORN_ENABLED",
+                   default=None, help="HTTP 模式改用 Hypercorn（ASGI 生产服务器）启动，而非 Quart 自带开发服务器（HTTPS 模式本就使用 Hypercorn）")
+    g.add_argument("--web-max-requests", dest="WEB_MAX_REQUESTS", type=int, default=None,
+                   help="Hypercorn worker 回收阈值：每处理 N 个请求后自动重启该 worker（0=关闭，默认）")
 
     # ---- WAF / 安全 ----
     g = p.add_argument_group("WAF / 安全")
