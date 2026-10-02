@@ -22,6 +22,24 @@ from .constants import CHAR_PRICE_LOOKUP, UNEXCEPT_CHAR, MONEY_PER_MILLION_TOKEN
 from .cloudflare import get_client_ip as _cf_get_client_ip
 from . import waf as _waf
 
+# ── 原生加速器桥接（C/C++ 多语言支柱）──
+# 优先使用编译好的原生库（FNV-1a 哈希 / 常量时间比较）；缺失或自测失败时
+# 回退纯 Python / 标准库，保证无 C 工具链的机器也能正常运行。
+try:
+    from .native import constant_time_compare, fnv1a_64, native_available as _NATIVE_AVAILABLE
+except Exception:  # noqa: BLE001
+    _NATIVE_AVAILABLE = False
+    constant_time_compare = secrets.compare_digest  # 标准库常量时间比较，安全等价
+
+    def fnv1a_64(data):
+        """纯 Python 回退：FNV-1a 64-bit 哈希。"""
+        _d = data if isinstance(data, (bytes, bytearray)) else str(data).encode("utf-8")
+        _h = 14695981039346656037
+        for _b in bytes(_d):
+            _h ^= _b
+            _h = (_h * 1099511628211) & 0xFFFFFFFFFFFFFFFF
+        return _h
+
 # star 导入白名单：显式列出下划线前缀符号，
 # 否则 `from ..core import *` 会静默跳过它们（PEP 8 默认行为）。
 __all__ = [
@@ -140,7 +158,7 @@ async def _validate_csrf_token() -> bool:
             provided = None
     if not provided:
         return False
-    return secrets.compare_digest(expected, provided)
+    return constant_time_compare(expected, provided)
 
 _CSRF_PATCH_JS = '''<script>\n(function(){
   var m = document.querySelector('meta[name="csrf-token"]');

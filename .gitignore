@@ -7,6 +7,8 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
+*.dll
+*.dylib
 *.egg
 *.egg-info/
 dist/
@@ -88,10 +90,12 @@ _bank_merchant_creds*.json
 backups/
 users.db*
 java/target/
+java/.maven/
 *.selfsigned-bak
-_*.txt
-_*.py
-.dbg_*.py
+# 根目录下的调试脚本/日志（前导 / 仅限根目录，避免误伤子包的 __init__.py）
+/_*.txt
+/_*.py
+/.dbg_*.py
 seq_anomaly.json
 login_screenshot.png
 *.png
