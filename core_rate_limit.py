@@ -82,7 +82,20 @@ def _check_rate_limit(category: str) -> tuple[bool, int]:
         if r is not None:
             return _check_rate_limit_redis(r, category, key, window, max_req)
     except Exception as e:
-        logging.error(f"Redis rate limit failed, fallback SQLite: {e}")
+        logging.error(f"Redis rate limit failed, fallback: {e}")
+
+    # Redis 不可用 -> C 本地滑动窗口（进程内，单实例语义等价于 SQLite 回退且更快）。
+    # 多实例下 Redis 才是分布式计数真相源，所以此路径仅在 Redis 不可用时介入，
+    # 不会放宽度量（单实例下本地即全局）。配置 NATIVE_LOCAL_RATE_LIMIT=False 可关闭。
+    try:
+        from . import configs
+        if getattr(configs, "NATIVE_LOCAL_RATE_LIMIT", True):
+            from .native import native_available, sliding_window_allow
+            if native_available:
+                allow = sliding_window_allow(f"{category}:{key}", window, max_req)
+                return (bool(allow), (max_req - 1) if allow else 0)
+    except Exception:
+        pass
 
     return _check_rate_limit_sqlite(category, key, window, max_req)
 

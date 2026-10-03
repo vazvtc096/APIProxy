@@ -100,6 +100,16 @@ async def add_notification(user_uid: str, title: str, body: str,
         if nid:
             cache_store.cache_delete_pattern(f"notif:list:{user_uid}:*")
             cache_store.cache_delete_pattern(f"notif:unread:{user_uid}")
+            # 实时推送（best-effort，后台进行，失败不影响主流程）
+            try:
+                from . import notifications_broadcast
+                await notifications_broadcast.enqueue(
+                    user_uid, "notification",
+                    {"id": nid, "title": title, "body": body,
+                     "level": level, "link": link}
+                )
+            except Exception:
+                pass
 
 
 async def get_notifications(user_uid: str, limit: int = 30,

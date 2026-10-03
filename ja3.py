@@ -18,10 +18,10 @@ JA3 / JA4 客户端指纹 —— 追溯类能力
 无论来源如何，所有指纹都会登记到 ja3_fingerprints 表，并对「首次出现的陌生指纹」告警，
 从而支撑跨 IP/账号的攻击者关联与追溯。
 """
-import hashlib
 import logging
 
 from . import configs
+from .native import md5_hex, sha256_hex
 from .core_db import async_db_query, _get_conn
 from .security import record_security_event
 
@@ -50,7 +50,7 @@ def compute_ja3_hash(ssl_version: str, ciphers: list, extensions: list,
         join_vals(curves),
         join_vals(ec_point_formats),
     ])
-    return hashlib.md5(ja3_str.encode("utf-8")).hexdigest()
+    return md5_hex(ja3_str)  # native MD5 when available, hashlib fallback
 
 
 def parse_ja3_string(ja3_str: str):
@@ -118,7 +118,7 @@ def _synthetic_ja3(req, client_ip):
             # 只取前 64 字符，避免超长 UA 造成指纹抖动；头名+截断值参与哈希
             parts.append(f"{h}={val[:64]}")
     raw = "|".join(parts)
-    h = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
+    h = sha256_hex(raw)[:32]  # native SHA-256 when available, hashlib fallback
     return "syn-" + h
 
 
