@@ -12,10 +12,16 @@
  *   void     apx_sha256_hex(const char* in, int len, char* out64) // 64-char lowercase hex
  *   int      apx_sliding_window_allow(const char* key, long long window_ms, int max)
  *           // thread-safe in-process sliding-window rate limiter; 1 = allow, 0 = deny
+ *   int      apx_parse_client_hello(const unsigned char* hs, int len,
+ *              char* out_ja3_str, int str_cap, char* out_ja3_hash, int hash_cap,
+ *              char* out_sni, int sni_cap)
+ *           // parse a full TLS ClientHello handshake message into the standard
+ *           // JA3 tuple (string + MD5 + SNI). 1 = ok, 0 = parse error.
  */
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <pthread.h>
 
 #ifdef _WIN32
@@ -279,5 +285,117 @@ __declspec(dllexport) int apx_sliding_window_allow(const char* key, long long wi
     }
     n->ts[n->cnt++] = now;
     pthread_mutex_unlock(&sw_lock);
+    return 1;
+}
+
+/* ===========================================================================
+ * JA3 ClientHello parser (standard JA3 fingerprint).
+ *
+ * Parses a *complete* TLS ClientHello handshake message — the bytes produced
+ * by tls_front.py's _hello_span()/collect_hello() (starting with handshake
+ * type 0x01) — into the canonical JA3 tuple, computing the JA3 string, its MD5
+ * hash, and the SNI. Byte-for-byte equivalent to ja3.parse_client_hello /
+ * tls_front.parse_client_hello in Python: GREASE values are preserved verbatim,
+ * every extension type is listed in the "Extensions" field, and supported_groups
+ * / ec_point_formats are split into their own fields.
+ *
+ * Returns 1 on success (fills out_*), 0 on any malformed input.
+ * =========================================================================== */
+#define JA3_STR_CAP 16384
+
+__declspec(dllexport) int apx_parse_client_hello(
+        const unsigned char* hs, int len,
+        char* out_ja3_str, int str_cap,
+        char* out_ja3_hash, int hash_cap,
+        char* out_sni, int sni_cap)
+{
+    if (hs == NULL || len < 4 || hs[0] != 0x01) return 0;
+    int p = 4;
+    if (p + 2 > len) return 0;
+    long version = ((long)hs[p] << 8) | hs[p + 1];
+    p += 2 + 32;                                 /* version + random(32) */
+    if (p > len) return 0;
+    int sid_len = hs[p]; p += 1;
+    if (p + sid_len > len) return 0;
+    p += sid_len;                                /* session id */
+    if (p + 2 > len) return 0;
+    int cs_len = ((int)hs[p] << 8) | hs[p + 1]; p += 2;
+    if (cs_len < 0 || p + cs_len > len) return 0;
+
+    char* s = (char*)malloc(JA3_STR_CAP);
+    if (!s) return 0;
+    int n = snprintf(s, JA3_STR_CAP, "%ld", version);
+    n += snprintf(s + n, JA3_STR_CAP - n, ",");   /* field separator before ciphers */
+    for (int i = 0; i < cs_len / 2; i++) {
+        int v = ((int)hs[p + i * 2] << 8) | hs[p + i * 2 + 1];
+        n += snprintf(s + n, JA3_STR_CAP - n, "%s%d", (i ? "-" : ""), v);
+    }
+    p += cs_len;
+
+    int comp_len = (p < len) ? hs[p] : 0; p += 1;
+    if (p + comp_len > len) { free(s); return 0; }
+    p += comp_len;                               /* compression methods */
+
+    int ext_total = (p + 2 <= len) ? (((int)hs[p] << 8) | hs[p + 1]) : 0; p += 2;
+    int end = (p + ext_total < len) ? (p + ext_total) : len;
+
+    /* collect the three trailing sections separately so the JA3 string keeps the
+     * canonical order:  Version,Ciphers,Extensions,Curves,PointFormats */
+    char exts[JA3_STR_CAP], curves[JA3_STR_CAP], fmts[JA3_STR_CAP];
+    exts[0] = '\0'; curves[0] = '\0'; fmts[0] = '\0';
+    int ne = 0, nc = 0, nf = 0;
+    char sni[256]; sni[0] = '\0';
+
+    while (p + 4 <= end) {
+        int etype = ((int)hs[p] << 8) | hs[p + 1];
+        int elen = ((int)hs[p + 2] << 8) | hs[p + 3];
+        if (p + 4 + elen > len) { free(s); return 0; }
+        const unsigned char* edata = hs + p + 4;
+        ne += snprintf(exts + ne, JA3_STR_CAP - ne, "%s%d", (ne ? "-" : ""), etype);
+        if (etype == 0x000A && elen >= 2) {            /* supported_groups */
+            int gl = ((int)edata[0] << 8) | edata[1];
+            int avail = (elen - 2) / 2;                 /* groups region = elen-2 bytes */
+            int cnt = (gl < avail) ? gl : avail;
+            for (int i = 0; i < cnt; i++) {
+                int v = ((int)edata[2 + i * 2] << 8) | edata[3 + i * 2];
+                nc += snprintf(curves + nc, JA3_STR_CAP - nc, "%s%d", (nc ? "-" : ""), v);
+            }
+        } else if (etype == 0x000B && elen >= 1) {      /* ec_point_formats */
+            int fl = edata[0];
+            for (int i = 0; i < fl && i < elen - 1; i++) {
+                nf += snprintf(fmts + nf, JA3_STR_CAP - nf, "%s%d", (nf ? "-" : ""), edata[1 + i]);
+            }
+        } else if (etype == 0x0000 && elen >= 5) {      /* server_name */
+            int slen = edata[4];
+            if (slen > 0 && slen < (int)sizeof(sni) && 5 + slen <= elen) {
+                int k = 0;
+                for (int i = 0; i < slen; i++) {
+                    char c = (char)edata[5 + i];
+                    if (c == '\0') c = '?';             /* guard embedded NUL */
+                    sni[k++] = c;
+                }
+                sni[k] = '\0';
+            }
+        }
+        p += 4 + elen;
+    }
+
+    n += snprintf(s + n, JA3_STR_CAP - n, ",%s,%s,%s", exts, curves, fmts);
+
+    if (out_ja3_str && str_cap > 0) {
+        int c = (n < str_cap - 1) ? n : str_cap - 1;
+        memcpy(out_ja3_str, s, c);
+        out_ja3_str[c] = '\0';
+    }
+    if (out_ja3_hash && hash_cap >= 33) {
+        apx_md5_hex(s, n, out_ja3_hash);
+    }
+    if (out_sni && sni_cap > 0) {
+        int sl = (int)strlen(sni);
+        int c = (sl < sni_cap - 1) ? sl : sni_cap - 1;
+        memcpy(out_sni, sni, c);
+        out_sni[c] = '\0';
+    }
+    free(s);
     return 1;
 }

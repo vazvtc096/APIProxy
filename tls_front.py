@@ -10,8 +10,9 @@
 
 工作原理：
   1. accept 后用 MSG_PEEK 抓取 TLS ClientHello（不消费内核缓冲区），
-     手工解析出五元组（版本/密码套件/扩展/椭圆曲线/点格式），
-     按标准 JA3 算法生成 ja3_str 与 MD5（与 ja3.parse_ja3_string 同构，可互相校验）。
+     解析出五元组（版本/密码套件/扩展/椭圆曲线/点格式），按标准 JA3 算法生成
+     ja3_str 与 MD5（与 ja3.parse_ja3_string 同构，可互相校验）。解析优先走 C 原生层
+     （native.parse_client_hello，更快），原生层缺失时回退本文件内的纯 Python 实现。
   2. ssl_context.wrap_socket() 终结 TLS（peek 不消费数据，握手不受影响）；
      ALPN 仅提供 http/1.1，避免 h2 升级带来的转发复杂度。
   3. 每个 HTTP 请求：剥离客户端伪造的指纹类头（x-ja3* / cf-ja3* / cf-bot-score 等），
@@ -58,6 +59,14 @@ import time
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
+
+# 多语言架构：若 C 原生层可用，ClientHello 解析走原生（更快），否则用下方纯 Python 实现。
+try:
+    from native import parse_client_hello as _native_parse_client_hello, \
+        native_available as _NATIVE_CH_AVAILABLE
+except Exception:
+    _native_parse_client_hello = None
+    _NATIVE_CH_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
 # 配置（env > config.yaml > 默认值；复用 configs 的解析但不触发任何 DB/应用初始化）
@@ -184,8 +193,9 @@ def parse_client_hello(hs: bytes):
             exts.append(etype)
             if etype == 0x000A and elen >= 2:         # supported_groups
                 gl = int.from_bytes(edata[0:2], "big")
+                avail = (elen - 2) // 2                # groups region = elen - 2 bytes
                 curves = [int.from_bytes(edata[2 + i * 2:4 + i * 2], "big")
-                          for i in range(min(gl, elen - 2) // 2)]
+                          for i in range(min(gl, avail))]
             elif etype == 0x000B and elen >= 1:       # ec_point_formats
                 fmts = list(edata[1:1 + edata[0]])
             elif etype == 0x0000 and elen >= 5:       # server_name（仅记录用）
@@ -420,7 +430,10 @@ def handle_conn(sock: socket.socket, addr):
             if status == "plain":
                 _handle_plain_http(sock, payload)
             return
-        parsed = parse_client_hello(payload)
+        if _NATIVE_CH_AVAILABLE and _native_parse_client_hello is not None:
+            parsed = _native_parse_client_hello(payload)
+        else:
+            parsed = parse_client_hello(payload)
         if not parsed:
             return
         ja3_str, ja3_hash, sni = parsed
