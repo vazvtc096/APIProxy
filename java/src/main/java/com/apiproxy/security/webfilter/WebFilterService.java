@@ -64,7 +64,7 @@ public class WebFilterService {
 
     private static final List<String> API_PREFIXES = List.of(
             "/api/", "/v1/", "/oauth/", "/internal/", "/cluster/",
-            "/admin", "/static/", "/api/console", "/api/rcon"
+            "/admin", "/static/", "/api/console", "/api/debug-console"
     );
 
     public WebFilterService(WebAccessLogRepository webAccessLogRepository) {

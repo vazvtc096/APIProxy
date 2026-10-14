@@ -52,14 +52,14 @@ public class SecurityConfig {
                 .requestMatchers("/health", "/ready", "/api/health/**").permitAll()
                 // OAuth2 端点
                 .requestMatchers("/oauth/**", "/api/oauth/**").permitAll()
-                // RCON 登录页
-                .requestMatchers("/rcon/login", "/rcon/login").permitAll()
+                // Debug Console 登录页
+                .requestMatchers("/debug-console/login", "/debug-console/login").permitAll()
                 // 公开 API
                 .requestMatchers("/api/email/**", "/api/captcha/**").permitAll()
                 // 管理员接口
                 .requestMatchers("/api/admin/**", "/admin/**").hasRole("ADMIN")
-                // RCON 接口
-                .requestMatchers("/rcon/**", "/api/rcon/**").hasRole("ADMIN")
+                // Debug Console 接口
+                .requestMatchers("/debug-console/**", "/api/debug-console/**").hasRole("ADMIN")
                 // 其余需登录
                 .anyRequest().authenticated()
             )
@@ -88,7 +88,7 @@ public class SecurityConfig {
                                           // 机到机调用靠 client secret / Authorization 头鉴权）
                                           "/oauth/**",
                                           "/api/health/**",
-                                          "/api/rcon/**")
+                                          "/api/debug-console/**")
             )
             // 会话管理
             .sessionManagement(session -> session

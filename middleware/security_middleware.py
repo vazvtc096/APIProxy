@@ -835,7 +835,7 @@ def register_middleware(app):
         """全局熔断开关（kill switch）：应急止血，必须最先执行。
 
         激活后所有非豁免请求立即 503；回环/内网默认豁免（KILL_SWITCH_ALLOW_PRIVATE），
-        /api/console/exec 永远放行（带 RCON 密钥鉴权），保证公网管理员仍能 kill_off。
+        /api/console/exec 永远放行（带 Debug Console 密钥鉴权），保证公网管理员仍能 kill_off。
         """
         try:
             from .. import kill_switch as _ks
@@ -1067,10 +1067,10 @@ def register_middleware(app):
         # 任何携带 Authorization 头的程序化 API 调用（Bearer / Basic）均非浏览器会话请求。
         if request.headers.get('Authorization'):
             return
-        # X-RCON-Key 同理：自定义请求头不是环境凭据（浏览器不会自动附带，跨域还会触发
-        # CORS 预检），故不存在 CSRF 风险。历史版本遗漏此豁免，导致 RCON HTTP API
+        # X-Debug-Console-Key 同理：自定义请求头不是环境凭据（浏览器不会自动附带，跨域还会触发
+        # CORS 预检），故不存在 CSRF 风险。历史版本遗漏此豁免，导致 Debug Console HTTP API
         # 无法用 curl / 脚本调用（必须伪造 Origin），此处补齐。
-        if request.headers.get('X-RCON-Key'):
+        if request.headers.get('X-Debug-Console-Key'):
             return
         # 集群登录端点：令牌本身即强凭据（启动时随机生成，非会话 cookie），且为
         # 一次性建立会话的入口，不属于浏览器会话态写入场景，豁免 CSRF 以免无法用 curl/脚本登录。

@@ -59,8 +59,8 @@ public class WebConfig implements WebMvcConfigurer {
         registry.addViewController("/oauth/consent").setViewName("oauth_consent");
         registry.addViewController("/oauth/device").setViewName("oauth_device");
         registry.addViewController("/oauth/callback").setViewName("oauth_callback");
-        // RCON 页面
-        registry.addViewController("/rcon/terminal").setViewName("rcon/terminal");
+        // Debug Console 页面
+        registry.addViewController("/debug-console/terminal").setViewName("debug_console/terminal");
         // 管理员页面
         registry.addViewController("/admin/announcements").setViewName("admin_announcements");
         registry.addViewController("/admin/bans").setViewName("admin_bans");

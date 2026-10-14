@@ -379,7 +379,7 @@ class TaskExecutor:
         if command not in allowed_commands:
             return False, f"不允许执行的命令: {command}"
         
-        # 这里可以调用 RCON 命令执行
+        # 这里可以调用 Debug Console 命令执行
         try:
             # 简化处理：只记录日志
             logger.info(f"执行自定义命令: {command}")

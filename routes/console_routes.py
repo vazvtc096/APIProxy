@@ -1,9 +1,9 @@
 """Console 运维控制台路由。
 
   POST /internal/console   节点间内部端点：本地执行一条命令（供 dispatch 跨节点转发）。
-                          鉴权：X-Internal-Secret（CLUSTER_SECRET / RCON_SECRET），无密钥时仅回环。
+                          鉴权：X-Internal-Secret（CLUSTER_SECRET / DEBUG_CONSOLE_SECRET），无密钥时仅回环。
   POST /api/console/exec   运维人员运行时下发命令，支持 target（self/lb/worker:<id>/all）。
-                          鉴权：X-RCON-Key（与原 RCON 共用最高权限密钥）。
+                          鉴权：X-Debug-Console-Key（与 Debug Console 共用最高权限密钥）。
   GET  /api/console/help   命令清单。
 """
 
@@ -13,7 +13,7 @@ from ..core_console import (
     dispatch_async, run_locally_async, console_help_text, _internal_secret,
     console_tier_for_key, check_command_permission, TIER_NAMES,
 )
-from ..core_rcon import _verify_rcon_key
+from ..core_debug_console import _verify_debug_console_key
 
 console_bp = Blueprint("console", __name__)
 
@@ -52,9 +52,9 @@ async def internal_console():
 
 @console_bp.route("/api/console/exec", methods=["POST"])
 async def console_exec():
-    key = request.headers.get("X-RCON-Key", "")
-    if not await _verify_rcon_key(key):
-        return jsonify({"error": "Invalid RCON/Console key"}), 403
+    key = request.headers.get("X-Debug-Console-Key", "")
+    if not await _verify_debug_console_key(key):
+        return jsonify({"error": "Invalid Debug Console/Console key"}), 403
     try:
         payload = await request.get_json(force=True, silent=True) or {}
         command = (payload.get("command") or "").strip()

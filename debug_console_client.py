@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-RCON 远程控制台客户端
+Debug Console 远程控制台客户端
 RSA 2048 + AES-256-GCM 混合加密
 - RSA 用于密钥交换和认证
 - AES-256-GCM 用于实际数据加密
@@ -23,13 +23,13 @@ NONCE_SIZE = 12  # 96 bits，GCM 推荐
 AES_KEY_SIZE = 32  # AES-256
 
 # 默认公钥文件路径
-DEFAULT_PUBLIC_KEY_FILE = os.path.join(os.path.dirname(__file__), '.rcon_public.pem')
+DEFAULT_PUBLIC_KEY_FILE = os.path.join(os.path.dirname(__file__), '.debug_console_public.pem')
 
 
-class RCONClient:
+class DebugConsoleClient:
     def __init__(self, host: str, port: int, public_key_pem: bytes):
         """
-        初始化 RCON 客户端
+        初始化 Debug Console 客户端
         
         Args:
             host: 服务器地址
@@ -45,7 +45,7 @@ class RCONClient:
         self.key_expire_time = None
     
     def connect(self):
-        """连接到 RCON 服务器并完成握手"""
+        """连接到 Debug Console 服务器并完成握手"""
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.settimeout(30)
         
@@ -246,9 +246,9 @@ def format_result(result, indent=0):
         print(f"{prefix}{result}")
 
 
-def interactive_mode(client: RCONClient):
+def interactive_mode(client: DebugConsoleClient):
     """交互式模式"""
-    print("\nRCON 远程控制台 (输入 help 查看命令，exit 退出)")
+    print("\nDebug Console 远程控制台 (输入 help 查看命令，exit 退出)")
     print("=" * 60)
     print(f"[OK] 已连接")
     print(f"  加密方式: RSA-2048 + AES-256-GCM")
@@ -260,7 +260,7 @@ def interactive_mode(client: RCONClient):
     
     while True:
         try:
-            cmd = input("RCON> ").strip()
+            cmd = input("Debug Console> ").strip()
         except (EOFError, KeyboardInterrupt):
             print("\n再见！")
             break
@@ -324,7 +324,7 @@ def interactive_mode(client: RCONClient):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='RCON 远程控制台客户端 (RSA+AES 混合加密)')
+    parser = argparse.ArgumentParser(description='Debug Console 远程控制台客户端 (RSA+AES 混合加密)')
     parser.add_argument('-H', '--host', default='127.0.0.1', help='服务器地址 (默认: 127.0.0.1)')
     parser.add_argument('-p', '--port', type=int, default=5001, help='端口 (默认: 5001)')
     parser.add_argument('-k', '--public-key', help='RSA 公钥文件路径')
@@ -369,7 +369,7 @@ def main():
         sys.exit(1)
     
     # 创建客户端
-    client = RCONClient(args.host, args.port, public_key_pem)
+    client = DebugConsoleClient(args.host, args.port, public_key_pem)
     
     try:
         print(f"正在连接 {args.host}:{args.port} ...")

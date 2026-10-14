@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RCON 终端 - 远程控制台</title>
+    <title>Debug Console 终端 - 远程控制台</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <style nonce="{{ csp_nonce }}">
@@ -361,7 +361,7 @@
     <nav class="navbar">
         <div class="navbar-brand">
             <i class="bi bi-terminal-fill"></i>
-            <span>RCON 远程控制台</span>
+            <span>Debug Console 远程控制台</span>
         </div>
         <div class="navbar-user">
             <div class="user-info">
@@ -414,7 +414,7 @@
             <div class="terminal-header">
                 <div class="terminal-title">
                     <i class="bi bi-circle-fill"></i>
-                    <span>RCON Terminal - 双重认证</span>
+                    <span>Debug Console Terminal - 双重认证</span>
                 </div>
                 <div class="terminal-controls">
                     <button class="control-btn close" data-action="clearTerminal"></button>
@@ -425,13 +425,13 @@
             
             <div class="terminal-body" id="terminal-body">
                 <div class="output-line system">╔══════════════════════════════════════════════════════════════╗</div>
-                <div class="output-line system">║           RCON 远程控制台 v2.0 - 最高权限 (SYSTEM/root)        ║</div>
+                <div class="output-line system">║           Debug Console 远程控制台 v2.0 - 最高权限 (SYSTEM/root)        ║</div>
                 <div class="output-line system">╠══════════════════════════════════════════════════════════════╣</div>
-                <div class="output-line system">║  认证方式: 管理员账号 + RCON 密钥 双重认证                     ║</div>
+                <div class="output-line system">║  认证方式: 管理员账号 + Debug Console 密钥 双重认证                     ║</div>
                 <div class="output-line system">║  注意: 此控制台拥有最高权限，请谨慎操作！                       ║</div>
                 <div class="output-line system">╚══════════════════════════════════════════════════════════════╝</div>
                 <div class="output-line">&nbsp;</div>
-                <div class="output-line success">✓ 已连接到 RCON 服务器</div>
+                <div class="output-line success">✓ 已连接到 Debug Console 服务器</div>
                 <div class="output-line">输入 <span style="color: #667eea;">help</span> 查看可用命令</div>
                 <div class="output-line">&nbsp;</div>
             </div>
@@ -496,17 +496,17 @@
         
         // 检查认证状态
         function checkAuth() {
-            fetch('/rcon/api/auth-check')
+            fetch('/debug-console/api/auth-check')
                 .then(response => response.json())
                 .then(data => {
                     if (!data.authenticated) {
-                        window.location.href = '/rcon/login';
+                        window.location.href = '/debug-console/login';
                     } else if (data.username) {
                         usernameDisplay.textContent = data.username;
                     }
                 })
                 .catch(() => {
-                    window.location.href = '/rcon/login';
+                    window.location.href = '/debug-console/login';
                 });
         }
         
@@ -645,7 +645,7 @@
             isProcessing = true;
             const loadingId = addLoadingLine();
             
-            fetch('/rcon/execute', {
+            fetch('/debug-console/execute', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -685,7 +685,7 @@
             const line = document.createElement('div');
             line.className = 'input-line';
             line.innerHTML = `
-                <span class="prompt">rcon</span>
+                <span class="prompt">debugConsole</span>
                 <span class="prompt-symbol">@</span>
                 <span class="prompt">server</span>
                 <span class="prompt-symbol">:</span>
@@ -740,12 +740,12 @@
         
         // 退出登录
         function logout() {
-            fetch('/rcon/logout', { method: 'POST' })
+            fetch('/debug-console/logout', { method: 'POST' })
                 .then(() => {
-                    window.location.href = '/rcon/login';
+                    window.location.href = '/debug-console/login';
                 })
                 .catch(() => {
-                    window.location.href = '/rcon/login';
+                    window.location.href = '/debug-console/login';
                 });
         }
         

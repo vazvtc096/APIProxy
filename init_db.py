@@ -104,20 +104,49 @@ def init_complete_db():
     print("  [OK] system_config 表")
     
 
-    # 7. rcon_config 表（RCON 配置）
+    # ---- RCON → Debug Console 迁移（2026-10-14，幂等）----
+    for _old, _new in (("rcon_config", "debug_console_config"),
+                       ("rcon_keys", "debug_console_keys")):
+        try:
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (_old,))
+            if cur.fetchone():
+                cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (_new,))
+                if not cur.fetchone():
+                    cur.execute(f"ALTER TABLE {_old} RENAME TO {_new}")
+                    print(f"  [迁移] {_old} → {_new}")
+        except Exception:
+            pass
+    try:
+        cur.execute("DROP INDEX IF EXISTS idx_rcon_keys_hash_active")
+    except Exception:
+        pass
+    try:
+        cur.execute("SELECT rcon_key FROM debug_console_config LIMIT 1")
+        cur.execute("ALTER TABLE debug_console_config RENAME COLUMN rcon_key TO debug_console_key")
+        print("  [迁移] debug_console_config.rcon_key → debug_console_key")
+    except Exception:
+        pass
+    try:
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='system_config'")
+        if cur.fetchone():
+            cur.execute("UPDATE system_config SET key = 'debug_console_key' WHERE key = 'rcon_key'")
+    except Exception:
+        pass
+
+    # 7. debug_console_config 表（Debug Console 配置）
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS rcon_config (
+        CREATE TABLE IF NOT EXISTS debug_console_config (
             id INTEGER PRIMARY KEY CHECK (id = 1),
-            rcon_key TEXT NOT NULL,
+            debug_console_key TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             last_refreshed_at TIMESTAMP
         )
     """)
-    print("  [OK] rcon_config 表")
+    print("  [OK] debug_console_config 表")
 
-    # 7.1 rcon_keys 表（RCON 多密钥管理）
+    # 7.1 debug_console_keys 表（Debug Console 多密钥管理）
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS rcon_keys (
+        CREATE TABLE IF NOT EXISTS debug_console_keys (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             key_hash TEXT NOT NULL UNIQUE,
             key_name TEXT,
@@ -127,9 +156,9 @@ def init_complete_db():
             is_active INTEGER NOT NULL DEFAULT 1
         )
     """)
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_rcon_keys_hash_active "
-                "ON rcon_keys(key_hash, is_active)")
-    print("  [OK] rcon_keys 表")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_debug_console_keys_hash_active "
+                "ON debug_console_keys(key_hash, is_active)")
+    print("  [OK] debug_console_keys 表")
 
     # 7. posts 表（社区帖子）
     cur.execute("""
@@ -442,7 +471,7 @@ def init_complete_db():
         )
     """)
 
-    # 12.7 ip_whitelist 表（IP 白名单：仅 RCON 可控制，白名单 IP 不受拦截）
+    # 12.7 ip_whitelist 表（IP 白名单：仅 Debug Console 可控制，白名单 IP 不受拦截）
     cur.execute("""
         CREATE TABLE IF NOT EXISTS ip_whitelist (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

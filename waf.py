@@ -10,7 +10,7 @@ WAF（Web 应用防火墙）+ 行为监测（纯逻辑，无 DB 依赖；DB 操�
 
 设计约束（避免误杀正常 API 流量）：
 - 请求体仅在「非自由文本/非流式/非管理」端点检查；聊天/发帖/转账/好友/社区/充值/
-  /api/admin//api/rcon 的请求体免检，以免把用户正常的 prompt/备注当成攻击拦截。
+  /api/admin//api/debug-console 的请求体免检，以免把用户正常的 prompt/备注当成攻击拦截。
 - 规则正则偏向「结构化攻击特征」，降低对正常文本（如搜索词含 select）的误报。
 """
 import re
@@ -44,7 +44,7 @@ BODY_EXEMPT_PREFIXES = (
     '/api/chat', '/api/chat/completions', '/v1/chat', '/v1/chat/completions',
     '/v1/responses', '/v1/messages', '/v1/models', '/api/models', '/api/posts',
     '/api/transfer', '/api/friend', '/api/social', '/api/recharge', '/api/admin/',
-    '/api/rcon', '/v1/completions', '/v1/embeddings', '/v1/rerank',
+    '/api/debug-console', '/v1/completions', '/v1/embeddings', '/v1/rerank',
 )
 
 

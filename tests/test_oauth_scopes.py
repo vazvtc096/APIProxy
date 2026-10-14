@@ -8,7 +8,7 @@ from APIProxy import oauth
 
 def test_sensitive_scopes_defined():
     assert set(oauth.SENSITIVE_SCOPES) == {
-        'user:write', 'transactions:write', 'apikeys:write', 'rcon'
+        'user:write', 'transactions:write', 'apikeys:write', 'debug_console'
     }
 
 
@@ -20,12 +20,12 @@ def test_default_safe_scopes_exclude_sensitive():
 
 
 def test_categorize_scopes_flags_sensitive():
-    cats = oauth.categorize_scopes('api user:write rcon profile')
+    cats = oauth.categorize_scopes('api user:write debug_console profile')
     by_scope = {c['scope']: c for c in cats}
     assert by_scope['api']['sensitive'] is False
     assert by_scope['profile']['sensitive'] is False
     assert by_scope['user:write']['sensitive'] is True
-    assert by_scope['rcon']['sensitive'] is True
+    assert by_scope['debug_console']['sensitive'] is True
 
 
 def test_categorize_dedup_and_order():

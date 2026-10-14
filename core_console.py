@@ -1,8 +1,8 @@
 """Console 运维控制台：集群内任意节点的运行时命令分发中心。
 
-设计目标（相对原 RCON）：
-  - 去掉「游戏感」的 RCON 命名，统一为 Console（运维控制台）。
-  - 复用 core_rcon 中已成熟的业务运维命令（用户 / 充值 / 会话 / API Key /
+设计目标（构建在 Debug Console 之上）：
+  - 以 Console（运维控制台）呈现，替代底层偏「游戏化」的 Debug Console 命名。
+  - 复用 core_debug_console 中已成熟的业务运维命令（用户 / 充值 / 会话 / API Key /
     白名单等），避免重复 700 行逻辑。
   - 新增「节点 / 集群」维度的运维命令，覆盖运维的方方面面（状态、角色、
     日志级别、缓存、维护模式、封禁、GC、连接、公告等）。
@@ -10,9 +10,9 @@
     内部端点 /internal/console（本地执行），dispatch() 据此做跨节点转发。
 
 鉴权：
-  - /internal/console 仅接受节点间共享密钥（CLUSTER_SECRET 或 RCON_SECRET），
+  - /internal/console 仅接受节点间共享密钥（CLUSTER_SECRET 或 DEBUG_CONSOLE_SECRET），
     并拒绝 Worker 节点对外提供（只有 LB / 单机才执行本地命令）。
-  - 运维人员经 /api/console/exec 下发命令，复用 RCON 密钥鉴权（见 console_routes）。
+  - 运维人员经 /api/console/exec 下发命令，复用 Debug Console 密钥鉴权（见 console_routes）。
 """
 
 import asyncio
@@ -23,7 +23,7 @@ import urllib.error
 import urllib.request
 
 from . import configs
-from .core_rcon import _RCON_HANDLERS, _execute_rcon_command_sync
+from .core_debug_console import _DEBUG_CONSOLE_HANDLERS, _execute_debug_console_command_sync
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ TIER_ADMIN = 2
 TIER_NAMES = {0: "info", 1: "op", 2: "admin"}
 
 # 各命令所需最低层级。未列出的 NODE 命令默认按 op 处理；
-# 业务 RCON 命令（在 _RCON_HANDLERS 中）统一用 CONSOLE_RCON_DEFAULT_TIER。
+# 业务 Debug Console 命令（在 _DEBUG_CONSOLE_HANDLERS 中）统一用 DEBUG_CONSOLE_DEFAULT_TIER。
 COMMAND_TIERS = {
     # --- info：只读 / 查询 ---
     "whoami": TIER_INFO, "nodes": TIER_INFO, "cluster_status": TIER_INFO,
@@ -71,8 +71,8 @@ def _command_required_tier(command: str) -> int:
     """返回某命令执行所需的最低层级。"""
     if command in COMMAND_TIERS:
         return COMMAND_TIERS[command]
-    if command in _RCON_HANDLERS:
-        return int(getattr(configs, "CONSOLE_RCON_DEFAULT_TIER", TIER_OP))
+    if command in _DEBUG_CONSOLE_HANDLERS:
+        return int(getattr(configs, "DEBUG_CONSOLE_DEFAULT_TIER", TIER_OP))
     return TIER_OP  # 未知命令默认按 op 对待
 
 
@@ -80,7 +80,7 @@ def console_tier_for_key(key: str) -> int:
     """返回某密钥被授予的最高层级。
 
     - 受限密钥表（CONSOLE_KEY_TIERS）中的 key → 其指定层级；
-    - 主 RCON/Console 密钥（验证通过）→ CONSOLE_MAX_TIER（默认 admin 全权）。
+    - 主 Debug Console/Console 密钥（验证通过）→ CONSOLE_MAX_TIER（默认 admin 全权）。
     """
     kt = getattr(configs, "CONSOLE_KEY_TIERS", {}) or {}
     if key and key in kt:
@@ -180,7 +180,7 @@ def _cmd_reload(args) -> dict:
 
 
 def _set_maintenance(on: bool, msg: str) -> dict:
-    from .rcon import _set_config
+    from .debug_console import _set_config
     _set_config("maintenance", "1" if on else "0")
     if msg:
         _set_config("maintenance_msg", msg)
@@ -1186,8 +1186,8 @@ NODE_HANDLERS = {
 # 命令执行 + 跨节点分发
 # --------------------------------------------------------------------------- #
 def console_help_text() -> str:
-    lines = ["Console 运维控制台 — 可用命令：", "", "业务运维（复用 RCON 命令集）："]
-    lines += [f"  {c}" for c in sorted(_RCON_HANDLERS.keys())]
+    lines = ["Console 运维控制台 — 可用命令：", "", "业务运维（复用 Debug Console 命令集）："]
+    lines += [f"  {c}" for c in sorted(_DEBUG_CONSOLE_HANDLERS.keys())]
     lines += ["", "节点 / 集群运维："]
     lines += [f"  {c}" for c in sorted(NODE_HANDLERS.keys())]
     lines += ["", "跨节点：命令可带 target 参数，经 /api/console/exec 下发：",
@@ -1197,8 +1197,8 @@ def console_help_text() -> str:
 
 def _run_locally(command: str, args: list) -> dict:
     """在本节点本地执行一条 Console 命令。"""
-    if command in _RCON_HANDLERS:
-        handler = lambda a: _execute_rcon_command_sync(command, a)
+    if command in _DEBUG_CONSOLE_HANDLERS:
+        handler = lambda a: _execute_debug_console_command_sync(command, a)
     else:
         handler = NODE_HANDLERS.get(command)
         if handler is None:
@@ -1232,7 +1232,7 @@ def _run_locally(command: str, args: list) -> dict:
 
 
 def _internal_secret() -> str:
-    return getattr(configs, "CLUSTER_SECRET", "") or getattr(configs, "RCON_SECRET", "")
+    return getattr(configs, "CLUSTER_SECRET", "") or getattr(configs, "DEBUG_CONSOLE_SECRET", "")
 
 
 def _resolve_target_url(target: str):

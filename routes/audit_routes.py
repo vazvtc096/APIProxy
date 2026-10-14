@@ -1,7 +1,7 @@
 """日志审计服务器路由。
 
-  GET  /api/audit/query    按条件查询审计（RCON 密钥保护）
-  GET  /api/audit/export   导出审计（JSON/CSV，RCON 密钥保护）
+  GET  /api/audit/query    按条件查询审计（Debug Console 密钥保护）
+  GET  /api/audit/export   导出审计（JSON/CSV，Debug Console 密钥保护）
   GET  /api/audit/stats    最近 N 天审计统计
   POST /internal/audit     节点间转发收口（X-Internal-Secret）
 """
@@ -9,7 +9,7 @@ from quart import Blueprint, request, jsonify, Response
 
 from .. import audit_server
 from ..core_console import _internal_secret
-from ..core_rcon import _verify_rcon_key
+from ..core_debug_console import _verify_debug_console_key
 
 audit_bp = Blueprint("audit", __name__)
 
@@ -29,8 +29,8 @@ async def _check_internal_secret() -> bool:
 
 @audit_bp.route("/api/audit/query", methods=["GET"])
 async def audit_query():
-    if not await _verify_rcon_key(request.headers.get("X-RCON-Key", "")):
-        return jsonify({"error": "Invalid RCON/Console key"}), 403
+    if not await _verify_debug_console_key(request.headers.get("X-Debug-Console-Key", "")):
+        return jsonify({"error": "Invalid Debug Console/Console key"}), 403
     try:
         def _i(name, d=0):
             try:
@@ -53,8 +53,8 @@ async def audit_query():
 
 @audit_bp.route("/api/audit/export", methods=["GET"])
 async def audit_export():
-    if not await _verify_rcon_key(request.headers.get("X-RCON-Key", "")):
-        return jsonify({"error": "Invalid RCON/Console key"}), 403
+    if not await _verify_debug_console_key(request.headers.get("X-Debug-Console-Key", "")):
+        return jsonify({"error": "Invalid Debug Console/Console key"}), 403
     try:
         def _i(name, d=0):
             try:
@@ -81,8 +81,8 @@ async def audit_export():
 
 @audit_bp.route("/api/audit/stats", methods=["GET"])
 async def audit_stats():
-    if not await _verify_rcon_key(request.headers.get("X-RCON-Key", "")):
-        return jsonify({"error": "Invalid RCON/Console key"}), 403
+    if not await _verify_debug_console_key(request.headers.get("X-Debug-Console-Key", "")):
+        return jsonify({"error": "Invalid Debug Console/Console key"}), 403
     try:
         def _i(name, d=0):
             try:

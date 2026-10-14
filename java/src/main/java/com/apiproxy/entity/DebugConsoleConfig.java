@@ -10,15 +10,15 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 /**
- * RCON 远程服务器配置（Source RCON 协议）。
+ * Debug Console 远程服务器配置（Source Debug Console 协议）。
  *
  * 每条记录对应一台可连接的远程游戏/服务器（host:port + 认证密码），
- * 由管理员通过 /api/rcon/configs 维护，用于执行远程控制台命令。
+ * 由管理员通过 /api/debug-console/configs 维护，用于执行远程控制台命令。
  */
 @Data
 @Entity
-@Table(name = "rcon_config")
-public class RconConfig {
+@Table(name = "debug_console_config")
+public class DebugConsoleConfig {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -30,10 +30,10 @@ public class RconConfig {
     /** 服务器主机名 / IP */
     private String host;
 
-    /** 服务器 RCON 端口 */
+    /** 服务器 Debug Console 端口 */
     private Integer port;
 
-    /** RCON 认证密码 */
+    /** Debug Console 认证密码 */
     private String password;
 
     /** 是否启用：1=启用，0=禁用 */

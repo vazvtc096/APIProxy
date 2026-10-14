@@ -1,4 +1,4 @@
-"""RCON 远程控制台：密钥管理、命令执行、双重认证。
+"""Debug Console 远程控制台：密钥管理、命令执行、双重认证。
 
 从 core.py 拆分而来（阶段 2：God module 拆分）。
 """
@@ -8,31 +8,31 @@ import logging
 from quart import request, jsonify, session
 
 from .apikey import _get_user_by_name, verify_password
-from .configs import RCON_ENABLED
+from .configs import DEBUG_CONSOLE_ENABLED
 from .core_db import _get_conn
 from .core_net_utils import _ip_in_cidr
 from .core_security_utils import _is_safe_username, MIN_PASSWORD_LENGTH
 
-RCON_KEY_LENGTH = 128  # RCON 密钥位数（字节）
+DEBUG_CONSOLE_KEY_LENGTH = 128  # Debug Console 密钥位数（字节）
 
-def _init_rcon_table():
-    """初始化 RCON 配置表 + 多密钥表"""
+def _init_debug_console_table():
+    """初始化 Debug Console 配置表 + 多密钥表"""
     def _init():
         conn = _get_conn()
         with conn:
             cur = conn.cursor()
             cur.execute("""
-                CREATE TABLE IF NOT EXISTS rcon_config (
+                CREATE TABLE IF NOT EXISTS debug_console_config (
                     id INTEGER PRIMARY KEY CHECK (id = 1),
-                    rcon_key TEXT NOT NULL,
+                    debug_console_key TEXT NOT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     last_refreshed_at TIMESTAMP
                 )
             """)
-            # 多密钥表：供管理端 /api/admin/rcon-keys 与 RCON `list/create/revoke_rcon_key`
+            # 多密钥表：供管理端 /api/admin/debug-console-keys 与 Debug Console `list/create/revoke_debug_console_key`
             # 命令使用。历史版本漏建此表，导致相关接口一律 500（P0-01 重构期发现并修复）。
             cur.execute("""
-                CREATE TABLE IF NOT EXISTS rcon_keys (
+                CREATE TABLE IF NOT EXISTS debug_console_keys (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     key_hash TEXT NOT NULL UNIQUE,
                     key_name TEXT,
@@ -43,93 +43,93 @@ def _init_rcon_table():
                 )
             """)
             cur.execute(
-                "CREATE INDEX IF NOT EXISTS idx_rcon_keys_hash_active "
-                "ON rcon_keys(key_hash, is_active)")
+                "CREATE INDEX IF NOT EXISTS idx_debug_console_keys_hash_active "
+                "ON debug_console_keys(key_hash, is_active)")
             conn.commit()
             
             # 检查是否已有密钥，没有则生成
-            cur.execute("SELECT rcon_key FROM rcon_config WHERE id = 1")
+            cur.execute("SELECT debug_console_key FROM debug_console_config WHERE id = 1")
             row = cur.fetchone()
             if not row:
                 # 第一次启动，生成密钥
                 import base64
-                key_bytes = os.urandom(RCON_KEY_LENGTH)
-                rcon_key = base64.b64encode(key_bytes).decode('ascii')
+                key_bytes = os.urandom(DEBUG_CONSOLE_KEY_LENGTH)
+                debug_console_key = base64.b64encode(key_bytes).decode('ascii')
                 cur.execute(
-                    "INSERT INTO rcon_config (id, rcon_key, last_refreshed_at) VALUES (1, ?, CURRENT_TIMESTAMP)",
-                    (rcon_key,)
+                    "INSERT INTO debug_console_config (id, debug_console_key, last_refreshed_at) VALUES (1, ?, CURRENT_TIMESTAMP)",
+                    (debug_console_key,)
                 )
                 conn.commit()
-                print(f"[RCON] 首次启动，已生成 RCON 密钥")
-                print(f"[RCON] 密钥前8位: {rcon_key[:8]}...（完整密钥仅存于数据库 rcon_config 表，未打印到日志）")
-                print(f"[RCON] 请妥善保管，丢失后无法找回！")
+                print(f"[Debug Console] 首次启动，已生成 Debug Console 密钥")
+                print(f"[Debug Console] 密钥前8位: {debug_console_key[:8]}...（完整密钥仅存于数据库 debug_console_config 表，未打印到日志）")
+                print(f"[Debug Console] 请妥善保管，丢失后无法找回！")
     _init()
 
 
-def _legacy_rcon_config_key() -> str | None:
-    """读取历史 rcon_config 表中的密钥（仅用于一次性迁移）。"""
+def _legacy_debug_console_config_key() -> str | None:
+    """读取历史 debug_console_config 表中的密钥（仅用于一次性迁移）。"""
     try:
         conn = _get_conn()
         with conn:
             cur = conn.cursor()
-            cur.execute("SELECT rcon_key FROM rcon_config WHERE id = 1")
+            cur.execute("SELECT debug_console_key FROM debug_console_config WHERE id = 1")
             row = cur.fetchone()
-            return row['rcon_key'] if row else None
+            return row['debug_console_key'] if row else None
     except Exception:
         return None
 
 
-def _get_rcon_key_sync() -> str:
-    """获取当前 RCON 密钥（同步版本）。
+def _get_debug_console_key_sync() -> str:
+    """获取当前 Debug Console 密钥（同步版本）。
 
-    单一数据源为 system_config['rcon_key'] —— 即 rcon.py 中 TCP RCON 服务所用、
-    且启动日志打印的那把密钥。历史实现改读 rcon_config 表，而该表从未被写入
-    （_init_rcon_table 从未被调用），导致 HTTP RCON API 的密钥校验恒为失败、
-    19 条 /api/rcon/* 路由全部 403。此处统一委托给 rcon.py，并在首次调用时
-    把遗留的 rcon_config 密钥迁移过去，避免老部署换密钥。
+    单一数据源为 system_config['debug_console_key'] —— 即 debug_console.py 中 TCP Debug Console 服务所用、
+    且启动日志打印的那把密钥。历史实现改读 debug_console_config 表，而该表从未被写入
+    （_init_debug_console_table 从未被调用），导致 HTTP Debug Console API 的密钥校验恒为失败、
+    19 条 /api/debug-console/* 路由全部 403。此处统一委托给 debug_console.py，并在首次调用时
+    把遗留的 debug_console_config 密钥迁移过去，避免老部署换密钥。
     """
-    from . import rcon as _rcon
-    key = _rcon._get_config('rcon_key')
+    from . import debug_console as _debug_console
+    key = _debug_console._get_config('debug_console_key')
     if key:
         return key
-    legacy = _legacy_rcon_config_key()
+    legacy = _legacy_debug_console_config_key()
     if legacy:
-        _rcon._set_config('rcon_key', legacy)
-        logging.info("[RCON] 已将 rcon_config 中的遗留密钥迁移至 system_config")
+        _debug_console._set_config('debug_console_key', legacy)
+        logging.info("[Debug Console] 已将 debug_console_config 中的遗留密钥迁移至 system_config")
         return legacy
-    # 两处均无：由 rcon.py 生成并落库（与 TCP 服务共用同一把）
-    return _rcon.get_rcon_key()
+    # 两处均无：由 debug_console.py 生成并落库（与 TCP 服务共用同一把）
+    return _debug_console.get_debug_console_key()
 
 
-def _refresh_rcon_key_sync() -> str:
-    """刷新 RCON 密钥（同步版本），写入 system_config 以与 TCP RCON 服务保持一致。
+def _refresh_debug_console_key_sync() -> str:
+    """刷新 Debug Console 密钥（同步版本），写入 system_config 以与 TCP Debug Console 服务保持一致。
 
     Returns:
         新密钥
     """
-    from . import rcon as _rcon
-    new_key = _rcon.generate_rcon_key()
+    from . import debug_console as _debug_console
+    new_key = _debug_console.generate_debug_console_key()
     # 同步清理遗留表，防止后续再从旧位置读到过期密钥
     try:
         conn = _get_conn()
         with conn:
             conn.execute(
-                "UPDATE rcon_config SET rcon_key = ?, "
+                "UPDATE debug_console_config SET debug_console_key = ?, "
                 "last_refreshed_at = CURRENT_TIMESTAMP WHERE id = 1",
                 (new_key,))
             conn.commit()
     except Exception:
         pass
-    logging.warning("[RCON] 密钥已刷新")
+    logging.warning("[Debug Console] 密钥已刷新")
     return new_key
 
 
-def _verify_rcon_key_sync(key: str) -> bool:
-    """验证 RCON 密钥（同步版本）"""
-    if not key or not RCON_ENABLED:
+def _verify_debug_console_key_sync(key: str) -> bool:
+    """验证 Debug Console 密钥（同步版本）"""
+    if not key or not DEBUG_CONSOLE_ENABLED:
         return False
     
-    current_key = _get_rcon_key_sync()
+    current_key = _get_debug_console_key_sync()
     if not current_key:
         return False
     
@@ -138,26 +138,26 @@ def _verify_rcon_key_sync(key: str) -> bool:
     return hmac.compare_digest(key, current_key)
 
 
-async def _get_rcon_key() -> str:
-    """获取当前 RCON 密钥（异步版本）"""
+async def _get_debug_console_key() -> str:
+    """获取当前 Debug Console 密钥（异步版本）"""
     import asyncio
-    return await asyncio.to_thread(_get_rcon_key_sync)
+    return await asyncio.to_thread(_get_debug_console_key_sync)
 
 
-async def _refresh_rcon_key() -> str:
-    """刷新 RCON 密钥（异步版本）"""
+async def _refresh_debug_console_key() -> str:
+    """刷新 Debug Console 密钥（异步版本）"""
     import asyncio
-    return await asyncio.to_thread(_refresh_rcon_key_sync)
+    return await asyncio.to_thread(_refresh_debug_console_key_sync)
 
 
-async def _verify_rcon_key(key: str) -> bool:
-    """验证 RCON 密钥（异步版本）"""
+async def _verify_debug_console_key(key: str) -> bool:
+    """验证 Debug Console 密钥（异步版本）"""
     import asyncio
-    return await asyncio.to_thread(_verify_rcon_key_sync, key)
+    return await asyncio.to_thread(_verify_debug_console_key_sync, key)
 
 
-def _generate_rcon_key_sync(key_name: str = "default") -> str:
-    """生成新的 RCON 密钥（同步版本）
+def _generate_debug_console_key_sync(key_name: str = "default") -> str:
+    """生成新的 Debug Console 密钥（同步版本）
     Returns:
         明文密钥（只返回一次，数据库只存哈希）
     """
@@ -176,7 +176,7 @@ def _generate_rcon_key_sync(key_name: str = "default") -> str:
     with conn:
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO rcon_keys (key_hash, key_name) VALUES (?, ?)",
+            "INSERT INTO debug_console_keys (key_hash, key_name) VALUES (?, ?)",
             (key_hash, key_name)
         )
         conn.commit()
@@ -184,8 +184,8 @@ def _generate_rcon_key_sync(key_name: str = "default") -> str:
     return key_b64
 
 
-def _validate_rcon_key_sync(key_b64: str, ip: str = "") -> bool:
-    """验证 RCON 密钥是否有效（同步版本）"""
+def _validate_debug_console_key_sync(key_b64: str, ip: str = "") -> bool:
+    """验证 Debug Console 密钥是否有效（同步版本）"""
     if not key_b64:
         return False
     
@@ -199,7 +199,7 @@ def _validate_rcon_key_sync(key_b64: str, ip: str = "") -> bool:
     with conn:
         cur = conn.cursor()
         cur.execute(
-            "SELECT id FROM rcon_keys WHERE key_hash = ? AND is_active = 1",
+            "SELECT id FROM debug_console_keys WHERE key_hash = ? AND is_active = 1",
             (key_hash,)
         )
         row = cur.fetchone()
@@ -207,7 +207,7 @@ def _validate_rcon_key_sync(key_b64: str, ip: str = "") -> bool:
         if row:
             # 更新最后使用时间
             cur.execute(
-                "UPDATE rcon_keys SET last_used_at = ?, last_used_ip = ? WHERE key_hash = ?",
+                "UPDATE debug_console_keys SET last_used_at = ?, last_used_ip = ? WHERE key_hash = ?",
                 (now, ip, key_hash)
             )
             conn.commit()
@@ -216,31 +216,31 @@ def _validate_rcon_key_sync(key_b64: str, ip: str = "") -> bool:
     return False
 
 
-def _list_rcon_keys_sync() -> list:
-    """列出所有 RCON 密钥（同步版本，不返回明文）"""
+def _list_debug_console_keys_sync() -> list:
+    """列出所有 Debug Console 密钥（同步版本，不返回明文）"""
     conn = _get_conn()
     with conn:
         cur = conn.cursor()
         cur.execute("""
             SELECT id, key_name, created_at, last_used_at, last_used_ip, is_active
-            FROM rcon_keys ORDER BY created_at DESC
+            FROM debug_console_keys ORDER BY created_at DESC
         """)
         rows = cur.fetchall()
         return [dict(row) for row in rows]
 
 
-def _revoke_rcon_key_sync(key_id: int) -> bool:
-    """撤销 RCON 密钥（同步版本）"""
+def _revoke_debug_console_key_sync(key_id: int) -> bool:
+    """撤销 Debug Console 密钥（同步版本）"""
     conn = _get_conn()
     with conn:
         cur = conn.cursor()
         cur.execute(
-            "UPDATE rcon_keys SET is_active = 0 WHERE id = ?",
+            "UPDATE debug_console_keys SET is_active = 0 WHERE id = ?",
             (key_id,)
         )
         conn.commit()
         return cur.rowcount > 0
-def _rcon_cmd_help(conn, cur, args) -> dict:
+def _debug_console_cmd_help(conn, cur, args) -> dict:
     output = """可用命令：
   help                           显示帮助
   status                         服务器状态
@@ -272,12 +272,12 @@ def _rcon_cmd_help(conn, cur, args) -> dict:
     gen_apikey <username>        生成 API Key
     revoke_apikey <user> <key>   吊销 API Key
 
-  RCON 密钥管理：
-    list_rcon_keys               列出 RCON 密钥
-    gen_rcon_key [name]          生成新 RCON 密钥
-    revoke_rcon_key <id>         撤销 RCON 密钥
+  Debug Console 密钥管理：
+    list_debug_console_keys               列出 Debug Console 密钥
+    gen_debug_console_key [name]          生成新 Debug Console 密钥
+    revoke_debug_console_key <id>         撤销 Debug Console 密钥
 
-  IP 白名单管理（仅 RCON 可控制）：
+  IP 白名单管理（仅 Debug Console 可控制）：
     whitelist add <ip> [note] [bypass]   加入白名单（bypass 默认 all，可选 blacklist/autoban/account_ban/ratelimit/device_ban 组合）
     whitelist remove <ip>                移除白名单
     whitelist list                       列出白名单
@@ -287,32 +287,32 @@ def _rcon_cmd_help(conn, cur, args) -> dict:
             # ==================== 状态 ====================
 
 
-def _rcon_cmd_status(conn, cur, args) -> dict:
+def _debug_console_cmd_status(conn, cur, args) -> dict:
     cur.execute("SELECT COUNT(*) as cnt FROM users")
     user_count = cur.fetchone()['cnt']
     cur.execute("SELECT COUNT(*) as cnt FROM sessions WHERE expires_at > datetime('now')")
     session_count = cur.fetchone()['cnt']
     cur.execute("SELECT COUNT(*) as cnt FROM recharge_requests WHERE status = 'pending'")
     pending_recharges = cur.fetchone()['cnt']
-    cur.execute("SELECT COUNT(*) as cnt FROM rcon_keys WHERE is_active = 1")
-    rcon_keys = cur.fetchone()['cnt']
+    cur.execute("SELECT COUNT(*) as cnt FROM debug_console_keys WHERE is_active = 1")
+    debug_console_keys = cur.fetchone()['cnt']
     
     output = f"""服务器状态：运行中
 用户总数：{user_count}
 活跃会话：{session_count}
 待处理充值：{pending_recharges}
-活跃 RCON 密钥：{rcon_keys}"""
+活跃 Debug Console 密钥：{debug_console_keys}"""
     return {'success': True, 'output': output, 'data': {
         'user_count': user_count,
         'session_count': session_count,
         'pending_recharges': pending_recharges,
-        'rcon_keys': rcon_keys
+        'debug_console_keys': debug_console_keys
     }}
             
             # ==================== 统计 ====================
 
 
-def _rcon_cmd_stats(conn, cur, args) -> dict:
+def _debug_console_cmd_stats(conn, cur, args) -> dict:
     cur.execute("SELECT COUNT(*) as cnt FROM users")
     total_users = cur.fetchone()['cnt']
     cur.execute("SELECT SUM(balence) as total FROM users")
@@ -337,7 +337,7 @@ def _rcon_cmd_stats(conn, cur, args) -> dict:
             # ==================== 用户列表 ====================
 
 
-def _rcon_cmd_list_users(conn, cur, args) -> dict:
+def _debug_console_cmd_list_users(conn, cur, args) -> dict:
     page = int(args[0]) if args else 1
     page_size = 20
     offset = (page - 1) * page_size
@@ -367,7 +367,7 @@ def _rcon_cmd_list_users(conn, cur, args) -> dict:
             # ==================== 获取用户信息 ====================
 
 
-def _rcon_cmd_get_user(conn, cur, args) -> dict:
+def _debug_console_cmd_get_user(conn, cur, args) -> dict:
     if not args:
         return {'success': False, 'output': '用法：get_user <username>', 'data': {}}
     
@@ -405,7 +405,7 @@ def _rcon_cmd_get_user(conn, cur, args) -> dict:
             # ==================== 创建用户 ====================
 
 
-def _rcon_cmd_create_user(conn, cur, args) -> dict:
+def _debug_console_cmd_create_user(conn, cur, args) -> dict:
     if len(args) < 2:
         return {'success': False, 'output': '用法：create_user <username> <password> [balence]', 'data': {}}
     
@@ -449,7 +449,7 @@ def _rcon_cmd_create_user(conn, cur, args) -> dict:
             # ==================== 删除用户 ====================
 
 
-def _rcon_cmd_delete_user(conn, cur, args) -> dict:
+def _debug_console_cmd_delete_user(conn, cur, args) -> dict:
     if not args:
         return {'success': False, 'output': '用法：delete_user <username>', 'data': {}}
     
@@ -479,7 +479,7 @@ def _rcon_cmd_delete_user(conn, cur, args) -> dict:
             # ==================== 封禁用户 ====================
 
 
-def _rcon_cmd_ban_user(conn, cur, args) -> dict:
+def _debug_console_cmd_ban_user(conn, cur, args) -> dict:
     if len(args) < 2:
         return {'success': False, 'output': '用法：ban_user <username> <reason> [days]', 'data': {}}
     
@@ -515,7 +515,7 @@ def _rcon_cmd_ban_user(conn, cur, args) -> dict:
             # ==================== 解封用户 ====================
 
 
-def _rcon_cmd_unban_user(conn, cur, args) -> dict:
+def _debug_console_cmd_unban_user(conn, cur, args) -> dict:
     if not args:
         return {'success': False, 'output': '用法：unban_user <username>', 'data': {}}
     
@@ -537,7 +537,7 @@ def _rcon_cmd_unban_user(conn, cur, args) -> dict:
             # ==================== 设置余额 ====================
 
 
-def _rcon_cmd_set_balence(conn, cur, args) -> dict:
+def _debug_console_cmd_set_balence(conn, cur, args) -> dict:
     if len(args) < 2:
         return {'success': False, 'output': '用法：set_balence <username> <amount>', 'data': {}}
     
@@ -560,7 +560,7 @@ def _rcon_cmd_set_balence(conn, cur, args) -> dict:
             # ==================== 增加余额 ====================
 
 
-def _rcon_cmd_add_balence(conn, cur, args) -> dict:
+def _debug_console_cmd_add_balence(conn, cur, args) -> dict:
     if len(args) < 2:
         return {'success': False, 'output': '用法：add_balence <username> <amount>', 'data': {}}
     
@@ -585,7 +585,7 @@ def _rcon_cmd_add_balence(conn, cur, args) -> dict:
             # ==================== 充值请求列表 ====================
 
 
-def _rcon_cmd_list_recharges(conn, cur, args) -> dict:
+def _debug_console_cmd_list_recharges(conn, cur, args) -> dict:
     status = args[0] if args else 'pending'
     
     cur.execute(
@@ -607,7 +607,7 @@ def _rcon_cmd_list_recharges(conn, cur, args) -> dict:
             # ==================== 通过充值 ====================
 
 
-def _rcon_cmd_approve_recharge(conn, cur, args) -> dict:
+def _debug_console_cmd_approve_recharge(conn, cur, args) -> dict:
     if not args:
         return {'success': False, 'output': '用法：approve_recharge <request_id>', 'data': {}}
     
@@ -643,7 +643,7 @@ def _rcon_cmd_approve_recharge(conn, cur, args) -> dict:
             # ==================== 拒绝充值 ====================
 
 
-def _rcon_cmd_reject_recharge(conn, cur, args) -> dict:
+def _debug_console_cmd_reject_recharge(conn, cur, args) -> dict:
     if not args:
         return {'success': False, 'output': '用法：reject_recharge <request_id> [reason]', 'data': {}}
     
@@ -673,7 +673,7 @@ def _rcon_cmd_reject_recharge(conn, cur, args) -> dict:
             # ==================== 查看用户会话 ====================
 
 
-def _rcon_cmd_list_sessions(conn, cur, args) -> dict:
+def _debug_console_cmd_list_sessions(conn, cur, args) -> dict:
     if not args:
         return {'success': False, 'output': '用法：list_sessions <username>', 'data': {}}
     
@@ -704,7 +704,7 @@ def _rcon_cmd_list_sessions(conn, cur, args) -> dict:
             # ==================== 踢掉指定会话 ====================
 
 
-def _rcon_cmd_kick_session(conn, cur, args) -> dict:
+def _debug_console_cmd_kick_session(conn, cur, args) -> dict:
     if not args:
         return {'success': False, 'output': '用法：kick_session <session_id>', 'data': {}}
     
@@ -724,7 +724,7 @@ def _rcon_cmd_kick_session(conn, cur, args) -> dict:
             # ==================== 踢掉用户所有会话 ====================
 
 
-def _rcon_cmd_kick_all_sessions(conn, cur, args) -> dict:
+def _debug_console_cmd_kick_all_sessions(conn, cur, args) -> dict:
     if not args:
         return {'success': False, 'output': '用法：kick_all_sessions <username>', 'data': {}}
     
@@ -742,7 +742,7 @@ def _rcon_cmd_kick_all_sessions(conn, cur, args) -> dict:
             # ==================== 清理过期会话 ====================
 
 
-def _rcon_cmd_cleanup_sessions(conn, cur, args) -> dict:
+def _debug_console_cmd_cleanup_sessions(conn, cur, args) -> dict:
     cur.execute("DELETE FROM sessions WHERE expires_at <= datetime('now')")
     count = cur.rowcount
     conn.commit()
@@ -753,7 +753,7 @@ def _rcon_cmd_cleanup_sessions(conn, cur, args) -> dict:
             # ==================== 列出 API Key ====================
 
 
-def _rcon_cmd_list_apikeys(conn, cur, args) -> dict:
+def _debug_console_cmd_list_apikeys(conn, cur, args) -> dict:
     if not args:
         return {'success': False, 'output': '用法：list_apikeys <username>', 'data': {}}
     
@@ -781,7 +781,7 @@ def _rcon_cmd_list_apikeys(conn, cur, args) -> dict:
             # ==================== 生成 API Key ====================
 
 
-def _rcon_cmd_gen_apikey(conn, cur, args) -> dict:
+def _debug_console_cmd_gen_apikey(conn, cur, args) -> dict:
     if not args:
         return {'success': False, 'output': '用法：gen_apikey <username>', 'data': {}}
     
@@ -805,7 +805,7 @@ def _rcon_cmd_gen_apikey(conn, cur, args) -> dict:
             # ==================== 吊销 API Key ====================
 
 
-def _rcon_cmd_revoke_apikey(conn, cur, args) -> dict:
+def _debug_console_cmd_revoke_apikey(conn, cur, args) -> dict:
     if len(args) < 2:
         return {'success': False, 'output': '用法：revoke_apikey <username> <apikey>', 'data': {}}
     
@@ -833,20 +833,20 @@ def _rcon_cmd_revoke_apikey(conn, cur, args) -> dict:
     output = f"API Key 已吊销：{apikey[:10]}..."
     return {'success': True, 'output': output, 'data': {'apikey': apikey}}
             
-            # ==================== 列出 RCON 密钥 ====================
+            # ==================== 列出 Debug Console 密钥 ====================
 
 
-def _rcon_cmd_list_rcon_keys(conn, cur, args) -> dict:
+def _debug_console_cmd_list_debug_console_keys(conn, cur, args) -> dict:
     cur.execute("""
         SELECT id, key_name, created_at, last_used_at, last_used_ip, is_active
-        FROM rcon_keys ORDER BY created_at DESC
+        FROM debug_console_keys ORDER BY created_at DESC
     """)
     keys = cur.fetchall()
     
     if not keys:
-        return {'success': True, 'output': '没有 RCON 密钥', 'data': {'keys': []}}
+        return {'success': True, 'output': '没有 Debug Console 密钥', 'data': {'keys': []}}
     
-    lines = [f"RCON 密钥列表（{len(keys)} 个）："]
+    lines = [f"Debug Console 密钥列表（{len(keys)} 个）："]
     for k in keys:
         status = '活跃' if k['is_active'] else '已撤销'
         lines.append(f"  [{k['id']}] {k['key_name']}  状态: {status}  创建: {k['created_at']}")
@@ -856,10 +856,10 @@ def _rcon_cmd_list_rcon_keys(conn, cur, args) -> dict:
     output = '\n'.join(lines)
     return {'success': True, 'output': output, 'data': {'keys': [dict(k) for k in keys]}}
             
-            # ==================== 生成 RCON 密钥 ====================
+            # ==================== 生成 Debug Console 密钥 ====================
 
 
-def _rcon_cmd_gen_rcon_key(conn, cur, args) -> dict:
+def _debug_console_cmd_gen_debug_console_key(conn, cur, args) -> dict:
     key_name = args[0] if args else 'default'
     
     import os
@@ -871,38 +871,38 @@ def _rcon_cmd_gen_rcon_key(conn, cur, args) -> dict:
     key_hash = hashlib.sha256(key_b64.encode('utf-8')).hexdigest()
     
     cur.execute(
-        "INSERT INTO rcon_keys (key_hash, key_name) VALUES (?, ?)",
+        "INSERT INTO debug_console_keys (key_hash, key_name) VALUES (?, ?)",
         (key_hash, key_name)
     )
     conn.commit()
     
-    output = f"新 RCON 密钥生成成功（只显示一次）：\n{key_b64}\n名称：{key_name}"
+    output = f"新 Debug Console 密钥生成成功（只显示一次）：\n{key_b64}\n名称：{key_name}"
     return {'success': True, 'output': output, 'data': {'key': key_b64, 'name': key_name}}
             
-            # ==================== 撤销 RCON 密钥 ====================
+            # ==================== 撤销 Debug Console 密钥 ====================
 
 
-def _rcon_cmd_revoke_rcon_key(conn, cur, args) -> dict:
+def _debug_console_cmd_revoke_debug_console_key(conn, cur, args) -> dict:
     if not args:
-        return {'success': False, 'output': '用法：revoke_rcon_key <id>', 'data': {}}
+        return {'success': False, 'output': '用法：revoke_debug_console_key <id>', 'data': {}}
     
     key_id = int(args[0])
     
-    cur.execute("SELECT key_name FROM rcon_keys WHERE id = ?", (key_id,))
+    cur.execute("SELECT key_name FROM debug_console_keys WHERE id = ?", (key_id,))
     key = cur.fetchone()
     if not key:
-        return {'success': False, 'output': f'RCON 密钥 {key_id} 不存在', 'data': {}}
+        return {'success': False, 'output': f'Debug Console 密钥 {key_id} 不存在', 'data': {}}
     
-    cur.execute("UPDATE rcon_keys SET is_active = 0 WHERE id = ?", (key_id,))
+    cur.execute("UPDATE debug_console_keys SET is_active = 0 WHERE id = ?", (key_id,))
     conn.commit()
     
-    output = f"RCON 密钥 [{key_id}] {key['key_name']} 已撤销"
+    output = f"Debug Console 密钥 [{key_id}] {key['key_name']} 已撤销"
     return {'success': True, 'output': output, 'data': {'key_id': key_id, 'name': key['key_name']}}
             
-            # ==================== IP 白名单（仅 RCON 可控制） ====================
+            # ==================== IP 白名单（仅 Debug Console 可控制） ====================
 
 
-def _rcon_cmd_whitelist(conn, cur, args) -> dict:
+def _debug_console_cmd_whitelist(conn, cur, args) -> dict:
     if not args:
         return {'success': False, 'output': '用法：whitelist <add|remove|list|check> <ip> [note] [bypass]', 'data': {}}
     sub = args[0]
@@ -966,36 +966,36 @@ def _rcon_cmd_whitelist(conn, cur, args) -> dict:
             # ==================== 未知命令 ====================
 
 
-_RCON_HANDLERS = {
-    'help': _rcon_cmd_help,
-    'status': _rcon_cmd_status,
-    'stats': _rcon_cmd_stats,
-    'list_users': _rcon_cmd_list_users,
-    'get_user': _rcon_cmd_get_user,
-    'create_user': _rcon_cmd_create_user,
-    'delete_user': _rcon_cmd_delete_user,
-    'ban_user': _rcon_cmd_ban_user,
-    'unban_user': _rcon_cmd_unban_user,
-    'set_balence': _rcon_cmd_set_balence,
-    'add_balence': _rcon_cmd_add_balence,
-    'list_recharges': _rcon_cmd_list_recharges,
-    'approve_recharge': _rcon_cmd_approve_recharge,
-    'reject_recharge': _rcon_cmd_reject_recharge,
-    'list_sessions': _rcon_cmd_list_sessions,
-    'kick_session': _rcon_cmd_kick_session,
-    'kick_all_sessions': _rcon_cmd_kick_all_sessions,
-    'cleanup_sessions': _rcon_cmd_cleanup_sessions,
-    'list_apikeys': _rcon_cmd_list_apikeys,
-    'gen_apikey': _rcon_cmd_gen_apikey,
-    'revoke_apikey': _rcon_cmd_revoke_apikey,
-    'list_rcon_keys': _rcon_cmd_list_rcon_keys,
-    'gen_rcon_key': _rcon_cmd_gen_rcon_key,
-    'revoke_rcon_key': _rcon_cmd_revoke_rcon_key,
-    'whitelist': _rcon_cmd_whitelist,
+_DEBUG_CONSOLE_HANDLERS = {
+    'help': _debug_console_cmd_help,
+    'status': _debug_console_cmd_status,
+    'stats': _debug_console_cmd_stats,
+    'list_users': _debug_console_cmd_list_users,
+    'get_user': _debug_console_cmd_get_user,
+    'create_user': _debug_console_cmd_create_user,
+    'delete_user': _debug_console_cmd_delete_user,
+    'ban_user': _debug_console_cmd_ban_user,
+    'unban_user': _debug_console_cmd_unban_user,
+    'set_balence': _debug_console_cmd_set_balence,
+    'add_balence': _debug_console_cmd_add_balence,
+    'list_recharges': _debug_console_cmd_list_recharges,
+    'approve_recharge': _debug_console_cmd_approve_recharge,
+    'reject_recharge': _debug_console_cmd_reject_recharge,
+    'list_sessions': _debug_console_cmd_list_sessions,
+    'kick_session': _debug_console_cmd_kick_session,
+    'kick_all_sessions': _debug_console_cmd_kick_all_sessions,
+    'cleanup_sessions': _debug_console_cmd_cleanup_sessions,
+    'list_apikeys': _debug_console_cmd_list_apikeys,
+    'gen_apikey': _debug_console_cmd_gen_apikey,
+    'revoke_apikey': _debug_console_cmd_revoke_apikey,
+    'list_debug_console_keys': _debug_console_cmd_list_debug_console_keys,
+    'gen_debug_console_key': _debug_console_cmd_gen_debug_console_key,
+    'revoke_debug_console_key': _debug_console_cmd_revoke_debug_console_key,
+    'whitelist': _debug_console_cmd_whitelist,
 }
 
-def _execute_rcon_command_sync(command: str, args: list = None) -> dict:
-    """执行 RCON 命令（同步版本）。命令分发到独立 handler。
+def _execute_debug_console_command_sync(command: str, args: list = None) -> dict:
+    """执行 Debug Console 命令（同步版本）。命令分发到独立 handler。
 
     Returns:
         {success: bool, output: str, data: dict}
@@ -1003,7 +1003,7 @@ def _execute_rcon_command_sync(command: str, args: list = None) -> dict:
     if args is None:
         args = []
 
-    handler = _RCON_HANDLERS.get(command)
+    handler = _DEBUG_CONSOLE_HANDLERS.get(command)
     if handler is None:
         return {'success': False, 'output': f'未知命令：{command}\n输入 help 查看可用命令', 'data': {}}
 
@@ -1016,63 +1016,63 @@ def _execute_rcon_command_sync(command: str, args: list = None) -> dict:
         return {'success': False, 'output': f'执行出错：{str(e)}', 'data': {'error': str(e)}}
 
 # 异步版本
-async def _generate_rcon_key(key_name: str = "default") -> str:
+async def _generate_debug_console_key(key_name: str = "default") -> str:
     import asyncio
-    return await asyncio.to_thread(_generate_rcon_key_sync, key_name)
+    return await asyncio.to_thread(_generate_debug_console_key_sync, key_name)
 
-async def _validate_rcon_key(key_b64: str, ip: str = "") -> bool:
+async def _validate_debug_console_key(key_b64: str, ip: str = "") -> bool:
     import asyncio
-    return await asyncio.to_thread(_validate_rcon_key_sync, key_b64, ip)
+    return await asyncio.to_thread(_validate_debug_console_key_sync, key_b64, ip)
 
-async def _list_rcon_keys() -> list:
+async def _list_debug_console_keys() -> list:
     import asyncio
-    return await asyncio.to_thread(_list_rcon_keys_sync)
+    return await asyncio.to_thread(_list_debug_console_keys_sync)
 
-async def _revoke_rcon_key(key_id: int) -> bool:
+async def _revoke_debug_console_key(key_id: int) -> bool:
     import asyncio
-    return await asyncio.to_thread(_revoke_rcon_key_sync, key_id)
+    return await asyncio.to_thread(_revoke_debug_console_key_sync, key_id)
 
-async def _execute_rcon_command(command: str, args: list = None) -> dict:
+async def _execute_debug_console_command(command: str, args: list = None) -> dict:
     import asyncio
-    return await asyncio.to_thread(_execute_rcon_command_sync, command, args)
-async def _rcon_auth():
-    """验证 RCON 密钥，返回 (is_valid: bool, error_response: tuple | None)
+    return await asyncio.to_thread(_execute_debug_console_command_sync, command, args)
+async def _debug_console_auth():
+    """验证 Debug Console 密钥，返回 (is_valid: bool, error_response: tuple | None)
 
-    注意：_verify_rcon_key 为协程函数，必须 await。
+    注意：_verify_debug_console_key 为协程函数，必须 await。
     历史缺陷：此处曾同步调用，得到的 coroutine 对象恒为真值，
-    导致 `not _verify_rcon_key(key)` 永远为 False，RCON 鉴权被完全绕过。
+    导致 `not _verify_debug_console_key(key)` 永远为 False，Debug Console 鉴权被完全绕过。
     """
-    key = request.headers.get('X-RCON-Key', '')
-    if not await _verify_rcon_key(key):
-        return False, (jsonify({'error': 'Invalid RCON key'}), 403)
+    key = request.headers.get('X-Debug-Console-Key', '')
+    if not await _verify_debug_console_key(key):
+        return False, (jsonify({'error': 'Invalid Debug Console key'}), 403)
     return True, None
 
 
-def _start_rcon_server_thread():
-    """在独立线程中启动 RCON 服务器"""
+def _start_debug_console_server_thread():
+    """在独立线程中启动 Debug Console 服务器"""
     import threading
     
-    def run_rcon():
+    def run_debug_console():
         import asyncio
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            from .rcon import start_rcon_server
-            server = loop.run_until_complete(start_rcon_server())
+            from .debug_console import start_debug_console_server
+            server = loop.run_until_complete(start_debug_console_server())
             loop.run_until_complete(server.serve_forever())
         except Exception as e:
-            logging.error(f"RCON server error: {e}")
+            logging.error(f"Debug Console server error: {e}")
     
-    thread = threading.Thread(target=run_rcon, daemon=True, name='RCON-Server')
+    thread = threading.Thread(target=run_debug_console, daemon=True, name='Debug Console-Server')
     thread.start()
     return thread
-def _is_rcon_authenticated() -> bool:
-    """检查 RCON Web 是否已通过双重认证（独立 session，不与普通用户混用）"""
-    return session.get('rcon_authenticated', False)
+def _is_debug_console_authenticated() -> bool:
+    """检查 Debug Console Web 是否已通过双重认证（独立 session，不与普通用户混用）"""
+    return session.get('debug_console_authenticated', False)
 
 
-async def _rcon_verify_admin_credentials(username: str, password: str) -> bool:
-    """验证管理员账号密码（用于 RCON Web 双重认证）"""
+async def _debug_console_verify_admin_credentials(username: str, password: str) -> bool:
+    """验证管理员账号密码（用于 Debug Console Web 双重认证）"""
     if not username or not password:
         return False
     

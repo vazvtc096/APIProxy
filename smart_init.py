@@ -174,27 +174,50 @@ def smart_init():
             )
         """)
 
-    # 7. rcon_config 表（RCON 配置）
-    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='rcon_config'")
+    # ---- RCON → Debug Console 迁移（2026-10-14，幂等）----
+    # 历史部署的库表/列/配置槽位仍用 rcon_* 命名，此处就地改名，保留既有数据。
+    for _old, _new in (("rcon_config", "debug_console_config"),
+                       ("rcon_keys", "debug_console_keys")):
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (_old,))
+        if cur.fetchone():
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (_new,))
+            if not cur.fetchone():
+                cur.execute(f"ALTER TABLE {_old} RENAME TO {_new}")
+                print(f"迁移库表：{_old} → {_new}")
+    cur.execute("DROP INDEX IF EXISTS idx_rcon_keys_hash_active")
+    # rcon_config.rcon_key 列 → debug_console_config.debug_console_key（仅当列仍是旧名时改写）
+    try:
+        cur.execute("SELECT rcon_key FROM debug_console_config LIMIT 1")
+        cur.execute("ALTER TABLE debug_console_config RENAME COLUMN rcon_key TO debug_console_key")
+        print("迁移列：debug_console_config.rcon_key → debug_console_key")
+    except Exception:
+        pass
+    # system_config 中的密钥槽位 rcon_key → debug_console_key
+    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='system_config'")
+    if cur.fetchone():
+        cur.execute("UPDATE system_config SET key = 'debug_console_key' WHERE key = 'rcon_key'")
+
+    # 7. debug_console_config 表（Debug Console 配置）
+    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='debug_console_config'")
     if not cur.fetchone():
-        print("创建 rcon_config 表...")
+        print("创建 debug_console_config 表...")
         cur.execute("""
-            CREATE TABLE rcon_config (
+            CREATE TABLE debug_console_config (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
-                rcon_key TEXT NOT NULL,
+                debug_console_key TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 last_refreshed_at TIMESTAMP
             )
         """)
 
-    # 7.1 rcon_keys 表（RCON 多密钥管理）
-    # 历史版本漏建此表，导致 /api/admin/rcon-keys（增/查/删）、RCON
-    # list/create/revoke_rcon_key 命令以及 stats 命令全部 500。
-    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='rcon_keys'")
+    # 7.1 debug_console_keys 表（Debug Console 多密钥管理）
+    # 历史版本漏建此表，导致 /api/admin/debug-console-keys（增/查/删）、Debug Console
+    # list/create/revoke_debug_console_key 命令以及 stats 命令全部 500。
+    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='debug_console_keys'")
     if not cur.fetchone():
-        print("创建 rcon_keys 表...")
+        print("创建 debug_console_keys 表...")
         cur.execute("""
-            CREATE TABLE rcon_keys (
+            CREATE TABLE debug_console_keys (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 key_hash TEXT NOT NULL UNIQUE,
                 key_name TEXT,
@@ -204,8 +227,8 @@ def smart_init():
                 is_active INTEGER NOT NULL DEFAULT 1
             )
         """)
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_rcon_keys_hash_active "
-                    "ON rcon_keys(key_hash, is_active)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_debug_console_keys_hash_active "
+                    "ON debug_console_keys(key_hash, is_active)")
 
     # 6.5 security_events 表（安全事件审计）
     cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='security_events'")
@@ -241,7 +264,7 @@ def smart_init():
             )
         """)
 
-    # 6.7 ip_whitelist 表（IP 白名单：仅 RCON 可控制，白名单 IP 不受拦截）
+    # 6.7 ip_whitelist 表（IP 白名单：仅 Debug Console 可控制，白名单 IP 不受拦截）
     cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='ip_whitelist'")
     if not cur.fetchone():
         print("创建 ip_whitelist 表...")
@@ -977,7 +1000,7 @@ def smart_init():
 
     # 6.1 确保内置公开 OAuth 客户端 'default' 存在（无客户端/公共客户端模式使用，强制 PKCE）。
     # 收紧：默认仅授予身份标识与只读/社交类 scope，剔除一切写操作与管理类高危 scope
-    # （user:write / transactions:write / apikeys:write / rcon），避免第三方应用一键索取账户毁灭性权限。
+    # （user:write / transactions:write / apikeys:write / debug_console），避免第三方应用一键索取账户毁灭性权限。
     from .oauth import DEFAULT_SAFE_SCOPES
     DEFAULT_SCOPES = DEFAULT_SAFE_SCOPES
     cur.execute("SELECT id FROM oauth_clients WHERE client_id = 'default'")

@@ -116,9 +116,9 @@ Authorization: Bearer <access_token>
 | `user:read` | 个人设置 | `GET {{BASE_URL}}/api/oauth/settings` |
 | `user:write` | 修改个人设置 | `POST {{BASE_URL}}/api/oauth/settings` |
 | `api` | 调用 Cloud LLM API 代理（聊天补全 / 模型列表） | `POST {{BASE_URL}}/api/chat/completions`（沿用原地址）；模型列表 `GET {{BASE_URL}}/api/models` |
-| `rcon` | 远程控制台（仅管理员） | `POST {{BASE_URL}}/api/rcon`（不授予 `default`） |
+| `Debug Console` | 远程控制台（仅管理员） | `POST {{BASE_URL}}/api/debug-console`（不授予 `default`） |
 
-内置 `default` 客户端已授予除 `rcon` 外的全部作用域，开箱即用。
+内置 `default` 客户端已授予除 `Debug Console` 外的全部作用域，开箱即用。
 
 > 兼容说明：仪表盘原有地址（`/api/posts`、`/apikeys` 等）同样接受 Bearer 令牌，服务端到服务端调用仍可使用；但它们**不开放跨域**，浏览器里的第三方网页应用请走 `/api/oauth/` 命名空间。
 

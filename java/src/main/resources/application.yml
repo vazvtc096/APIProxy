@@ -64,8 +64,8 @@ apiproxy:
     default-client: default
     # OAuth access token 签名密钥（对应 Python configs.OAUTH_JWT_SECRET / env OAUTH_JWT_SECRET）
     jwt-secret: ${OAUTH_JWT_SECRET:}
-  # RCON
-  rcon:
+  # Debug Console
+  debug_console:
     enabled: true
 
 logging:

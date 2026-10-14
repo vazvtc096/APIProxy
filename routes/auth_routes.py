@@ -2,14 +2,14 @@
 
   GET  /api/auth/status       认证服务器状态
   POST /api/auth/introspect  令牌自省（RFC 7662 风格；受 AUTH_SERVER_INTROSPECTION 开关）
-  POST /api/auth/revoke      吊销会话（RCON 密钥保护）
+  POST /api/auth/revoke      吊销会话（Debug Console 密钥保护）
   POST /internal/auth/verify 集群内部会话校验（X-Internal-Secret）
 """
 from quart import Blueprint, request, jsonify
 
 from .. import auth_server
 from ..core_console import _internal_secret
-from ..core_rcon import _verify_rcon_key
+from ..core_debug_console import _verify_debug_console_key
 
 auth_bp = Blueprint("auth_server", __name__)
 
@@ -50,8 +50,8 @@ async def auth_introspect():
 
 @auth_bp.route("/api/auth/revoke", methods=["POST"])
 async def auth_revoke():
-    if not await _verify_rcon_key(request.headers.get("X-RCON-Key", "")):
-        return jsonify({"error": "Invalid RCON/Console key"}), 403
+    if not await _verify_debug_console_key(request.headers.get("X-Debug-Console-Key", "")):
+        return jsonify({"error": "Invalid Debug Console/Console key"}), 403
     try:
         payload = await request.get_json(force=True, silent=True) or {}
         sid = payload.get("session_id") or payload.get("token") or ""

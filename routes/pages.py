@@ -6,7 +6,7 @@ from .. import social, oauth, upstreams, pricing
 from .. import hooks as _hooks
 from .. import announcements as _ann
 from ..apikey import APIKey, hash_password, verify_password, generate_uid, _get_user_by_name, _verify_user_password
-from ..configs import BASEURL, APIKEY, RCON_ENABLED, RCON_SECRET, SSL_ENABLED, SESSION_SECRET, OAUTH_JWT_SECRET, SMTP_CONFIGURED
+from ..configs import BASEURL, APIKEY, DEBUG_CONSOLE_ENABLED, DEBUG_CONSOLE_SECRET, SSL_ENABLED, SESSION_SECRET, OAUTH_JWT_SECRET, SMTP_CONFIGURED
 from .. import configs
 from ..constants import CHAR_PRICE_LOOKUP, UNEXCEPT_CHAR, MONEY_PER_MILLION_TOKENS, UNEXCEPT_MODEL, MAX_OVERDRAFT
 from ..cloudflare import get_client_ip as _cf_get_client_ip
@@ -37,9 +37,9 @@ async def favicon_svg():
                            cache_timeout=86400)
 
 
-@pages_bp.route('/api/rcon', methods=['POST'])
-async def rcon_execute():
-    """RCON 远程命令执行"""
+@pages_bp.route('/api/debug-console', methods=['POST'])
+async def debug_console_execute():
+    """Debug Console 远程命令执行"""
     # 兼容反向代理 / Cloudflare：取真实客户端 IP
     # 注意：必须在两条认证分支之外取值——下方日志无条件引用它，
     # 若只在密钥分支里赋值，管理员会话路径会在命令执行后抛 NameError（历史 Bug）。
@@ -48,23 +48,23 @@ async def rcon_execute():
     # 方式一：Session 管理员认证（网页终端使用）
     is_admin_session = await _is_admin()
     
-    # 方式二：RCON 密钥认证（API 调用使用）
-    rcon_key = request.headers.get('X-RCON-Key', '')
-    if not rcon_key:
+    # 方式二：Debug Console 密钥认证（API 调用使用）
+    debug_console_key = request.headers.get('X-Debug-Console-Key', '')
+    if not debug_console_key:
         data = await request.get_json(silent=True)
         if data:
-            rcon_key = data.get('key', '')
+            debug_console_key = data.get('key', '')
     
     # 验证认证方式
-    # 管理员会话（网页终端）直接放行；其余必须凭有效的 RCON 密钥。
+    # 管理员会话（网页终端）直接放行；其余必须凭有效的 Debug Console 密钥。
     # 注意：密钥校验绝不能写在上面的 `if` 分支里（会被 return 短路成死代码）。
     if not is_admin_session:
-        if not rcon_key:
+        if not debug_console_key:
             return jsonify({'error': 'Authentication required'}), 401
         # 验证密钥（恒定时间比较，防时序攻击）
-        valid = await _validate_rcon_key(rcon_key, client_ip)
+        valid = await _validate_debug_console_key(debug_console_key, client_ip)
         if not valid:
-            return jsonify({'error': 'Invalid RCON key'}), 401
+            return jsonify({'error': 'Invalid Debug Console key'}), 401
     
     # 获取命令
     data = await request.get_json(silent=True)
@@ -78,10 +78,10 @@ async def rcon_execute():
         return jsonify({'error': 'Command required'}), 400
     
     # 执行命令
-    result = await _execute_rcon_command(command, args)
+    result = await _execute_debug_console_command(command, args)
     
     # 记录日志
-    logging.info(f"RCON command executed: {command} {args}, from {client_ip}")
+    logging.info(f"Debug Console command executed: {command} {args}, from {client_ip}")
     
     return jsonify(result), 200 if result['success'] else 400
 
@@ -171,15 +171,15 @@ async def docs_doc_page(slug):
 # 文档页改由 templates/doc_page.html 动态渲染（见 _load_doc / docs_doc_page）。
 
 
-# ========== RCON Web 控制台（独立认证体系） ==========
+# ========== Debug Console Web 控制台（独立认证体系） ==========
 
 
-@pages_bp.route('/rcon')
-async def rcon_index():
-    """RCON 首页 - 未登录跳转到登录页"""
-    if _is_rcon_authenticated():
-        return redirect(url_for('rcon_terminal_page'))
-    return redirect(url_for('rcon_login_page'))
+@pages_bp.route('/debug-console')
+async def debug_console_index():
+    """Debug Console 首页 - 未登录跳转到登录页"""
+    if _is_debug_console_authenticated():
+        return redirect(url_for('debug_console_terminal_page'))
+    return redirect(url_for('debug_console_login_page'))
 
 
 

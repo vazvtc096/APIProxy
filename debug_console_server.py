@@ -1,5 +1,5 @@
 """
-RCON 远程控制台服务端
+Debug Console 远程控制台服务端
 最高权限级别（相当于 SYSTEM/root）
 RSA 2048 + AES-256-GCM 混合加密
 - RSA 用于密钥交换和认证
@@ -16,7 +16,7 @@ import datetime
 from pathlib import Path
 
 # 导入加密模块
-from .rcon_crypto import (
+from .debug_console_crypto import (
     load_private_key,
     ensure_keypair_exists,
     generate_rsa_keypair,
@@ -34,18 +34,18 @@ from .rcon_crypto import (
 )
 
 # 配置
-RCON_PORT = 5001
+DEBUG_CONSOLE_PORT = 5001
 MAX_CONNECTIONS = 1  # 单连接限制
 
 # 全局状态
-_rcon_server = None
+_debug_console_server = None
 _current_conn = None  # 当前连接
 _current_aes_key = None  # 当前 AES 会话密钥
 _aes_key_expire_time = None  # AES 密钥过期时间
 _conn_lock = threading.Lock()
 _running = False
 
-# 命令处理器（复用 rcon.py 的）
+# 命令处理器（复用 debug_console.py 的）
 _handler = None
 
 
@@ -53,12 +53,12 @@ def _get_handler():
     """获取命令处理器"""
     global _handler
     if _handler is None:
-        from .rcon import RCONCommandHandler
-        _handler = RCONCommandHandler()
+        from .debug_console import DebugConsoleCommandHandler
+        _handler = DebugConsoleCommandHandler()
     return _handler
 
 
-def refresh_rcon_keypair() -> str:
+def refresh_debug_console_keypair() -> str:
     """
     重新生成 RSA 密钥对
     
@@ -80,7 +80,7 @@ def refresh_rcon_keypair() -> str:
             _current_aes_key = None
             _aes_key_expire_time = None
     
-    logging.info("RCON RSA keypair refreshed")
+    logging.info("Debug Console RSA keypair refreshed")
     return f"RSA {RSA_KEY_SIZE} 位密钥对已刷新，旧连接已断开\n新公钥: {PUBLIC_KEY_FILE}"
 
 
@@ -130,7 +130,7 @@ def _handle_client(conn, addr):
     """处理客户端连接"""
     global _current_conn, _current_aes_key, _aes_key_expire_time
     
-    logging.info(f"RCON client connected: {addr}")
+    logging.info(f"Debug Console client connected: {addr}")
     
     try:
         # ========== 握手阶段 ==========
@@ -193,7 +193,7 @@ def _handle_client(conn, addr):
             _current_aes_key = aes_key
             _aes_key_expire_time = time.time() + AES_KEY_TTL
         
-        logging.info(f"RCON handshake successful: {addr}")
+        logging.info(f"Debug Console handshake successful: {addr}")
         
         # ========== 命令处理循环 ==========
         handler = _get_handler()
@@ -224,7 +224,7 @@ def _handle_client(conn, addr):
                 
                 # 特殊处理 key refresh 命令
                 if command.strip() == 'key refresh':
-                    result = refresh_rcon_keypair()
+                    result = refresh_debug_console_keypair()
                     response = {
                         'type': 'response',
                         'command': command,
@@ -267,7 +267,7 @@ def _handle_client(conn, addr):
                 break
     
     except Exception as e:
-        logging.error(f"RCON client error: {e}")
+        logging.error(f"Debug Console client error: {e}")
     finally:
         # 清理连接状态
         with _conn_lock:
@@ -279,12 +279,12 @@ def _handle_client(conn, addr):
             conn.close()
         except:
             pass
-        logging.info(f"RCON client disconnected: {addr}")
+        logging.info(f"Debug Console client disconnected: {addr}")
 
 
-def start_rcon_server():
-    """启动 RCON 服务器（阻塞式）"""
-    global _running, _rcon_server
+def start_debug_console_server():
+    """启动 Debug Console 服务器（阻塞式）"""
+    global _running, _debug_console_server
     
     # 确保 RSA 密钥对存在
     ensure_keypair_exists()
@@ -293,16 +293,16 @@ def start_rcon_server():
     
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.bind(('0.0.0.0', RCON_PORT))
+    server.bind(('0.0.0.0', DEBUG_CONSOLE_PORT))
     server.listen(MAX_CONNECTIONS)
     
-    _rcon_server = server
+    _debug_console_server = server
     
-    logging.info(f"RCON server started on port {RCON_PORT}")
+    logging.info(f"Debug Console server started on port {DEBUG_CONSOLE_PORT}")
     logging.info(f"Encryption: RSA-{RSA_KEY_SIZE} + AES-256-GCM")
     logging.info(f"Private key: {PRIVATE_KEY_FILE}")
     logging.info(f"Public key: {PUBLIC_KEY_FILE}")
-    print(f"RCON 服务器已启动，端口: {RCON_PORT}")
+    print(f"Debug Console 服务器已启动，端口: {DEBUG_CONSOLE_PORT}")
     print(f"加密方式: RSA-{RSA_KEY_SIZE} + AES-256-GCM")
     print(f"私钥: {PRIVATE_KEY_FILE}")
     print(f"公钥: {PUBLIC_KEY_FILE}")
@@ -316,7 +316,7 @@ def start_rcon_server():
                     target=_handle_client,
                     args=(conn, addr),
                     daemon=True,
-                    name=f'RCON-Client-{addr[0]}'
+                    name=f'Debug Console-Client-{addr[0]}'
                 )
                 thread.start()
             except Exception as e:
@@ -327,29 +327,29 @@ def start_rcon_server():
         server.close()
 
 
-def start_rcon_server_thread():
-    """在独立线程中启动 RCON 服务器"""
+def start_debug_console_server_thread():
+    """在独立线程中启动 Debug Console 服务器"""
     thread = threading.Thread(
-        target=start_rcon_server,
+        target=start_debug_console_server,
         daemon=True,
-        name='RCON-Server'
+        name='Debug Console-Server'
     )
     thread.start()
     return thread
 
 
-def stop_rcon_server():
-    """停止 RCON 服务器"""
-    global _running, _rcon_server
+def stop_debug_console_server():
+    """停止 Debug Console 服务器"""
+    global _running, _debug_console_server
     _running = False
-    if _rcon_server:
+    if _debug_console_server:
         try:
-            _rcon_server.close()
+            _debug_console_server.close()
         except:
             pass
-        _rcon_server = None
+        _debug_console_server = None
 
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
-    start_rcon_server()
+    start_debug_console_server()

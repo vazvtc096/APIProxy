@@ -6,7 +6,7 @@ from .. import social, oauth, upstreams, pricing
 from .. import hooks as _hooks
 from .. import announcements as _ann
 from ..apikey import APIKey, hash_password, verify_password, generate_uid, _get_user_by_name, _verify_user_password
-from ..configs import BASEURL, APIKEY, RCON_ENABLED, RCON_SECRET, SSL_ENABLED, SESSION_SECRET, OAUTH_JWT_SECRET, SMTP_CONFIGURED
+from ..configs import BASEURL, APIKEY, DEBUG_CONSOLE_ENABLED, DEBUG_CONSOLE_SECRET, SSL_ENABLED, SESSION_SECRET, OAUTH_JWT_SECRET, SMTP_CONFIGURED
 from .. import configs
 from .. import db
 from ..constants import CHAR_PRICE_LOOKUP, UNEXCEPT_CHAR, MONEY_PER_MILLION_TOKENS, UNEXCEPT_MODEL, MAX_OVERDRAFT
@@ -624,7 +624,7 @@ async def admin_remove_ip_ban(bid):
     return jsonify({'message': 'IP ban removed'}), 200
 
 
-# ---------- IP 白名单（仅 RCON 可控制） ----------
+# ---------- IP 白名单（仅 Debug Console 可控制） ----------
 import ipaddress as _ipaddress
 
 
@@ -933,24 +933,24 @@ async def admin_create_user():
     }), 201
 
 
-# ---------- RCON 密钥管理（管理员） ----------
+# ---------- Debug Console 密钥管理（管理员） ----------
 
 
-@admin_bp.route('/api/admin/rcon-keys', methods=['GET'])
-async def admin_list_rcon_keys():
-    """管理员列出所有 RCON 密钥"""
+@admin_bp.route('/api/admin/debug-console-keys', methods=['GET'])
+async def admin_list_debug_console_keys():
+    """管理员列出所有 Debug Console 密钥"""
     err = await _require_admin()
     if err:
         return err
     
-    keys = await _list_rcon_keys()
+    keys = await _list_debug_console_keys()
     return jsonify({'keys': keys}), 200
 
 
 
-@admin_bp.route('/api/admin/rcon-keys', methods=['POST'])
-async def admin_create_rcon_key():
-    """管理员生成新的 RCON 密钥"""
+@admin_bp.route('/api/admin/debug-console-keys', methods=['POST'])
+async def admin_create_debug_console_key():
+    """管理员生成新的 Debug Console 密钥"""
     err = await _require_admin()
     if err:
         return err
@@ -958,37 +958,37 @@ async def admin_create_rcon_key():
     data = await request.get_json() or {}
     key_name = data.get('name', 'default') if data else 'default'
     
-    new_key = await _generate_rcon_key(key_name)
+    new_key = await _generate_debug_console_key(key_name)
     
     admin_name = session['user']
-    logging.info(f"Admin created RCON key: {key_name}, admin: {admin_name}")
+    logging.info(f"Admin created Debug Console key: {key_name}, admin: {admin_name}")
     
     return jsonify({
-        'message': 'RCON key created successfully',
+        'message': 'Debug Console key created successfully',
         'key': new_key,  # 只返回一次明文
         'name': key_name
     }), 201
 
 
 
-@admin_bp.route('/api/admin/rcon-keys/<int:key_id>', methods=['DELETE'])
-async def admin_revoke_rcon_key(key_id):
-    """管理员撤销 RCON 密钥"""
+@admin_bp.route('/api/admin/debug-console-keys/<int:key_id>', methods=['DELETE'])
+async def admin_revoke_debug_console_key(key_id):
+    """管理员撤销 Debug Console 密钥"""
     err = await _require_admin()
     if err:
         return err
     
-    success = await _revoke_rcon_key(key_id)
+    success = await _revoke_debug_console_key(key_id)
     if not success:
-        return jsonify({'error': 'RCON key not found'}), 404
+        return jsonify({'error': 'Debug Console key not found'}), 404
     
     admin_name = session['user']
-    logging.info(f"Admin revoked RCON key: {key_id}, admin: {admin_name}")
+    logging.info(f"Admin revoked Debug Console key: {key_id}, admin: {admin_name}")
     
-    return jsonify({'message': 'RCON key revoked successfully'}), 200
+    return jsonify({'message': 'Debug Console key revoked successfully'}), 200
 
 
-# ---------- RCON 执行接口 ----------
+# ---------- Debug Console 执行接口 ----------
 
 
 @admin_bp.route('/api/admin/user/<uid>/email', methods=['PUT'])

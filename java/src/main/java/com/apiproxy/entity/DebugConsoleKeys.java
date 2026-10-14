@@ -11,8 +11,8 @@ import java.time.LocalDateTime;
 
 @Data
 @Entity
-@Table(name = "rcon_keys")
-public class RconKeys {
+@Table(name = "debug_console_keys")
+public class DebugConsoleKeys {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

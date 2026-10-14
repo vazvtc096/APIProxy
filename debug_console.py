@@ -1,5 +1,5 @@
 """
-RCON 远程控制台模块
+Debug Console 远程控制台模块
 最高权限级别，相当于 SYSTEM/root
 使用 TLS 1.3 加密传输，密钥认证
 """
@@ -15,10 +15,10 @@ import sqlite3
 from pathlib import Path
 
 # 配置
-RCON_PORT = 5001
-RCON_KEY_LENGTH = 16  # 128位 = 16字节
+DEBUG_CONSOLE_PORT = 5001
+DEBUG_CONSOLE_KEY_LENGTH = 16  # 128位 = 16字节
 # 数据库路径必须与主应用一致：历史实现在此硬编码 users.db，忽略了 DB_PATH
-# 配置项/环境变量，一旦部署自定义数据库位置，TCP RCON 服务就会连到另一个库。
+# 配置项/环境变量，一旦部署自定义数据库位置，TCP Debug Console 服务就会连到另一个库。
 # configs.py 只依赖标准库，此处导入不会引入循环依赖。
 try:
     from .configs import DB_PATH
@@ -103,20 +103,20 @@ def _set_config(key: str, value: str):
         conn.close()
 
 
-def generate_rcon_key() -> str:
-    """生成 RCON 密钥（128位，base64编码）"""
-    key_bytes = os.urandom(RCON_KEY_LENGTH)
+def generate_debug_console_key() -> str:
+    """生成 Debug Console 密钥（128位，base64编码）"""
+    key_bytes = os.urandom(DEBUG_CONSOLE_KEY_LENGTH)
     key_b64 = base64.b64encode(key_bytes).decode('ascii')
-    _set_config('rcon_key', key_b64)
-    logging.info(f"RCON key regenerated")
+    _set_config('debug_console_key', key_b64)
+    logging.info(f"Debug Console key regenerated")
     return key_b64
 
 
-def get_rcon_key() -> str:
-    """获取 RCON 密钥，如果不存在则生成"""
-    key = _get_config('rcon_key')
+def get_debug_console_key() -> str:
+    """获取 Debug Console 密钥，如果不存在则生成"""
+    key = _get_config('debug_console_key')
     if not key:
-        key = generate_rcon_key()
+        key = generate_debug_console_key()
     return key
 
 
@@ -129,8 +129,17 @@ def generate_tls_cert():
     
     os.makedirs(CERT_DIR, exist_ok=True)
     
-    cert_path = os.path.join(CERT_DIR, 'rcon_cert.pem')
-    key_path = os.path.join(CERT_DIR, 'rcon_key.pem')
+    cert_path = os.path.join(CERT_DIR, 'debug_console_cert.pem')
+    key_path = os.path.join(CERT_DIR, 'debug_console_key.pem')
+    
+    # 旧命名迁移：复用遗留的 RCON 自签名证书
+    for _old, _new in ((os.path.join(CERT_DIR, 'rcon_cert.pem'), cert_path),
+                       (os.path.join(CERT_DIR, 'rcon_key.pem'), key_path)):
+        if os.path.exists(_old) and not os.path.exists(_new):
+            try:
+                os.replace(_old, _new)
+            except OSError:
+                pass
     
     if os.path.exists(cert_path) and os.path.exists(key_path):
         return cert_path, key_path
@@ -140,7 +149,7 @@ def generate_tls_cert():
     
     # 生成证书
     subject = issuer = x509.Name([
-        x509.NameAttribute(NameOID.COMMON_NAME, "rcon.local"),
+        x509.NameAttribute(NameOID.COMMON_NAME, "debug_console.local"),
     ])
     
     cert = (
@@ -166,7 +175,7 @@ def generate_tls_cert():
             serialization.NoEncryption()
         ))
     
-    logging.info("TLS certificate generated for RCON")
+    logging.info("TLS certificate generated for Debug Console")
     return cert_path, key_path
 
 
@@ -181,10 +190,10 @@ def create_ssl_context() -> ssl.SSLContext:
     return ctx
 
 
-# ========== RCON 命令处理 ==========
+# ========== Debug Console 命令处理 ==========
 
-class RCONCommandHandler:
-    """RCON 命令处理器（最高权限）"""
+class DebugConsoleCommandHandler:
+    """Debug Console 命令处理器（最高权限）"""
     
     def __init__(self):
         self.commands = {
@@ -221,7 +230,7 @@ class RCONCommandHandler:
     async def cmd_help(self, args) -> str:
         """显示帮助"""
         help_text = """
-RCON 远程控制台 - 最高权限 (SYSTEM/root)
+Debug Console 远程控制台 - 最高权限 (SYSTEM/root)
 
 可用命令:
   help                    显示此帮助
@@ -274,7 +283,7 @@ RCON 远程控制台 - 最高权限 (SYSTEM/root)
         finally:
             conn.close()
         
-        rcon_key = get_rcon_key()
+        debug_console_key = get_debug_console_key()
         
         status = f"""
 服务器状态
@@ -282,8 +291,8 @@ RCON 远程控制台 - 最高权限 (SYSTEM/root)
 用户总数:     {user_count}
 活跃会话:     {session_count}
 待审核充值:   {pending_recharge}
-RCON 端口:    {RCON_PORT}
-RCON 密钥:    {rcon_key}
+Debug Console 端口:    {DEBUG_CONSOLE_PORT}
+Debug Console 密钥:    {debug_console_key}
 TLS 版本:     TLS 1.3
 """
         return status
@@ -883,7 +892,7 @@ TLS 版本:     TLS 1.3
         
         if subcmd == 'refresh':
             # 刷新 RSA 密钥对
-            from .rcon_crypto import generate_rsa_keypair, save_keypair, RSA_KEY_SIZE, PRIVATE_KEY_FILE, PUBLIC_KEY_FILE
+            from .debug_console_crypto import generate_rsa_keypair, save_keypair, RSA_KEY_SIZE, PRIVATE_KEY_FILE, PUBLIC_KEY_FILE
             private_pem, public_pem = generate_rsa_keypair()
             save_keypair(private_pem, public_pem)
             
@@ -892,7 +901,7 @@ TLS 版本:     TLS 1.3
                 f"密钥长度: RSA {RSA_KEY_SIZE} 位\n"
                 f"私钥文件: {PRIVATE_KEY_FILE}\n"
                 f"公钥文件: {PUBLIC_KEY_FILE}\n"
-                f"重要提示：所有使用旧公钥的 RCON 连接将失效，请分发新的公钥\n"
+                f"重要提示：所有使用旧公钥的 Debug Console 连接将失效，请分发新的公钥\n"
             )
         else:
             return f"Unknown key subcommand: {subcmd}\n"
@@ -916,19 +925,19 @@ TLS 版本:     TLS 1.3
         return "__EXIT__"
 
 
-# ========== RCON 服务器 ==========
+# ========== Debug Console 服务器 ==========
 
-async def handle_rcon_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-    """处理 RCON 客户端连接"""
+async def handle_debug_console_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+    """处理 Debug Console 客户端连接"""
     addr = writer.get_extra_info('peername')
-    logging.info(f"RCON client connected: {addr}")
+    logging.info(f"Debug Console client connected: {addr}")
     
-    handler = RCONCommandHandler()
+    handler = DebugConsoleCommandHandler()
     authenticated = False
     
     try:
         # 欢迎信息
-        writer.write(b"RCON Server v1.0\n")
+        writer.write(b"Debug Console Server v1.0\n")
         writer.write(b"Authentication required. Send key first.\n")
         writer.write(b"Key: ")
         await writer.drain()
@@ -939,20 +948,20 @@ async def handle_rcon_client(reader: asyncio.StreamReader, writer: asyncio.Strea
             return
         
         client_key = key_data.decode('utf-8').strip()
-        expected_key = get_rcon_key()
+        expected_key = get_debug_console_key()
         
         if client_key != expected_key:
             writer.write(b"Authentication failed!\n")
             await writer.drain()
-            logging.warning(f"RCON auth failed from {addr}")
+            logging.warning(f"Debug Console auth failed from {addr}")
             return
         
         authenticated = True
-        logging.info(f"RCON client authenticated: {addr}")
+        logging.info(f"Debug Console client authenticated: {addr}")
         
         writer.write(b"\nAuthentication successful!\n")
         writer.write(b"Type 'help' for available commands.\n")
-        writer.write(b"\nrcon> ")
+        writer.write(b"\ndebug_console> ")
         await writer.drain()
         
         # 命令循环
@@ -963,7 +972,7 @@ async def handle_rcon_client(reader: asyncio.StreamReader, writer: asyncio.Strea
             
             command = data.decode('utf-8').strip()
             if not command:
-                writer.write(b"rcon> ")
+                writer.write(b"debug_console> ")
                 await writer.drain()
                 continue
             
@@ -975,22 +984,22 @@ async def handle_rcon_client(reader: asyncio.StreamReader, writer: asyncio.Strea
                 break
             
             writer.write(result.encode('utf-8'))
-            writer.write(b"\nrcon> ")
+            writer.write(b"\ndebug_console> ")
             await writer.drain()
     
     except Exception as e:
-        logging.error(f"RCON client error: {e}")
+        logging.error(f"Debug Console client error: {e}")
     finally:
         writer.close()
         try:
             await writer.wait_closed()
         except:
             pass
-        logging.info(f"RCON client disconnected: {addr}")
+        logging.info(f"Debug Console client disconnected: {addr}")
 
 
-async def start_rcon_server():
-    """启动 RCON 服务器"""
+async def start_debug_console_server():
+    """启动 Debug Console 服务器"""
     # 确保 system_config 表存在
     conn = _get_conn()
     try:
@@ -1008,25 +1017,25 @@ async def start_rcon_server():
         conn.close()
     
     # 确保密钥存在
-    get_rcon_key()
+    get_debug_console_key()
     
     # 创建 SSL 上下文
     try:
         ssl_ctx = create_ssl_context()
     except ImportError:
-        logging.warning("cryptography library not found, RCON will run without TLS")
+        logging.warning("cryptography library not found, Debug Console will run without TLS")
         ssl_ctx = None
     
     server = await asyncio.start_server(
-        handle_rcon_client,
+        handle_debug_console_client,
         '0.0.0.0',
-        RCON_PORT,
+        DEBUG_CONSOLE_PORT,
         ssl=ssl_ctx
     )
     
-    key = get_rcon_key()
-    logging.info(f"RCON server started on port {RCON_PORT} (TLS: {'yes' if ssl_ctx else 'no'})")
-    logging.info(f"RCON key: {key}")
+    key = get_debug_console_key()
+    logging.info(f"Debug Console server started on port {DEBUG_CONSOLE_PORT} (TLS: {'yes' if ssl_ctx else 'no'})")
+    logging.info(f"Debug Console key: {key}")
     
     return server
 
@@ -1034,7 +1043,7 @@ async def start_rcon_server():
 if __name__ == '__main__':
     # 测试用
     async def main():
-        server = await start_rcon_server()
+        server = await start_debug_console_server()
         async with server:
             await server.serve_forever()
     

@@ -4,7 +4,7 @@
   1. 组装应用（中间件 / 蓝图 / 错误处理器）
   2. 启动前校验（fail-closed 密钥检查、敏感文件权限收紧）
   3. 数据库 schema 初始化与运行期表准备
-  4. 拉起后台服务（上游刷新、计费表、RCON、调度器）
+  4. 拉起后台服务（上游刷新、计费表、Debug Console、调度器）
   5. 启动 Web 服务（HTTP 或 HTTPS）
 
 业务逻辑分布在：
@@ -155,7 +155,7 @@ def harden_file_permissions() -> None:
         DB_PATH,
         getattr(configs, 'CONFIG_PATH', None),
         os.path.join(os.path.dirname(__file__), '.session_secret'),
-        os.path.join(os.path.dirname(__file__), '.rcon_key'),
+        os.path.join(os.path.dirname(__file__), '.debug_console_key'),
     )
     for path in targets:
         try:
@@ -234,10 +234,10 @@ def start_background_services() -> None:
         logger.error(f"Pricing reload from DB failed: {e}")
 
     try:
-        core._start_rcon_server_thread()
-        logger.info("RCON server starting")
+        core._start_debug_console_server_thread()
+        logger.info("Debug Console server starting")
     except Exception as e:
-        logger.error(f"Failed to start RCON server: {e}")
+        logger.error(f"Failed to start Debug Console server: {e}")
 
     try:
         from .scheduler import start_scheduler
@@ -675,9 +675,9 @@ def _build_arg_parser() -> "argparse.ArgumentParser":
     # ---- Console 精细化权限（目标 3.2） ----
     g = p.add_argument_group("Console 精细化权限")
     g.add_argument("--console-max-tier", dest="CONSOLE_MAX_TIER", type=int, default=None,
-                   help="主 RCON/Console 密钥授予的最高权限层级 0=info 1=op 2=admin（默认 2）")
-    g.add_argument("--console-rcon-default-tier", dest="CONSOLE_RCON_DEFAULT_TIER", type=int,
-                   default=None, help="业务 RCON 命令默认层级（默认 1=op）")
+                   help="主 Debug Console/Console 密钥授予的最高权限层级 0=info 1=op 2=admin（默认 2）")
+    g.add_argument("--debug-console-default-tier", dest="DEBUG_CONSOLE_DEFAULT_TIER", type=int,
+                   default=None, help="业务 Debug Console 命令默认层级（默认 1=op）")
     g.add_argument("--console-key-tiers", dest="CONSOLE_KEY_TIERS", default=None,
                    help='受限密钥层级表 JSON，如 \'{"readonly_key": 0}\'')
 
@@ -700,13 +700,13 @@ def _build_arg_parser() -> "argparse.ArgumentParser":
     g.add_argument("--smtp-pass", dest="SMTP_PASS", default=None, help="SMTP 密码")
     g.add_argument("--smtp-from", dest="SMTP_FROM", default=None, help="SMTP 发件人名称")
 
-    # ---- RCON 远程控制台 ----
-    g = p.add_argument_group("RCON 远程控制台")
-    g.add_argument("--rcon-enabled", action=argparse.BooleanOptionalAction, dest="RCON_ENABLED",
-                   default=None, help="启用 RCON 远程控制台")
-    g.add_argument("--rcon-secret", dest="RCON_SECRET", default=None, help="RCON 共享密钥")
-    g.add_argument("--rcon-rsa-key-size", dest="RCON_RSA_KEY_SIZE", type=int, default=None,
-                   help="RCON RSA 密钥位数")
+    # ---- Debug Console 远程控制台 ----
+    g = p.add_argument_group("Debug Console 远程控制台")
+    g.add_argument("--debug-console-enabled", action=argparse.BooleanOptionalAction, dest="DEBUG_CONSOLE_ENABLED",
+                   default=None, help="启用 Debug Console 远程控制台")
+    g.add_argument("--debug-console-secret", dest="DEBUG_CONSOLE_SECRET", default=None, help="Debug Console 共享密钥")
+    g.add_argument("--debug-console-rsa-key-size", dest="DEBUG_CONSOLE_RSA_KEY_SIZE", type=int, default=None,
+                   help="Debug Console RSA 密钥位数")
 
     # ---- Cloudflare 真实客户端 IP ----
     g = p.add_argument_group("Cloudflare 真实客户端 IP")

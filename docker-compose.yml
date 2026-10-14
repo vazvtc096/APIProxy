@@ -15,7 +15,7 @@ services:
     restart: unless-stopped
     ports:
       - "5000:5000"    # HTTP 主服务
-      - "5001:5001"    # RCON 远程控制台（TLS）
+      - "5001:5001"    # Debug Console 远程控制台（TLS）
       # - "5443:5443"  # HTTPS（启用 APIPROXY_SSL_ENABLED=true 后放开）
     environment:
       # ---- 必填：OAuth JWT 签名密钥（fail-closed，缺失拒启）----

@@ -6,7 +6,7 @@ from .. import social, oauth, upstreams, pricing
 from .. import hooks as _hooks
 from .. import announcements as _ann
 from ..apikey import APIKey, hash_password, verify_password, generate_uid, _get_user_by_name, _verify_user_password
-from ..configs import BASEURL, APIKEY, RCON_ENABLED, RCON_SECRET, SSL_ENABLED, SESSION_SECRET, OAUTH_JWT_SECRET, SMTP_CONFIGURED
+from ..configs import BASEURL, APIKEY, DEBUG_CONSOLE_ENABLED, DEBUG_CONSOLE_SECRET, SSL_ENABLED, SESSION_SECRET, OAUTH_JWT_SECRET, SMTP_CONFIGURED
 from .. import configs
 from ..constants import CHAR_PRICE_LOOKUP, UNEXCEPT_CHAR, MONEY_PER_MILLION_TOKENS, UNEXCEPT_MODEL, MAX_OVERDRAFT
 from ..cloudflare import get_client_ip as _cf_get_client_ip
@@ -66,7 +66,7 @@ async def oauth_authorize():
             return _oauth_redirect_error(redirect_uri, 'unsupported_response_type', state)
         scope = oauth.normalize_scope(scope) or 'api'
         # 收紧：默认公开客户端只授予安全基线 scope，剥离任何高危 scope
-        # （user:write / transactions:write / apikeys:write / rcon），避免第三方应用一键索取账户毁灭性权限。
+        # （user:write / transactions:write / apikeys:write / debug_console），避免第三方应用一键索取账户毁灭性权限。
         _req_scopes = set(scope.split())
         _unsafe = _req_scopes & set(oauth.SENSITIVE_SCOPES)
         if _unsafe:
@@ -109,8 +109,8 @@ async def oauth_authorize():
     _scopes_categorized = oauth.categorize_scopes(scope)
     if request.method == 'POST' and decision:
         if decision == 'allow':
-            # rcon 仅为管理员保留：非管理员请求到含 rcon 的 scope 直接拒绝
-            if 'rcon' in scope.split():
+            # debug_console 仅为管理员保留：非管理员请求到含 debug_console 的 scope 直接拒绝
+            if 'debug_console' in scope.split():
                 _u = await async_db_query("SELECT is_admin FROM users WHERE user_name = ?", (session['user'],))
                 if not _u or not int(_u[0].get('is_admin') or 0):
                     return _oauth_redirect_error(redirect_uri, 'access_denied', state)

@@ -21,7 +21,7 @@ def test_core_endpoints_registered():
         "/login",                      # 认证页
         "/api/chat/completions",       # 核心代理
         "/v1/chat/completions",        # OpenAI 兼容
-        "/api/rcon/stats",             # RCON
+        "/api/debug-console/stats",             # Debug Console
         "/api/admin/users",            # 管理
         "/api/posts",                  # 社交
         "/oauth/authorize",            # OAuth
@@ -41,7 +41,7 @@ def test_blueprints_registered():
     bp_names = {bp.name for bp in app.blueprints.values()}
     expected = {
         "auth", "user", "admin", "recharge", "chat_proxy", "social",
-        "oauth", "rcon", "pages", "email_captcha", "health",
+        "oauth", "debug_console", "pages", "email_captcha", "health",
     }
     missing = expected - bp_names
     assert not missing, f"缺失蓝图: {missing}"

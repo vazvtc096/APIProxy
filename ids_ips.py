@@ -96,7 +96,7 @@ def _param_flood() -> int:
 BODY_EXEMPT_PREFIXES = (
     '/api/chat', '/api/chat/completions', '/v1/chat', '/v1/chat/completions',
     '/v1/responses', '/v1/models', '/api/models', '/api/posts', '/api/transfer',
-    '/api/friend', '/api/social', '/api/recharge', '/api/admin/', '/api/rcon',
+    '/api/friend', '/api/social', '/api/recharge', '/api/admin/', '/api/debug-console',
     '/api/console',
 )
 

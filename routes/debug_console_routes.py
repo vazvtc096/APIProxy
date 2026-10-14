@@ -1,4 +1,4 @@
-"""RCON 远程控制路由"""
+"""Debug Console 远程控制路由"""
 from quart import Blueprint, request, session, jsonify, Response, render_template, redirect, url_for
 from ..app import app, BASE_DIR
 from ..core import *
@@ -6,25 +6,25 @@ from .. import social, oauth, upstreams, pricing
 from .. import hooks as _hooks
 from .. import announcements as _ann
 from ..apikey import APIKey, hash_password, verify_password, generate_uid, _get_user_by_name, _verify_user_password
-from ..configs import BASEURL, APIKEY, RCON_ENABLED, RCON_SECRET, SSL_ENABLED, SESSION_SECRET, OAUTH_JWT_SECRET, SMTP_CONFIGURED
+from ..configs import BASEURL, APIKEY, DEBUG_CONSOLE_ENABLED, DEBUG_CONSOLE_SECRET, SSL_ENABLED, SESSION_SECRET, OAUTH_JWT_SECRET, SMTP_CONFIGURED
 from .. import configs
 from ..constants import CHAR_PRICE_LOOKUP, UNEXCEPT_CHAR, MONEY_PER_MILLION_TOKENS, UNEXCEPT_MODEL, MAX_OVERDRAFT
 from ..cloudflare import get_client_ip as _cf_get_client_ip
 from .. import waf as _waf
 
-rcon_bp = Blueprint('rcon', __name__)
+debug_console_bp = Blueprint('debug_console', __name__)
 
-@rcon_bp.route('/api/rcon/key/refresh', methods=['POST'])
-async def rcon_refresh_key():
-    """刷新 RCON 密钥（RCON 权限）"""
-    ok, err = await _rcon_auth()
+@debug_console_bp.route('/api/debug-console/key/refresh', methods=['POST'])
+async def debug_console_refresh_key():
+    """刷新 Debug Console 密钥（Debug Console 权限）"""
+    ok, err = await _debug_console_auth()
     if not ok:
         return err
     
-    new_key = await _refresh_rcon_key()
-    logging.warning("RCON key refreshed via RCON API")
+    new_key = await _refresh_debug_console_key()
+    logging.warning("Debug Console key refreshed via Debug Console API")
     return jsonify({
-        'message': 'RCON key refreshed',
+        'message': 'Debug Console key refreshed',
         'new_key': new_key
     }), 200
 
@@ -32,10 +32,10 @@ async def rcon_refresh_key():
 # ---------- 系统统计 ----------
 
 
-@rcon_bp.route('/api/rcon/stats', methods=['GET'])
-async def rcon_stats():
-    """获取系统统计信息（RCON 权限）"""
-    ok, err = await _rcon_auth()
+@debug_console_bp.route('/api/debug-console/stats', methods=['GET'])
+async def debug_console_stats():
+    """获取系统统计信息（Debug Console 权限）"""
+    ok, err = await _debug_console_auth()
     if not ok:
         return err
     
@@ -87,10 +87,10 @@ async def rcon_stats():
 # ---------- 用户管理 ----------
 
 
-@rcon_bp.route('/api/rcon/users', methods=['GET'])
-async def rcon_list_users():
-    """获取所有用户列表（RCON 权限）"""
-    ok, err = await _rcon_auth()
+@debug_console_bp.route('/api/debug-console/users', methods=['GET'])
+async def debug_console_list_users():
+    """获取所有用户列表（Debug Console 权限）"""
+    ok, err = await _debug_console_auth()
     if not ok:
         return err
     
@@ -116,10 +116,10 @@ async def rcon_list_users():
 
 
 
-@rcon_bp.route('/api/rcon/user/<username>', methods=['GET'])
-async def rcon_get_user(username):
-    """获取用户详情（RCON 权限）"""
-    ok, err = await _rcon_auth()
+@debug_console_bp.route('/api/debug-console/user/<username>', methods=['GET'])
+async def debug_console_get_user(username):
+    """获取用户详情（Debug Console 权限）"""
+    ok, err = await _debug_console_auth()
     if not ok:
         return err
     
@@ -146,10 +146,10 @@ async def rcon_get_user(username):
 
 
 
-@rcon_bp.route('/api/rcon/users', methods=['POST'])
-async def rcon_create_user():
-    """创建用户（RCON 权限）"""
-    ok, err = await _rcon_auth()
+@debug_console_bp.route('/api/debug-console/users', methods=['POST'])
+async def debug_console_create_user():
+    """创建用户（Debug Console 权限）"""
+    ok, err = await _debug_console_auth()
     if not ok:
         return err
     
@@ -185,7 +185,7 @@ async def rcon_create_user():
         (username, password_hash, float(balence), uid, 1 if is_admin else 0, email, max_sessions)
     )
     
-    logging.info(f"RCON created user: {username} (admin={is_admin})")
+    logging.info(f"Debug Console created user: {username} (admin={is_admin})")
     return jsonify({
         'message': 'User created successfully',
         'username': username,
@@ -194,10 +194,10 @@ async def rcon_create_user():
 
 
 
-@rcon_bp.route('/api/rcon/user/<username>', methods=['PUT'])
-async def rcon_update_user(username):
-    """修改用户信息（RCON 权限，可改任意字段）"""
-    ok, err = await _rcon_auth()
+@debug_console_bp.route('/api/debug-console/user/<username>', methods=['PUT'])
+async def debug_console_update_user(username):
+    """修改用户信息（Debug Console 权限，可改任意字段）"""
+    ok, err = await _debug_console_auth()
     if not ok:
         return err
     
@@ -242,15 +242,15 @@ async def rcon_update_user(username):
         tuple(params)
     )
     
-    logging.info(f"RCON updated user: {username}, fields: {list(data.keys())}")
+    logging.info(f"Debug Console updated user: {username}, fields: {list(data.keys())}")
     return jsonify({'message': 'User updated successfully'}), 200
 
 
 
-@rcon_bp.route('/api/rcon/user/<username>', methods=['DELETE'])
-async def rcon_delete_user(username):
-    """删除用户（RCON 权限）"""
-    ok, err = await _rcon_auth()
+@debug_console_bp.route('/api/debug-console/user/<username>', methods=['DELETE'])
+async def debug_console_delete_user(username):
+    """删除用户（Debug Console 权限）"""
+    ok, err = await _debug_console_auth()
     if not ok:
         return err
     
@@ -264,20 +264,20 @@ async def rcon_delete_user(username):
     await async_db_query("DELETE FROM sessions WHERE user_name = ?", (username,))
     await async_db_query("DELETE FROM users WHERE user_name = ?", (username,))
     
-    logging.warning(f"RCON deleted user: {username}")
+    logging.warning(f"Debug Console deleted user: {username}")
     return jsonify({'message': 'User deleted successfully'}), 200
 
 
 
-@rcon_bp.route('/api/rcon/user/<username>/ban', methods=['POST'])
-async def rcon_ban_user(username):
-    """封禁用户（RCON 权限）"""
-    ok, err = await _rcon_auth()
+@debug_console_bp.route('/api/debug-console/user/<username>/ban', methods=['POST'])
+async def debug_console_ban_user(username):
+    """封禁用户（Debug Console 权限）"""
+    ok, err = await _debug_console_auth()
     if not ok:
         return err
     
     data = await request.get_json() or {}
-    reason = data.get('reason', 'Banned by RCON')
+    reason = data.get('reason', 'Banned by Debug Console')
     
     user = await async_db_query("SELECT * FROM users WHERE user_name = ?", (username,))
     if not user:
@@ -290,15 +290,15 @@ async def rcon_ban_user(username):
     
     await async_db_query("DELETE FROM sessions WHERE user_name = ?", (username,))
     
-    logging.warning(f"RCON banned user: {username}, reason: {reason}")
+    logging.warning(f"Debug Console banned user: {username}, reason: {reason}")
     return jsonify({'message': 'User banned successfully'}), 200
 
 
 
-@rcon_bp.route('/api/rcon/user/<username>/unban', methods=['POST'])
-async def rcon_unban_user(username):
-    """解封用户（RCON 权限）"""
-    ok, err = await _rcon_auth()
+@debug_console_bp.route('/api/debug-console/user/<username>/unban', methods=['POST'])
+async def debug_console_unban_user(username):
+    """解封用户（Debug Console 权限）"""
+    ok, err = await _debug_console_auth()
     if not ok:
         return err
     
@@ -311,15 +311,15 @@ async def rcon_unban_user(username):
         (username,)
     )
     
-    logging.info(f"RCON unbanned user: {username}")
+    logging.info(f"Debug Console unbanned user: {username}")
     return jsonify({'message': 'User unbanned successfully'}), 200
 
 
 
-@rcon_bp.route('/api/rcon/user/<username>/balence', methods=['POST'])
-async def rcon_adjust_balence(username):
-    """调整用户余额（RCON 权限，可正可负）"""
-    ok, err = await _rcon_auth()
+@debug_console_bp.route('/api/debug-console/user/<username>/balence', methods=['POST'])
+async def debug_console_adjust_balence(username):
+    """调整用户余额（Debug Console 权限，可正可负）"""
+    ok, err = await _debug_console_auth()
     if not ok:
         return err
     
@@ -342,7 +342,7 @@ async def rcon_adjust_balence(username):
             "UPDATE users SET balence = ? WHERE user_name = ?",
             (new_balence, username)
         )
-        logging.info(f"RCON set balence for user {username}: {new_balence}")
+        logging.info(f"Debug Console set balence for user {username}: {new_balence}")
         return jsonify({
             'message': 'Balance updated',
             'new_balence': round(new_balence, 6)
@@ -358,7 +358,7 @@ async def rcon_adjust_balence(username):
             (new_balence, username)
         )
         
-        logging.info(f"RCON adjusted balence for user {username}: {amount:+}, new: {new_balence}")
+        logging.info(f"Debug Console adjusted balence for user {username}: {amount:+}, new: {new_balence}")
         return jsonify({
             'message': 'Balance adjusted',
             'adjustment': amount,
@@ -370,10 +370,10 @@ async def rcon_adjust_balence(username):
 # ---------- 会话管理 ----------
 
 
-@rcon_bp.route('/api/rcon/sessions', methods=['GET'])
-async def rcon_list_sessions():
-    """获取所有活跃会话（RCON 权限）"""
-    ok, err = await _rcon_auth()
+@debug_console_bp.route('/api/debug-console/sessions', methods=['GET'])
+async def debug_console_list_sessions():
+    """获取所有活跃会话（Debug Console 权限）"""
+    ok, err = await _debug_console_auth()
     if not ok:
         return err
     
@@ -392,10 +392,10 @@ async def rcon_list_sessions():
 
 
 
-@rcon_bp.route('/api/rcon/session/<session_id>', methods=['DELETE'])
-async def rcon_kick_session(session_id):
-    """踢掉指定会话（RCON 权限）"""
-    ok, err = await _rcon_auth()
+@debug_console_bp.route('/api/debug-console/session/<session_id>', methods=['DELETE'])
+async def debug_console_kick_session(session_id):
+    """踢掉指定会话（Debug Console 权限）"""
+    ok, err = await _debug_console_auth()
     if not ok:
         return err
     
@@ -408,31 +408,31 @@ async def rcon_kick_session(session_id):
     
     await async_db_query("DELETE FROM sessions WHERE session_id = ?", (session_id,))
     
-    logging.info(f"RCON kicked session: {session_id}, user: {session_info[0]['user_name']}")
+    logging.info(f"Debug Console kicked session: {session_id}, user: {session_info[0]['user_name']}")
     return jsonify({'message': 'Session kicked successfully'}), 200
 
 
 
-@rcon_bp.route('/api/rcon/user/<username>/sessions', methods=['DELETE'])
-async def rcon_kick_all_user_sessions(username):
-    """踢掉指定用户的所有会话（RCON 权限）"""
-    ok, err = await _rcon_auth()
+@debug_console_bp.route('/api/debug-console/user/<username>/sessions', methods=['DELETE'])
+async def debug_console_kick_all_user_sessions(username):
+    """踢掉指定用户的所有会话（Debug Console 权限）"""
+    ok, err = await _debug_console_auth()
     if not ok:
         return err
     
     await async_db_query("DELETE FROM sessions WHERE user_name = ?", (username,))
     
-    logging.warning(f"RCON kicked all sessions for user: {username}")
+    logging.warning(f"Debug Console kicked all sessions for user: {username}")
     return jsonify({'message': 'All user sessions kicked'}), 200
 
 
 # ---------- 充值请求管理 ----------
 
 
-@rcon_bp.route('/api/rcon/recharge-requests', methods=['GET'])
-async def rcon_list_recharge_requests():
-    """获取充值请求列表（RCON 权限）"""
-    ok, err = await _rcon_auth()
+@debug_console_bp.route('/api/debug-console/recharge-requests', methods=['GET'])
+async def debug_console_list_recharge_requests():
+    """获取充值请求列表（Debug Console 权限）"""
+    ok, err = await _debug_console_auth()
     if not ok:
         return err
     
@@ -456,15 +456,15 @@ async def rcon_list_recharge_requests():
 
 
 
-@rcon_bp.route('/api/rcon/recharge-request/<int:req_id>/approve', methods=['POST'])
-async def rcon_approve_recharge(req_id):
-    """通过充值请求（RCON 权限）"""
-    ok, err = await _rcon_auth()
+@debug_console_bp.route('/api/debug-console/recharge-request/<int:req_id>/approve', methods=['POST'])
+async def debug_console_approve_recharge(req_id):
+    """通过充值请求（Debug Console 权限）"""
+    ok, err = await _debug_console_auth()
     if not ok:
         return err
     
     data = await request.get_json() or {}
-    remark = data.get('remark', 'Approved by RCON')
+    remark = data.get('remark', 'Approved by Debug Console')
     
     req = await async_db_query("SELECT * FROM recharge_requests WHERE id = ?", (req_id,))
     if not req:
@@ -485,24 +485,24 @@ async def rcon_approve_recharge(req_id):
     import datetime
     now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     await async_db_query(
-        "UPDATE recharge_requests SET status = 'approved', admin_name = 'RCON', admin_remark = ?, processed_at = ? WHERE id = ?",
+        "UPDATE recharge_requests SET status = 'approved', admin_name = 'Debug Console', admin_remark = ?, processed_at = ? WHERE id = ?",
         (remark, now, req_id)
     )
     
-    logging.info(f"RCON approved recharge request {req_id}: {req['user_name']} +{req['amount']}")
+    logging.info(f"Debug Console approved recharge request {req_id}: {req['user_name']} +{req['amount']}")
     return jsonify({'message': 'Recharge request approved'}), 200
 
 
 
-@rcon_bp.route('/api/rcon/recharge-request/<int:req_id>/reject', methods=['POST'])
-async def rcon_reject_recharge(req_id):
-    """拒绝充值请求（RCON 权限）"""
-    ok, err = await _rcon_auth()
+@debug_console_bp.route('/api/debug-console/recharge-request/<int:req_id>/reject', methods=['POST'])
+async def debug_console_reject_recharge(req_id):
+    """拒绝充值请求（Debug Console 权限）"""
+    ok, err = await _debug_console_auth()
     if not ok:
         return err
     
     data = await request.get_json() or {}
-    remark = data.get('remark', 'Rejected by RCON')
+    remark = data.get('remark', 'Rejected by Debug Console')
     
     req = await async_db_query("SELECT * FROM recharge_requests WHERE id = ?", (req_id,))
     if not req:
@@ -515,21 +515,21 @@ async def rcon_reject_recharge(req_id):
     import datetime
     now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     await async_db_query(
-        "UPDATE recharge_requests SET status = 'rejected', admin_name = 'RCON', admin_remark = ?, processed_at = ? WHERE id = ?",
+        "UPDATE recharge_requests SET status = 'rejected', admin_name = 'Debug Console', admin_remark = ?, processed_at = ? WHERE id = ?",
         (remark, now, req_id)
     )
     
-    logging.info(f"RCON rejected recharge request {req_id}: {req['user_name']}")
+    logging.info(f"Debug Console rejected recharge request {req_id}: {req['user_name']}")
     return jsonify({'message': 'Recharge request rejected'}), 200
 
 
 # ---------- SQL 查询 ----------
 
 
-@rcon_bp.route('/api/rcon/sql', methods=['POST'])
-async def rcon_sql_query():
-    """执行 SQL 查询（RCON 权限，只读）"""
-    ok, err = await _rcon_auth()
+@debug_console_bp.route('/api/debug-console/sql', methods=['POST'])
+async def debug_console_sql_query():
+    """执行 SQL 查询（Debug Console 权限，只读）"""
+    ok, err = await _debug_console_auth()
     if not ok:
         return err
     
@@ -567,10 +567,10 @@ async def rcon_sql_query():
 # ---------- 日志查看 ----------
 
 
-@rcon_bp.route('/api/rcon/login-logs', methods=['GET'])
-async def rcon_login_logs():
-    """查看登录日志（RCON 权限）"""
-    ok, err = await _rcon_auth()
+@debug_console_bp.route('/api/debug-console/login-logs', methods=['GET'])
+async def debug_console_login_logs():
+    """查看登录日志（Debug Console 权限）"""
+    ok, err = await _debug_console_auth()
     if not ok:
         return err
     
@@ -608,75 +608,75 @@ async def rcon_login_logs():
 
 
 
-@rcon_bp.route('/rcon/login')
-async def rcon_login_page():
-    """RCON 登录页面"""
-    if _is_rcon_authenticated():
-        return redirect(url_for('rcon_terminal_page'))
-    return await render_template('rcon/login.html')
+@debug_console_bp.route('/debug-console/login')
+async def debug_console_login_page():
+    """Debug Console 登录页面"""
+    if _is_debug_console_authenticated():
+        return redirect(url_for('debug_console_terminal_page'))
+    return await render_template('debug_console/login.html')
 
 
 
-@rcon_bp.route('/rcon/login', methods=['POST'])
-async def rcon_login_submit():
-    """RCON 登录提交 - 双重认证（管理员账号 + RCON 密钥）"""
+@debug_console_bp.route('/debug-console/login', methods=['POST'])
+async def debug_console_login_submit():
+    """Debug Console 登录提交 - 双重认证（管理员账号 + Debug Console 密钥）"""
     data = await request.get_json() or {}
     if not data:
         return jsonify({'error': 'Invalid request'}), 400
     
     username = data.get('username', '')
     password = data.get('password', '')
-    rcon_key = data.get('key', '')
+    debug_console_key = data.get('key', '')
     
     # 统一错误提示，不透露具体哪个错了（安全考虑）
     error_msg = '用户名、密码或密钥错误'
     
-    if not username or not password or not rcon_key:
+    if not username or not password or not debug_console_key:
         return jsonify({'error': error_msg}), 401
     
     # 验证管理员账号密码
-    admin_valid = await _rcon_verify_admin_credentials(username, password)
+    admin_valid = await _debug_console_verify_admin_credentials(username, password)
     
-    # 验证 RCON 密钥
-    key_valid = await _verify_rcon_key(rcon_key)
+    # 验证 Debug Console 密钥
+    key_valid = await _verify_debug_console_key(debug_console_key)
     
     # 两者都通过才算认证成功
     if admin_valid and key_valid:
-        session['rcon_authenticated'] = True
-        session['rcon_admin_username'] = username
+        session['debug_console_authenticated'] = True
+        session['debug_console_admin_username'] = username
         return jsonify({'success': True, 'message': 'Authentication successful'})
     else:
         return jsonify({'error': error_msg}), 401
 
 
 
-@rcon_bp.route('/rcon/logout', methods=['GET', 'POST'])
-async def rcon_logout():
-    """RCON 登出"""
-    # 只清除 RCON 相关的 session，不影响普通用户登录
-    session.pop('rcon_authenticated', None)
-    session.pop('rcon_admin_username', None)
+@debug_console_bp.route('/debug-console/logout', methods=['GET', 'POST'])
+async def debug_console_logout():
+    """Debug Console 登出"""
+    # 只清除 Debug Console 相关的 session，不影响普通用户登录
+    session.pop('debug_console_authenticated', None)
+    session.pop('debug_console_admin_username', None)
     
     if request.method == 'POST':
         return jsonify({'success': True})
-    return redirect(url_for('rcon_login_page'))
+    return redirect(url_for('debug_console_login_page'))
 
 
 
-@rcon_bp.route('/rcon/terminal')
-async def rcon_terminal_page():
-    """RCON 终端页面"""
-    if not _is_rcon_authenticated():
-        return redirect(url_for('rcon_login_page'))
-    return await render_template('rcon/terminal.html')
+@debug_console_bp.route('/debug-console/terminal')
+async def debug_console_terminal_page():
+    """Debug Console 终端页面"""
+    if not _is_debug_console_authenticated():
+        return redirect(url_for('debug_console_login_page'))
+    return await render_template('debug_console/terminal.html')
 
 
 
-@rcon_bp.route('/rcon/api/auth-check')
-async def rcon_auth_check():
-    """检查 RCON 认证状态"""
-    authenticated = _is_rcon_authenticated()
-    username = session.get('rcon_admin_username', '')
+@debug_console_bp.route('/debug-console/api/auth-check')
+async def debug_console_auth_check():
+    """检查 Debug Console 认证状态"""
+    authenticated = _is_debug_console_authenticated()
+    username = session.get('debug_console_admin_username', '')
     return jsonify({
         'authenticated': authenticated,
         'username': username if authenticated else ''
@@ -684,10 +684,10 @@ async def rcon_auth_check():
 
 
 
-@rcon_bp.route('/rcon/execute', methods=['POST'])
-async def rcon_execute_command():
-    """执行 RCON 命令（Web 版）"""
-    if not _is_rcon_authenticated():
+@debug_console_bp.route('/debug-console/execute', methods=['POST'])
+async def debug_console_execute_command():
+    """执行 Debug Console 命令（Web 版）"""
+    if not _is_debug_console_authenticated():
         return jsonify({'error': 'Not authenticated'}), 401
     
     data = await request.get_json() or {}
@@ -698,10 +698,10 @@ async def rcon_execute_command():
     if not command:
         return jsonify({'error': 'Command is required'}), 400
     
-    # 使用 rcon.py 的命令处理器执行命令
+    # 使用 debug_console.py 的命令处理器执行命令
     try:
-        from ..rcon import RCONCommandHandler
-        handler = RCONCommandHandler()
+        from ..debug_console import DebugConsoleCommandHandler
+        handler = DebugConsoleCommandHandler()
         import asyncio
         loop = asyncio.new_event_loop()
         try:
@@ -738,7 +738,7 @@ if __name__ == '__main__':
     for _p in (DB_PATH,
                _config_path,
                os.path.join(os.path.dirname(__file__), '.session_secret'),
-               os.path.join(os.path.dirname(__file__), '.rcon_key')):
+               os.path.join(os.path.dirname(__file__), '.debug_console_key')):
         try:
             if _p and os.path.exists(_p):
                 os.chmod(_p, 0o600)
@@ -776,12 +776,12 @@ if __name__ == '__main__':
     except Exception as e:
         logging.error(f"Pricing reload from DB failed: {e}")
     
-    # 启动 RCON 远程控制台（后台线程）
+    # 启动 Debug Console 远程控制台（后台线程）
     try:
-        _start_rcon_server_thread()
-        logging.info("RCON server starting...")
+        _start_debug_console_server_thread()
+        logging.info("Debug Console server starting...")
     except Exception as e:
-        logging.error(f"Failed to start RCON server: {e}")
+        logging.error(f"Failed to start Debug Console server: {e}")
     
     # 启动定时任务调度器
     try:

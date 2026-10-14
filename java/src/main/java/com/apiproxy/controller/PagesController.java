@@ -22,7 +22,7 @@ import java.util.List;
  * - /dashboard, /settings, /docs, /docs/{page}    用户页
  * - /admin/**                                       管理后台页
  * - /social/**, /community, /friends               社交页
- * - /rcon/login, /rcon/terminal                    RCON 页
+ * - /debug-console/login, /debug-console/terminal                    Debug Console 页
  * - /oauth/**                                       OAuth 页
  */
 @Controller
@@ -200,16 +200,16 @@ public class PagesController {
         return "social_transfer";
     }
 
-    // ---------- RCON 页 ----------
+    // ---------- Debug Console 页 ----------
 
-    @GetMapping("/rcon/login")
-    public String rconLogin() {
-        return "rcon/login";
+    @GetMapping("/debug-console/login")
+    public String debugConsoleLogin() {
+        return "debug_console/login";
     }
 
-    @GetMapping("/rcon/terminal")
-    public String rconTerminal() {
-        return "rcon/terminal";
+    @GetMapping("/debug-console/terminal")
+    public String debugConsoleTerminal() {
+        return "debug_console/terminal";
     }
 
     // ---------- OAuth 页 ----------

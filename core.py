@@ -13,7 +13,7 @@ import sqlite3
 import os
 from typing import Literal, Dict
 from quart import request, session, jsonify, redirect, g
-from .configs import DB_PATH, SSL_ENABLED, RCON_ENABLED
+from .configs import DB_PATH, SSL_ENABLED, DEBUG_CONSOLE_ENABLED
 from .apikey import APIKey, hash_password, verify_password, generate_uid, _get_user_by_name, _verify_user_password
 from . import upstreams
 from . import configs
@@ -55,24 +55,24 @@ __all__ = [
     '_get_user_by_uid', '_is_user_banned', 'task_manager', '_calculate_cost',
     '_init_sessions_table', '_create_session_sync', '_validate_session_sync',
     '_delete_session_sync', '_get_user_sessions_sync', '_get_user_session_count_sync',
-    '_kick_oldest_session_sync', '_cleanup_expired_sessions_sync', '_init_rcon_table',
-    '_legacy_rcon_config_key',
-    '_get_rcon_key_sync', '_refresh_rcon_key_sync', '_verify_rcon_key_sync', '_get_rcon_key',
-    '_refresh_rcon_key', '_verify_rcon_key', '_create_session', '_validate_session',
+    '_kick_oldest_session_sync', '_cleanup_expired_sessions_sync', '_init_debug_console_table',
+    '_legacy_debug_console_config_key',
+    '_get_debug_console_key_sync', '_refresh_debug_console_key_sync', '_verify_debug_console_key_sync', '_get_debug_console_key',
+    '_refresh_debug_console_key', '_verify_debug_console_key', '_create_session', '_validate_session',
     '_delete_session', '_get_user_sessions', '_get_user_session_count', '_kick_oldest_session',
-    '_generate_rcon_key_sync', '_validate_rcon_key_sync', '_list_rcon_keys_sync',
-    '_revoke_rcon_key_sync', '_execute_rcon_command_sync', '_generate_rcon_key',
-    '_validate_rcon_key', '_list_rcon_keys', '_revoke_rcon_key', '_execute_rcon_command',
-    'RCON_KEY_LENGTH', '_get_client_ip', '_get_user_agent', '_record_login_log', '_ip_in_cidr',
+    '_generate_debug_console_key_sync', '_validate_debug_console_key_sync', '_list_debug_console_keys_sync',
+    '_revoke_debug_console_key_sync', '_execute_debug_console_command_sync', '_generate_debug_console_key',
+    '_validate_debug_console_key', '_list_debug_console_keys', '_revoke_debug_console_key', '_execute_debug_console_command',
+    'DEBUG_CONSOLE_KEY_LENGTH', '_get_client_ip', '_get_user_agent', '_record_login_log', '_ip_in_cidr',
     '_whitelist_bypass', '_neg_time_key', 'MODELS_CACHE_TTL', '_MODELS_CACHE',
     '_normalize_upstream_payload', '_concat_text_parts', '_responses_input_to_messages',
     '_chat_to_responses', '_sse_response_event', '_oauth_redirect_error',
     '_is_absolute_http_uri', '_oauth_ensure_user', 'OAUTH_API_RESOURCES', '_scope_satisfied',
-    '_ALLOWED_SECTIONS', '_rcon_auth', '_start_rcon_server_thread', '_usage_daily',
+    '_ALLOWED_SECTIONS', '_debug_console_auth', '_start_debug_console_server_thread', '_usage_daily',
     '_usage_daily_by_model', 'DOCS_DIR',
-    '_doc_meta', '_scan_docs', '_load_doc', '_is_rcon_authenticated',
-    '_rcon_verify_admin_credentials', 'request', 'session', 'jsonify', 'redirect', 'pricing',
-    'oauth', 'upstreams', 'configs', 'DB_PATH', 'SSL_ENABLED', 'RCON_ENABLED', 'APIKey',
+    '_doc_meta', '_scan_docs', '_load_doc', '_is_debug_console_authenticated',
+    '_debug_console_verify_admin_credentials', 'request', 'session', 'jsonify', 'redirect', 'pricing',
+    'oauth', 'upstreams', 'configs', 'DB_PATH', 'SSL_ENABLED', 'DEBUG_CONSOLE_ENABLED', 'APIKey',
     'hash_password', 'verify_password', 'generate_uid', '_get_user_by_name',
     '_verify_user_password', 'logging', 'asyncio', 'json', 'time', 'os', 're', 'secrets',
     'uuid', 'hashlib', 'sqlite3', 'urlencode', 'urlparse',
@@ -112,14 +112,14 @@ from .core_billing import (_record_usage_log, async_db_update_balence, _atomic_p
 from .core_auth import (_is_admin, _require_admin, _generate_request_id, _get_user_by_uid,
                         _is_user_banned)
 from .core_tasks import UserTaskManager, task_manager
-from .core_rcon import (RCON_KEY_LENGTH, _init_rcon_table, _legacy_rcon_config_key,
-                        _get_rcon_key_sync, _refresh_rcon_key_sync, _verify_rcon_key_sync,
-                        _get_rcon_key, _refresh_rcon_key, _verify_rcon_key,
-                        _generate_rcon_key_sync, _validate_rcon_key_sync, _list_rcon_keys_sync,
-                        _revoke_rcon_key_sync, _execute_rcon_command_sync, _generate_rcon_key,
-                        _validate_rcon_key, _list_rcon_keys, _revoke_rcon_key,
-                        _execute_rcon_command, _rcon_auth, _start_rcon_server_thread,
-                        _is_rcon_authenticated, _rcon_verify_admin_credentials)
+from .core_debug_console import (DEBUG_CONSOLE_KEY_LENGTH, _init_debug_console_table, _legacy_debug_console_config_key,
+                        _get_debug_console_key_sync, _refresh_debug_console_key_sync, _verify_debug_console_key_sync,
+                        _get_debug_console_key, _refresh_debug_console_key, _verify_debug_console_key,
+                        _generate_debug_console_key_sync, _validate_debug_console_key_sync, _list_debug_console_keys_sync,
+                        _revoke_debug_console_key_sync, _execute_debug_console_command_sync, _generate_debug_console_key,
+                        _validate_debug_console_key, _list_debug_console_keys, _revoke_debug_console_key,
+                        _execute_debug_console_command, _debug_console_auth, _start_debug_console_server_thread,
+                        _is_debug_console_authenticated, _debug_console_verify_admin_credentials)
 from .core_oauth import (_oauth_redirect_error, _oauth_ensure_user,
                          OAUTH_API_RESOURCES, _ALLOWED_SECTIONS)
 from .core_docs import (_usage_daily, _usage_daily_by_model, DOCS_DIR, _doc_meta, _scan_docs, _load_doc)
@@ -183,7 +183,7 @@ _CSRF_PATCH_JS = '''<script>\n(function(){
 MAX_ACTIVE_SESSIONS = 5
 DEFAULT_MAX_SESSIONS = 1
 
-# ---------- RCON 密钥 ----------
+# ---------- Debug Console 密钥 ----------
 
 
 # ---------- 请求频率限制 ----------

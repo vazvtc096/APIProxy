@@ -51,7 +51,7 @@ public class WafService {
     private static final List<String> BODY_EXEMPT_PREFIXES = List.of(
             "/api/chat", "/v1/chat", "/v1/responses", "/v1/models",
             "/api/models", "/api/posts", "/api/transfer", "/api/friend",
-            "/api/social", "/api/recharge", "/api/admin/", "/api/rcon"
+            "/api/social", "/api/recharge", "/api/admin/", "/api/debug-console"
     );
 
     // ---------- 规则正则 ----------

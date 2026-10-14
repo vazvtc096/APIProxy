@@ -235,12 +235,12 @@ def _match(pattern, key):
 
 
 def _internal_secret() -> str:
-    """节点间内部 API 共享密钥：优先 CLUSTER_SECRET，缺省回退 RCON_SECRET。
+    """节点间内部 API 共享密钥：优先 CLUSTER_SECRET，缺省回退 DEBUG_CONSOLE_SECRET。
 
     两者皆空时返回空串——此时内网视为可信（与现有安全姿态一致），但跨节点
     /internal/* 接口仅接受来自本机回环或同密钥的请求。
     """
-    return getattr(configs, "CLUSTER_SECRET", "") or getattr(configs, "RCON_SECRET", "")
+    return getattr(configs, "CLUSTER_SECRET", "") or getattr(configs, "DEBUG_CONSOLE_SECRET", "")
 
 
 def _get_redis():

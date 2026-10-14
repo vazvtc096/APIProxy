@@ -1,9 +1,9 @@
 package com.apiproxy.service;
 
-import com.apiproxy.entity.RconConfig;
-import com.apiproxy.entity.RconKeys;
-import com.apiproxy.repository.RconConfigRepository;
-import com.apiproxy.repository.RconKeysRepository;
+import com.apiproxy.entity.DebugConsoleConfig;
+import com.apiproxy.entity.DebugConsoleKeys;
+import com.apiproxy.repository.DebugConsoleConfigRepository;
+import com.apiproxy.repository.DebugConsoleKeysRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -22,39 +22,39 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * RCON 服务。
+ * Debug Console 服务。
  *
- * 对应 Python rcon.py + rcon_client.py + rcon_crypto.py + core_rcon.py。
- * RconConfig: id(Long) / name / host / port / password / enabled(Integer)；
- * RconKeys: id(Long) / keyHash / keyName / isActive(Integer)。
+ * 对应 Python debugConsole.py + debug_console_client.py + debug_console_crypto.py + core_debug_console.py。
+ * DebugConsoleConfig: id(Long) / name / host / port / password / enabled(Integer)；
+ * DebugConsoleKeys: id(Long) / keyHash / keyName / isActive(Integer)。
  */
 @Service
-public class RconService {
+public class DebugConsoleService {
 
-    private static final Logger log = LoggerFactory.getLogger(RconService.class);
+    private static final Logger log = LoggerFactory.getLogger(DebugConsoleService.class);
     private static final int TIMEOUT_MS = 5000;
 
-    private final RconConfigRepository rconConfigRepository;
-    private final RconKeysRepository rconKeysRepository;
+    private final DebugConsoleConfigRepository debugConsoleConfigRepository;
+    private final DebugConsoleKeysRepository debugConsoleKeysRepository;
 
-    @Value("${apiproxy.rcon.enabled:true}")
-    private boolean rconEnabled;
+    @Value("${apiproxy.debug_console.enabled:true}")
+    private boolean debugConsoleEnabled;
 
-    private final Map<String, RconSession> sessions = new ConcurrentHashMap<>();
+    private final Map<String, DebugConsoleSession> sessions = new ConcurrentHashMap<>();
 
-    public RconService(RconConfigRepository rconConfigRepository,
-                       RconKeysRepository rconKeysRepository) {
-        this.rconConfigRepository = rconConfigRepository;
-        this.rconKeysRepository = rconKeysRepository;
+    public DebugConsoleService(DebugConsoleConfigRepository debugConsoleConfigRepository,
+                       DebugConsoleKeysRepository debugConsoleKeysRepository) {
+        this.debugConsoleConfigRepository = debugConsoleConfigRepository;
+        this.debugConsoleKeysRepository = debugConsoleKeysRepository;
     }
 
-    public List<RconConfig> listConfigs() {
-        return rconConfigRepository.findAllByOrderByIdAsc();
+    public List<DebugConsoleConfig> listConfigs() {
+        return debugConsoleConfigRepository.findAllByOrderByIdAsc();
     }
 
     @Transactional
-    public RconConfig createConfig(String name, String host, int port, String password) {
-        RconConfig cfg = new RconConfig();
+    public DebugConsoleConfig createConfig(String name, String host, int port, String password) {
+        DebugConsoleConfig cfg = new DebugConsoleConfig();
         cfg.setName(name);
         cfg.setHost(host);
         cfg.setPort(port);
@@ -62,63 +62,63 @@ public class RconService {
         cfg.setEnabled(1);
         cfg.setCreatedAt(LocalDateTime.now());
         cfg.setUpdatedAt(LocalDateTime.now());
-        return rconConfigRepository.save(cfg);
+        return debugConsoleConfigRepository.save(cfg);
     }
 
     @Transactional
     public void deleteConfig(Long id) {
-        rconConfigRepository.deleteById(id);
+        debugConsoleConfigRepository.deleteById(id);
     }
 
-    public List<RconKeys> listKeys() {
-        return rconKeysRepository.findAllByOrderByCreatedAtDesc();
+    public List<DebugConsoleKeys> listKeys() {
+        return debugConsoleKeysRepository.findAllByOrderByCreatedAtDesc();
     }
 
     @Transactional
-    public RconKeys generateKey(String name, String permission) {
-        String rawKey = "rcon_" + java.util.UUID.randomUUID().toString().replace("-", "");
+    public DebugConsoleKeys generateKey(String name, String permission) {
+        String rawKey = "debugConsole_" + java.util.UUID.randomUUID().toString().replace("-", "");
         String keyHash = java.security.MessageDigest.isEqual(new byte[0], new byte[0])
                 ? rawKey : rawKey; // placeholder
         try {
             java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
             keyHash = Base64.getEncoder().encodeToString(md.digest(rawKey.getBytes(StandardCharsets.UTF_8)));
         } catch (Exception ignored) {}
-        RconKeys rconKey = new RconKeys();
-        rconKey.setKeyHash(keyHash);
-        rconKey.setKeyName(name);
-        rconKey.setIsActive(1);
-        rconKey.setCreatedAt(LocalDateTime.now());
-        return rconKeysRepository.save(rconKey);
+        DebugConsoleKeys debugConsoleKey = new DebugConsoleKeys();
+        debugConsoleKey.setKeyHash(keyHash);
+        debugConsoleKey.setKeyName(name);
+        debugConsoleKey.setIsActive(1);
+        debugConsoleKey.setCreatedAt(LocalDateTime.now());
+        return debugConsoleKeysRepository.save(debugConsoleKey);
     }
 
     public boolean validateKey(String apiKey) {
         try {
             java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
             String hash = Base64.getEncoder().encodeToString(md.digest(apiKey.getBytes(StandardCharsets.UTF_8)));
-            return rconKeysRepository.findByKeyHashAndIsActive(hash, 1).isPresent();
+            return debugConsoleKeysRepository.findByKeyHashAndIsActive(hash, 1).isPresent();
         } catch (Exception e) {
             return false;
         }
     }
 
     public String executeCommand(String host, int port, String password, String command) {
-        if (!rconEnabled) {
-            throw new IllegalStateException("RCON is disabled");
+        if (!debugConsoleEnabled) {
+            throw new IllegalStateException("Debug Console is disabled");
         }
         try (Socket socket = new Socket()) {
             socket.connect(new InetSocketAddress(host, port), TIMEOUT_MS);
             socket.setSoTimeout(TIMEOUT_MS);
-            byte[] loginPacket = buildRconPacket(3, password);
+            byte[] loginPacket = buildDebugConsolePacket(3, password);
             socket.getOutputStream().write(loginPacket);
             socket.getOutputStream().flush();
-            byte[] loginResp = readRconPacket(socket);
+            byte[] loginResp = readDebugConsolePacket(socket);
             if (loginResp == null || !isAuthSuccess(loginResp)) {
-                throw new SecurityException("RCON authentication failed");
+                throw new SecurityException("Debug Console authentication failed");
             }
-            byte[] cmdPacket = buildRconPacket(2, command);
+            byte[] cmdPacket = buildDebugConsolePacket(2, command);
             socket.getOutputStream().write(cmdPacket);
             socket.getOutputStream().flush();
-            byte[] respPacket = readRconPacket(socket);
+            byte[] respPacket = readDebugConsolePacket(socket);
             if (respPacket != null) {
                 return extractBody(respPacket);
             }
@@ -126,16 +126,16 @@ public class RconService {
         } catch (SecurityException e) {
             throw e;
         } catch (Exception e) {
-            log.error("RCON command failed: {} -> {}", host, e.getMessage());
-            throw new IllegalStateException("RCON command failed: " + e.getMessage());
+            log.error("Debug Console command failed: {} -> {}", host, e.getMessage());
+            throw new IllegalStateException("Debug Console command failed: " + e.getMessage());
         }
     }
 
     public String executeByConfigId(Long configId, String command) {
-        RconConfig cfg = rconConfigRepository.findById(configId)
-                .orElseThrow(() -> new IllegalArgumentException("RCON config not found"));
+        DebugConsoleConfig cfg = debugConsoleConfigRepository.findById(configId)
+                .orElseThrow(() -> new IllegalArgumentException("Debug Console config not found"));
         if (cfg.getEnabled() == null || cfg.getEnabled() != 1) {
-            throw new IllegalStateException("RCON config is disabled");
+            throw new IllegalStateException("Debug Console config is disabled");
         }
         String password = decryptPassword(cfg.getPassword());
         return executeCommand(cfg.getHost(), cfg.getPort(), password, command);
@@ -144,23 +144,23 @@ public class RconService {
     public String createSession(String host, int port, String password) {
         executeCommand(host, port, password, "list");
         String sessionId = java.util.UUID.randomUUID().toString();
-        sessions.put(sessionId, new RconSession(host, port, encryptPassword(password),
+        sessions.put(sessionId, new DebugConsoleSession(host, port, encryptPassword(password),
                 true, System.currentTimeMillis() / 1000));
         return sessionId;
     }
 
     public String executeInSession(String sessionId, String command) {
-        RconSession session = sessions.get(sessionId);
+        DebugConsoleSession session = sessions.get(sessionId);
         if (session == null) {
-            throw new IllegalArgumentException("Invalid RCON session");
+            throw new IllegalArgumentException("Invalid Debug Console session");
         }
         if (System.currentTimeMillis() / 1000 - session.lastActivity() > 300) {
             sessions.remove(sessionId);
-            throw new IllegalStateException("RCON session expired");
+            throw new IllegalStateException("Debug Console session expired");
         }
         String password = decryptPassword(session.encryptedPassword());
         String result = executeCommand(session.host(), session.port(), password, command);
-        sessions.put(sessionId, new RconSession(session.host(), session.port(),
+        sessions.put(sessionId, new DebugConsoleSession(session.host(), session.port(),
                 session.encryptedPassword(), true, System.currentTimeMillis() / 1000));
         return result;
     }
@@ -169,9 +169,9 @@ public class RconService {
         sessions.remove(sessionId);
     }
 
-    // ---------- RCON 协议工具 ----------
+    // ---------- Debug Console 协议工具 ----------
 
-    private byte[] buildRconPacket(int type, String body) {
+    private byte[] buildDebugConsolePacket(int type, String body) {
         byte[] bodyBytes = body.getBytes(StandardCharsets.UTF_8);
         int packetSize = 4 + 4 + bodyBytes.length + 2;
         byte[] packet = new byte[packetSize + 4];
@@ -182,7 +182,7 @@ public class RconService {
         return packet;
     }
 
-    private byte[] readRconPacket(Socket socket) throws Exception {
+    private byte[] readDebugConsolePacket(Socket socket) throws Exception {
         byte[] sizeBuf = new byte[4];
         int read = socket.getInputStream().read(sizeBuf);
         if (read < 4) return null;
@@ -225,7 +225,7 @@ public class RconService {
 
     // ---------- 加密 ----------
 
-    private static final String AES_KEY = "APIProxyRCONKey1";
+    private static final String AES_KEY = "DebugConsoleKey1";
 
     private String encryptPassword(String password) {
         try {
@@ -251,6 +251,6 @@ public class RconService {
         }
     }
 
-    public record RconSession(String host, int port, String encryptedPassword,
+    public record DebugConsoleSession(String host, int port, String encryptedPassword,
                               boolean authenticated, long lastActivity) {}
 }

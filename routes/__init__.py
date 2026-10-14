@@ -16,7 +16,7 @@ def register_blueprints(app):
     from .social import social_bp
     from .oauth_routes import oauth_bp
     from .oidc_routes import oidc_bp
-    from .rcon_routes import rcon_bp
+    from .debug_console_routes import debug_console_bp
     from .console_routes import console_bp
     from .audit_routes import audit_bp
     from .auth_routes import auth_bp as secauth_bp
@@ -39,7 +39,7 @@ def register_blueprints(app):
     app.register_blueprint(social_bp)
     app.register_blueprint(oauth_bp)
     app.register_blueprint(oidc_bp)
-    app.register_blueprint(rcon_bp)
+    app.register_blueprint(debug_console_bp)
     app.register_blueprint(console_bp)
     app.register_blueprint(audit_bp)
     app.register_blueprint(secauth_bp)

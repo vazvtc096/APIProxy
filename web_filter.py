@@ -83,7 +83,7 @@ _CATEGORY_KEYWORDS = {
 # 浏览类路径前缀（仅这些走内容分类；程序化 API 跳过）
 _BROWSING_PREFIXES = ("/",)
 _API_PREFIXES = ("/api/", "/v1/", "/oauth/", "/internal/", "/cluster/",
-                 "/admin", "/static/", "/api/console", "/api/rcon")
+                 "/admin", "/static/", "/api/console", "/api/debug-console")
 
 
 # ============================================================================

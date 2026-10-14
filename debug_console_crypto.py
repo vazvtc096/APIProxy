@@ -1,5 +1,5 @@
 """
-RCON 加密模块 - RSA 2048 非对称密钥 + AES-256-GCM 会话加密
+Debug Console 加密模块 - RSA 2048 非对称密钥 + AES-256-GCM 会话加密
 标准混合加密方案：RSA 密钥交换 + AES 数据加密
 
 注意：
@@ -19,7 +19,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.exceptions import InvalidSignature
 
 # 配置
-from .configs import RCON_RSA_KEY_SIZE as RSA_KEY_SIZE  # RSA 密钥长度（位），取自配置文件
+from .configs import DEBUG_CONSOLE_RSA_KEY_SIZE as RSA_KEY_SIZE  # RSA 密钥长度（位），取自配置文件
 AES_KEY_SIZE = 32  # AES-256 密钥长度（字节）
 NONCE_SIZE = 12  # GCM nonce 长度（字节）
 CHALLENGE_LENGTH = 32  # 挑战字符串长度（字节）
@@ -27,8 +27,8 @@ AES_KEY_TTL = 15 * 60  # AES 密钥有效期（秒），默认 15 分钟
 
 # 密钥文件路径
 BASE_DIR = Path(__file__).resolve().parent
-PRIVATE_KEY_FILE = str(BASE_DIR / '.rcon_private.pem')  # 私钥文件
-PUBLIC_KEY_FILE = str(BASE_DIR / '.rcon_public.pem')  # 公钥文件
+PRIVATE_KEY_FILE = str(BASE_DIR / '.debug_console_private.pem')  # 私钥文件
+PUBLIC_KEY_FILE = str(BASE_DIR / '.debug_console_public.pem')  # 公钥文件
 
 
 def generate_rsa_keypair(key_size: int = None) -> tuple[bytes, bytes]:
@@ -116,15 +116,25 @@ def ensure_keypair_exists() -> bool:
     Returns:
         True 表示新生成了密钥，False 表示密钥已存在
     """
+    # 旧命名迁移：RCON → Debug Console 重命名后，把磁盘上遗留的密钥对改名复用，
+    # 避免老客户端需要重新获取公钥。
+    for _old, _new in ((str(BASE_DIR / '.rcon_private.pem'), PRIVATE_KEY_FILE),
+                       (str(BASE_DIR / '.rcon_public.pem'), PUBLIC_KEY_FILE)):
+        if os.path.exists(_old) and not os.path.exists(_new):
+            try:
+                os.replace(_old, _new)
+            except OSError:
+                pass
+
     if os.path.exists(PRIVATE_KEY_FILE) and os.path.exists(PUBLIC_KEY_FILE):
         return False
     
     # 生成新密钥对
     private_pem, public_pem = generate_rsa_keypair()
     save_keypair(private_pem, public_pem)
-    print(f"[RCON] 已生成 RSA {RSA_KEY_SIZE} 位密钥对")
-    print(f"[RCON] 私钥: {PRIVATE_KEY_FILE}")
-    print(f"[RCON] 公钥: {PUBLIC_KEY_FILE}")
+    print(f"[Debug Console] 已生成 RSA {RSA_KEY_SIZE} 位密钥对")
+    print(f"[Debug Console] 私钥: {PRIVATE_KEY_FILE}")
+    print(f"[Debug Console] 公钥: {PUBLIC_KEY_FILE}")
     return True
 
 

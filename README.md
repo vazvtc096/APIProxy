@@ -1,6 +1,6 @@
 # APIProxy
 
-一个 **OpenAI 兼容的 LLM API 代理服务**，基于 [Quart](https://quart.palletsprojects.com/)（异步 Web 框架）构建。将多个上游大模型 API Key 聚合为一个统一入口，提供按字符计价计费、用户与 API Key 体系、WAF、限流、集群、RCON 远程控制台、OAuth 2.0 授权服务器、社交与调度等完整的企业级能力。
+一个 **OpenAI 兼容的 LLM API 代理服务**，基于 [Quart](https://quart.palletsprojects.com/)（异步 Web 框架）构建。将多个上游大模型 API Key 聚合为一个统一入口，提供按字符计价计费、用户与 API Key 体系、WAF、限流、集群、Debug Console 远程控制台、OAuth 2.0 授权服务器、社交与调度等完整的企业级能力。
 
 ---
 
@@ -30,7 +30,7 @@
 | **API Key** | 独立 API Key 生成、吊销、余额绑定 |
 | **安全** | WAF（SQLi/XSS/路径遍历/扫描器/恶意 UA）、CSRF 双校验、CSP nonce、设备指纹、审计表、限流 |
 | **OAuth 2.0** | 授权码 + PKCE、客户端凭证、设备授权流、刷新令牌、吊销（RFC 7009）、内省（RFC 7662） |
-| **RCON** | TCP 远程控制台 + Web 双重认证，25 个管理命令 |
+| **Debug Console** | TCP 远程控制台 + Web 双重认证，25 个管理命令 |
 | **集群** | 多 Worker + LB，PostgreSQL 强一致并发（`FOR UPDATE SKIP LOCKED`） |
 | **社交** | 帖子、好友、聊天、转账、红包 |
 | **可观测** | `/metrics`（Prometheus）、`/health`、`/ready`、结构化日志 |
@@ -95,7 +95,7 @@ python -m APIProxy
 
 默认监听 `0.0.0.0:5000`（HTTP）。启用 HTTPS 时（`SSL_ENABLED: true`）由 hypercorn 承载 TLS 1.2/1.3。
 
-首次启动会自动：初始化数据库 schema（Alembic 迁移，失败回退幂等建表）、生成自签名证书（如启用 HTTPS）、生成 RCON 密钥。
+首次启动会自动：初始化数据库 schema（Alembic 迁移，失败回退幂等建表）、生成自签名证书（如启用 HTTPS）、生成 Debug Console 密钥。
 
 ### 4. 验证
 
@@ -116,7 +116,7 @@ curl http://localhost:5000/metrics
 | `DB_TYPE` | `sqlite` | `sqlite` 或 `postgres` |
 | `DATABASE_URL` | — | PostgreSQL 连接串（`DB_TYPE: postgres` 时必填） |
 | `SSL_ENABLED` | `false` | 是否启用 HTTPS |
-| `RCON_ENABLED` | `true` | 是否启用 RCON 远程控制台 |
+| `DEBUG_CONSOLE_ENABLED` | `true` | 是否启用 Debug Console 远程控制台 |
 | `WAF_ENABLED` | `true` | 是否启用 WAF |
 | `WAF_ALLOWED_HOSTS` | 空 | 逗号分隔的合法 Host，空则不校验 |
 | `WAF_GLOBAL_RPM` | 180 | 每 IP 每分钟请求上限 |
@@ -141,7 +141,7 @@ APIProxy/
 ├── oauth.py               # OAuth 2.0 授权服务器
 ├── waf.py                 # WAF + 行为监测
 ├── security.py            # 封禁、设备指纹
-├── rcon.py / rcon_server.py / rcon_crypto.py  # RCON 远程控制台
+├── Debug Console.py / debug_console_server.py / debug_console_crypto.py  # Debug Console 远程控制台
 ├── scheduler.py           # 定时任务调度器
 ├── cluster.py             # 集群发现与 LB
 ├── social.py              # 社交（帖子/好友/聊天/转账）
@@ -164,13 +164,13 @@ APIProxy/
 │   ├── core_docs.py       # 文档、用量统计
 │   ├── core_tasks.py      # UserTaskManager 队列/Worker
 │   ├── core_session.py    # 会话管理
-│   └── core_rcon.py       # RCON 密钥 + 命令 handler
+│   └── core_debug_console.py       # Debug Console 密钥 + 命令 handler
 ├── core.py                # 聚合入口：__all__ 重导出 + CSRF + 登录日志
 │
 ├── routes/                # 12 个路由蓝图
 │   ├── chat_proxy.py      # OpenAI 兼容代理
 │   ├── auth.py / user.py / admin.py / recharge.py
-│   ├── social.py / oauth_routes.py / rcon_routes.py
+│   ├── social.py / oauth_routes.py / debug_console_routes.py
 │   ├── pages.py / email_captcha.py / health.py / cluster_routes.py
 │
 ├── middleware/
@@ -212,11 +212,11 @@ APIProxy/
 
 实现 RFC 6749 授权码模式 + PKCE（RFC 7636）、客户端凭证模式、设备授权流（RFC 8628），以及刷新令牌、吊销（RFC 7009）、内省（RFC 7662）、动态客户端注册（RFC 7591）。access token 为 HS256 JWT（无状态校验），refresh token 为不透明随机串并落库。详见 [`docs/OAUTH_GUIDE.md`](docs/OAUTH_GUIDE.md)。
 
-### RCON 远程控制台
+### Debug Console 远程控制台
 
 - TCP 服务（独立端口）+ Web 管理端双重认证。
-- 25 个命令：用户管理（增删查、封禁、余额）、充值审批、会话管理、API Key 管理、RCON 密钥管理、IP 白名单等。
-- 命令分发已拆为 `_rcon_cmd_<name>` handler + `_RCON_HANDLERS` 映射表。
+- 25 个命令：用户管理（增删查、封禁、余额）、充值审批、会话管理、API Key 管理、Debug Console 密钥管理、IP 白名单等。
+- 命令分发已拆为 `_Debug Console_cmd_<name>` handler + `_DEBUG_CONSOLE_HANDLERS` 映射表。
 
 ### 集群
 
@@ -237,7 +237,7 @@ APIProxy/
 | `/api/admin/*` | 管理端（用户、充值、封禁、白名单） |
 | `/api/recharge/*` | 充值请求与审批 |
 | `/oauth/*` | OAuth 2.0 授权服务器 |
-| `/api/rcon/*` | RCON Web 管理端 |
+| `/api/debug-console/*` | Debug Console Web 管理端 |
 | `/health`、`/ready` | 存活 / 就绪探针 |
 | `/metrics` | Prometheus 指标 |
 

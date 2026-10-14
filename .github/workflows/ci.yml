@@ -4,7 +4,7 @@ on:
   push:
     branches: [main, master]
   pull_request:
-    branches: [main, *]
+    branches: [main]
 
 jobs:
   test:
@@ -21,9 +21,14 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-asyncio
       - name: Lint (syntax check)
-        run: python -m compileall -q APIProxy
+        # 仓库根即包根，直接编译当前目录；跳过备份/归档与 Java 侧翼。
+        run: python -m compileall -q . -x '(backups|archive|node_modules|\.git|java)'
       - name: Run tests
-        run: python -m pytest APIProxy/tests/ -q
+        # 包名 APIProxy 即仓库目录名：把父目录加入 PYTHONPATH，使 conftest 与
+        # `import APIProxy` 都能解析（对应本地 `cd .. && pytest APIProxy/tests/` 的姿势）。
+        env:
+          PYTHONPATH: ${{ github.workspace }}/..
+        run: python -m pytest tests/ -q
       - name: Dependency vulnerability scan
         run: |
           pip install pip-audit

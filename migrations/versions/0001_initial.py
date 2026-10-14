@@ -1,6 +1,6 @@
 """初始基线迁移
 
-复用 smart_init.smart_init() 的幂等建表逻辑（users/oauth/rcon/social/pricing/
+复用 smart_init.smart_init() 的幂等建表逻辑（users/oauth/debug-console/social/pricing/
 upstreams 等 31 张表），确保与现有部署完全一致。smart_init 本身是幂等的
 （IF NOT EXISTS + 字段补全），故本基线迁移可安全重入。
 

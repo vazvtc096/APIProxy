@@ -211,15 +211,15 @@ SMTP_FROM = SMTP_SETTINGS["from"]
 # SMTP 是否已配置（兼容旧引用的 import 时快照，勿在热路径使用）
 SMTP_CONFIGURED = smtp_configured()
 
-# ---------- RCON 远程控制台 ----------
-RCON_ENABLED = _get_bool("RCON_ENABLED", True)
-RCON_SECRET = _get("RCON_SECRET", "") or ""
-RCON_RSA_KEY_SIZE = _get_int("RCON_RSA_KEY_SIZE", 2048)
+# ---------- Debug Console 远程控制台 ----------
+DEBUG_CONSOLE_ENABLED = _get_bool("DEBUG_CONSOLE_ENABLED", True)
+DEBUG_CONSOLE_SECRET = _get("DEBUG_CONSOLE_SECRET", "") or ""
+DEBUG_CONSOLE_RSA_KEY_SIZE = _get_int("DEBUG_CONSOLE_RSA_KEY_SIZE", 2048)
 
-# ---------- Console 运维控制台（取代 RCON 的游戏化命名）----------
-# 复用 RCON 的开关与密钥：CONSOLE 是 RCON 的运维面重命名，鉴权共用一把最高权限密钥。
-CONSOLE_ENABLED = RCON_ENABLED
-CONSOLE_SECRET = RCON_SECRET
+# ---------- Console 运维控制台（取代 Debug Console 的游戏化命名）----------
+# 复用 Debug Console 的开关与密钥：CONSOLE 是 Debug Console 的运维面重命名，鉴权共用一把最高权限密钥。
+CONSOLE_ENABLED = DEBUG_CONSOLE_ENABLED
+CONSOLE_SECRET = DEBUG_CONSOLE_SECRET
 
 # ---------- HTTPS/SSL ----------
 # ---------- IP 直接访问策略 ----------
@@ -442,8 +442,8 @@ ANNOUNCEMENT_DELIVER_TO_CHAT = _get_bool("ANNOUNCEMENT_DELIVER_TO_CHAT", True)
 #   0 = info  只读 / 查询（status / list / query 类）
 #   1 = op    非破坏性运维（reload / loglevel / unban / announce ...）
 #   2 = admin 高危 / 破坏性（ban / flush_cache / maintenance_on / drain ...）
-CONSOLE_MAX_TIER = _get_int("CONSOLE_MAX_TIER", 2)   # 主 RCON/Console 密钥授予的最高层级（默认 admin 全权）
-CONSOLE_RCON_DEFAULT_TIER = _get_int("CONSOLE_RCON_DEFAULT_TIER", 1)  # 业务 RCON 命令默认层级
+CONSOLE_MAX_TIER = _get_int("CONSOLE_MAX_TIER", 2)   # 主 Debug Console/Console 密钥授予的最高层级（默认 admin 全权）
+DEBUG_CONSOLE_DEFAULT_TIER = _get_int("DEBUG_CONSOLE_DEFAULT_TIER", 1)  # 业务 Debug Console 命令默认层级
 # 可选：为额外「受限密钥」指定更低层级，格式 JSON：{"<key>": <tier>}
 # 例如只给监控账号一把 tier=0 的密钥，仅能跑只读查询。
 _CONSOLE_KEY_TIERS_RAW = _get("CONSOLE_KEY_TIERS", "") or ""

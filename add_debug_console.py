@@ -12,21 +12,21 @@ old = """async def _cleanup_expired_sessions():
 
 def _bufpay_sign(params: dict) -> str:"""
 
-# BufPay 已清理：改用稳定锚点，并在 RCON 已集成时跳过
-anchor = "# ---------- RCON 远程控制台 API（最高权限，类似 SYSTEM/root）"
-if "def _rcon_auth" in content:
-    print("RCON already integrated, nothing to do.")
+# BufPay 已清理：改用稳定锚点，并在 Debug Console 已集成时跳过
+anchor = "# ---------- Debug Console 远程控制台 API（最高权限，类似 SYSTEM/root）"
+if "def _debug_console_auth" in content:
+    print("Debug Console already integrated, nothing to do.")
     sys.exit(0)
 if anchor not in content:
-    print("ERROR: Could not find RCON anchor")
+    print("ERROR: Could not find Debug Console anchor")
     sys.exit(1)
 
-# 读取 RCON 代码
-rcon_code = '''
-# ---------- RCON 远程控制台 ----------
+# 读取 Debug Console 代码
+debug_console_code = '''
+# ---------- Debug Console 远程控制台 ----------
 
-def _generate_rcon_key_sync(key_name: str = "default") -> str:
-    """生成新的 RCON 密钥（同步版本）
+def _generate_debug_console_key_sync(key_name: str = "default") -> str:
+    """生成新的 Debug Console 密钥（同步版本）
     Returns:
         明文密钥（只返回一次，数据库只存哈希）
     """
@@ -45,7 +45,7 @@ def _generate_rcon_key_sync(key_name: str = "default") -> str:
     with conn:
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO rcon_keys (key_hash, key_name) VALUES (?, ?)",
+            "INSERT INTO debug_console_keys (key_hash, key_name) VALUES (?, ?)",
             (key_hash, key_name)
         )
         conn.commit()
@@ -53,8 +53,8 @@ def _generate_rcon_key_sync(key_name: str = "default") -> str:
     return key_b64
 
 
-def _validate_rcon_key_sync(key_b64: str, ip: str = "") -> bool:
-    """验证 RCON 密钥是否有效（同步版本）"""
+def _validate_debug_console_key_sync(key_b64: str, ip: str = "") -> bool:
+    """验证 Debug Console 密钥是否有效（同步版本）"""
     if not key_b64:
         return False
     
@@ -68,7 +68,7 @@ def _validate_rcon_key_sync(key_b64: str, ip: str = "") -> bool:
     with conn:
         cur = conn.cursor()
         cur.execute(
-            "SELECT id FROM rcon_keys WHERE key_hash = ? AND is_active = 1",
+            "SELECT id FROM debug_console_keys WHERE key_hash = ? AND is_active = 1",
             (key_hash,)
         )
         row = cur.fetchone()
@@ -76,7 +76,7 @@ def _validate_rcon_key_sync(key_b64: str, ip: str = "") -> bool:
         if row:
             # 更新最后使用时间
             cur.execute(
-                "UPDATE rcon_keys SET last_used_at = ?, last_used_ip = ? WHERE key_hash = ?",
+                "UPDATE debug_console_keys SET last_used_at = ?, last_used_ip = ? WHERE key_hash = ?",
                 (now, ip, key_hash)
             )
             conn.commit()
@@ -85,34 +85,34 @@ def _validate_rcon_key_sync(key_b64: str, ip: str = "") -> bool:
     return False
 
 
-def _list_rcon_keys_sync() -> list:
-    """列出所有 RCON 密钥（同步版本，不返回明文）"""
+def _list_debug_console_keys_sync() -> list:
+    """列出所有 Debug Console 密钥（同步版本，不返回明文）"""
     conn = _get_conn()
     with conn:
         cur = conn.cursor()
         cur.execute("""
             SELECT id, key_name, created_at, last_used_at, last_used_ip, is_active
-            FROM rcon_keys ORDER BY created_at DESC
+            FROM debug_console_keys ORDER BY created_at DESC
         """)
         rows = cur.fetchall()
         return [dict(row) for row in rows]
 
 
-def _revoke_rcon_key_sync(key_id: int) -> bool:
-    """撤销 RCON 密钥（同步版本）"""
+def _revoke_debug_console_key_sync(key_id: int) -> bool:
+    """撤销 Debug Console 密钥（同步版本）"""
     conn = _get_conn()
     with conn:
         cur = conn.cursor()
         cur.execute(
-            "UPDATE rcon_keys SET is_active = 0 WHERE id = ?",
+            "UPDATE debug_console_keys SET is_active = 0 WHERE id = ?",
             (key_id,)
         )
         conn.commit()
         return cur.rowcount > 0
 
 
-def _execute_rcon_command_sync(command: str, args: list = None) -> dict:
-    """执行 RCON 命令（同步版本）
+def _execute_debug_console_command_sync(command: str, args: list = None) -> dict:
+    """执行 Debug Console 命令（同步版本）
     Returns:
         {success: bool, output: str, data: dict}
     """
@@ -158,10 +158,10 @@ def _execute_rcon_command_sync(command: str, args: list = None) -> dict:
     gen_apikey <username>        生成 API Key
     revoke_apikey <user> <key>   吊销 API Key
 
-  RCON 密钥管理：
-    list_rcon_keys               列出 RCON 密钥
-    gen_rcon_key [name]          生成新 RCON 密钥
-    revoke_rcon_key <id>         撤销 RCON 密钥"""
+  Debug Console 密钥管理：
+    list_debug_console_keys               列出 Debug Console 密钥
+    gen_debug_console_key [name]          生成新 Debug Console 密钥
+    revoke_debug_console_key <id>         撤销 Debug Console 密钥"""
                 return {'success': True, 'output': output, 'data': {}}
             
             # ==================== 状态 ====================
@@ -172,19 +172,19 @@ def _execute_rcon_command_sync(command: str, args: list = None) -> dict:
                 session_count = cur.fetchone()['cnt']
                 cur.execute("SELECT COUNT(*) as cnt FROM recharge_requests WHERE status = 'pending'")
                 pending_recharges = cur.fetchone()['cnt']
-                cur.execute("SELECT COUNT(*) as cnt FROM rcon_keys WHERE is_active = 1")
-                rcon_keys = cur.fetchone()['cnt']
+                cur.execute("SELECT COUNT(*) as cnt FROM debug_console_keys WHERE is_active = 1")
+                debug_console_keys = cur.fetchone()['cnt']
                 
                 output = f"""服务器状态：运行中
 用户总数：{user_count}
 活跃会话：{session_count}
 待处理充值：{pending_recharges}
-活跃 RCON 密钥：{rcon_keys}"""
+活跃 Debug Console 密钥：{debug_console_keys}"""
                 return {'success': True, 'output': output, 'data': {
                     'user_count': user_count,
                     'session_count': session_count,
                     'pending_recharges': pending_recharges,
-                    'rcon_keys': rcon_keys
+                    'debug_console_keys': debug_console_keys
                 }}
             
             # ==================== 统计 ====================
@@ -661,18 +661,18 @@ def _execute_rcon_command_sync(command: str, args: list = None) -> dict:
                 output = f"API Key 已吊销：{apikey[:10]}..."
                 return {'success': True, 'output': output, 'data': {'apikey': apikey}}
             
-            # ==================== 列出 RCON 密钥 ====================
-            elif command == 'list_rcon_keys':
+            # ==================== 列出 Debug Console 密钥 ====================
+            elif command == 'list_debug_console_keys':
                 cur.execute("""
                     SELECT id, key_name, created_at, last_used_at, last_used_ip, is_active
-                    FROM rcon_keys ORDER BY created_at DESC
+                    FROM debug_console_keys ORDER BY created_at DESC
                 """)
                 keys = cur.fetchall()
                 
                 if not keys:
-                    return {'success': True, 'output': '没有 RCON 密钥', 'data': {'keys': []}}
+                    return {'success': True, 'output': '没有 Debug Console 密钥', 'data': {'keys': []}}
                 
-                lines = [f"RCON 密钥列表（{len(keys)} 个）："]
+                lines = [f"Debug Console 密钥列表（{len(keys)} 个）："]
                 for k in keys:
                     status = '活跃' if k['is_active'] else '已撤销'
                     lines.append(f"  [{k['id']}] {k['key_name']}  状态: {status}  创建: {k['created_at']}")
@@ -682,8 +682,8 @@ def _execute_rcon_command_sync(command: str, args: list = None) -> dict:
                 output = '\\n'.join(lines)
                 return {'success': True, 'output': output, 'data': {'keys': [dict(k) for k in keys]}}
             
-            # ==================== 生成 RCON 密钥 ====================
-            elif command == 'gen_rcon_key':
+            # ==================== 生成 Debug Console 密钥 ====================
+            elif command == 'gen_debug_console_key':
                 key_name = args[0] if args else 'default'
                 
                 import os
@@ -695,30 +695,30 @@ def _execute_rcon_command_sync(command: str, args: list = None) -> dict:
                 key_hash = hashlib.sha256(key_b64.encode('utf-8')).hexdigest()
                 
                 cur.execute(
-                    "INSERT INTO rcon_keys (key_hash, key_name) VALUES (?, ?)",
+                    "INSERT INTO debug_console_keys (key_hash, key_name) VALUES (?, ?)",
                     (key_hash, key_name)
                 )
                 conn.commit()
                 
-                output = f"新 RCON 密钥生成成功（只显示一次）：\\n{key_b64}\\n名称：{key_name}"
+                output = f"新 Debug Console 密钥生成成功（只显示一次）：\\n{key_b64}\\n名称：{key_name}"
                 return {'success': True, 'output': output, 'data': {'key': key_b64, 'name': key_name}}
             
-            # ==================== 撤销 RCON 密钥 ====================
-            elif command == 'revoke_rcon_key':
+            # ==================== 撤销 Debug Console 密钥 ====================
+            elif command == 'revoke_debug_console_key':
                 if not args:
-                    return {'success': False, 'output': '用法：revoke_rcon_key <id>', 'data': {}}
+                    return {'success': False, 'output': '用法：revoke_debug_console_key <id>', 'data': {}}
                 
                 key_id = int(args[0])
                 
-                cur.execute("SELECT key_name FROM rcon_keys WHERE id = ?", (key_id,))
+                cur.execute("SELECT key_name FROM debug_console_keys WHERE id = ?", (key_id,))
                 key = cur.fetchone()
                 if not key:
-                    return {'success': False, 'output': f'RCON 密钥 {key_id} 不存在', 'data': {}}
+                    return {'success': False, 'output': f'Debug Console 密钥 {key_id} 不存在', 'data': {}}
                 
-                cur.execute("UPDATE rcon_keys SET is_active = 0 WHERE id = ?", (key_id,))
+                cur.execute("UPDATE debug_console_keys SET is_active = 0 WHERE id = ?", (key_id,))
                 conn.commit()
                 
-                output = f"RCON 密钥 [{key_id}] {key['key_name']} 已撤销"
+                output = f"Debug Console 密钥 [{key_id}] {key['key_name']} 已撤销"
                 return {'success': True, 'output': output, 'data': {'key_id': key_id, 'name': key['key_name']}}
             
             # ==================== 未知命令 ====================
@@ -730,38 +730,38 @@ def _execute_rcon_command_sync(command: str, args: list = None) -> dict:
 
 
 # 异步版本
-async def _generate_rcon_key(key_name: str = "default") -> str:
+async def _generate_debug_console_key(key_name: str = "default") -> str:
     import asyncio
-    return await asyncio.to_thread(_generate_rcon_key_sync, key_name)
+    return await asyncio.to_thread(_generate_debug_console_key_sync, key_name)
 
-async def _validate_rcon_key(key_b64: str, ip: str = "") -> bool:
+async def _validate_debug_console_key(key_b64: str, ip: str = "") -> bool:
     import asyncio
-    return await asyncio.to_thread(_validate_rcon_key_sync, key_b64, ip)
+    return await asyncio.to_thread(_validate_debug_console_key_sync, key_b64, ip)
 
-async def _list_rcon_keys() -> list:
+async def _list_debug_console_keys() -> list:
     import asyncio
-    return await asyncio.to_thread(_list_rcon_keys_sync)
+    return await asyncio.to_thread(_list_debug_console_keys_sync)
 
-async def _revoke_rcon_key(key_id: int) -> bool:
+async def _revoke_debug_console_key(key_id: int) -> bool:
     import asyncio
-    return await asyncio.to_thread(_revoke_rcon_key_sync, key_id)
+    return await asyncio.to_thread(_revoke_debug_console_key_sync, key_id)
 
-async def _execute_rcon_command(command: str, args: list = None) -> dict:
+async def _execute_debug_console_command(command: str, args: list = None) -> dict:
     import asyncio
-    return await asyncio.to_thread(_execute_rcon_command_sync, command, args)
+    return await asyncio.to_thread(_execute_debug_console_command_sync, command, args)
 
 '''
 
 # 插入
-content = content.replace(old, rcon_code + '\n' + old.split('\n')[-1])
+content = content.replace(old, debug_console_code + '\n' + old.split('\n')[-1])
 
 # 等等，不对，old 包含两行，我需要更精确的处理
 # 重新来：找到 old 的位置，然后在 _bufpay_sign 之前插入
 
-# 在 RCON 锚点前插入 RCON 代码（仅在未集成时进入此分支）
-content = content.replace(anchor, rcon_code + "\n" + anchor, 1)
+# 在 Debug Console 锚点前插入 Debug Console 代码（仅在未集成时进入此分支）
+content = content.replace(anchor, debug_console_code + "\n" + anchor, 1)
 
 with open('__main__.py', 'w', encoding='utf-8') as f:
     f.write(content)
 
-print("SUCCESS: Added RCON functions")
+print("SUCCESS: Added Debug Console functions")

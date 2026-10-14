@@ -35,7 +35,7 @@
 | 邮箱验证码 | EmailCaptchaController | EmailCaptchaService | 验证码发送/校验/限流 |
 | 健康检查 | HealthController | - | liveness/readiness/详细状态 |
 | 页面渲染 | PagesController | - | 35+ 页面 Thymeleaf 路由 |
-| RCON | RconController | RconService | Minecraft RCON协议/密钥/会话/加密 |
+| Debug Console | DebugConsoleController | DebugConsoleService | Minecraft Debug Console协议/密钥/会话/加密 |
 | 充值 | RechargeController | RechargeService | 充值订单/支付回调/管理员审核/交易记录 |
 | 社交 | SocialController | SocialService | 帖子/点赞/收藏/好友/私信/转账 |
 
@@ -55,7 +55,7 @@
 
 ## 前端
 - 35 个 Thymeleaf HTML 模板（从 Python Jinja2 模板迁移）
-- 覆盖：登录/注册/忘记密码/仪表盘/设置/聊天/社区/好友/通知/文档/社交全套/OAuth全套/RCON/管理后台全套
+- 覆盖：登录/注册/忘记密码/仪表盘/设置/聊天/社区/好友/通知/文档/社交全套/OAuth全套/Debug Console/管理后台全套
 
 ## 构建与运行
 ```bash

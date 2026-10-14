@@ -88,7 +88,7 @@ SCOPES = {
     'apikeys:write': '创建 / 删除 API Key',
     'user:read': '读取个人设置与会话',
     'user:write': '修改密码 / 设置 / 注销账号',
-    'rcon': '远程控制台（仅管理员）',
+    'debug_console': '远程控制台（仅管理员）',
 }
 
 # 高危 scope：一旦授予第三方应用即具备破坏能力，绝不允许出现在默认公开客户端，
@@ -98,7 +98,7 @@ SENSITIVE_SCOPES = (
     'user:write',        # 可修改密码 / 注销账号（账户毁灭性操作）
     'transactions:write',# 可发起充值 / 转账（资金操作）
     'apikeys:write',     # 可创建 / 删除 API Key（凭证泄露风险）
-    'rcon',              # 远程控制台（服务器级控制，仅管理员）
+    'debug_console',              # 远程控制台（服务器级控制，仅管理员）
 )
 
 # 默认公开客户端（'default'）允许授予的 scope 安全基线：
