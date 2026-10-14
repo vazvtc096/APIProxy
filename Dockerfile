@@ -48,7 +48,7 @@ ENV DB_PATH=/data/users.db \
 
 VOLUME ["/data"]
 
-# HTTP 5000 / HTTPS 5443 / RCON 5001
+# HTTP 5000 / HTTPS 5443 / Debug Console 5001
 EXPOSE 5000 5443 5001
 
 # 默认 HTTP 启动；设 APIPROXY_SSL_ENABLED=true 时改走 HTTPS（自签名证书自动生成）

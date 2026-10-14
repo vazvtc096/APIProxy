@@ -29,7 +29,7 @@ ENV/
 
 # --- 密钥与敏感文件 ---
 .session_secret
-.rcon_key
+.debug_console_key
 *.pem
 *.key
 *.crt
@@ -89,10 +89,13 @@ users.db*
 java/target/
 java/.maven/
 *.selfsigned-bak
-# 根目录下的调试脚本/日志（前导 / 仅限根目录，避免误伤子包的 __init__.py）
+# 根目录与子目录下的一次性调试脚本/日志
+#（前导 / 限定目录，避免误伤子包 __init__.py 与正式模块如 routes/_gemini_translate.py）
 /_*.txt
 /_*.py
 /.dbg_*.py
+/tests/_*.py
+/templates/_*.py
 seq_anomaly.json
 login_screenshot.png
 *.png
