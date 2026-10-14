@@ -425,7 +425,31 @@ def get_conn():
         conn.execute(f"PRAGMA busy_timeout={_SQLITE_BUSY_TIMEOUT_MS}")
     except Exception:
         pass
+    _apply_sqlite_pragmas(conn)
     return conn
+
+
+def _apply_sqlite_pragmas(conn) -> None:
+    """SQLite 连接级调优（缓解单写锁瓶颈）。
+
+    - journal_mode=WAL：读写不再互相阻塞（读者不挡写者、写者不挡读者），
+      显著降低 Web 并发下的 `database is locked` 概率。该设置持久化在库文件上，
+      每连接重复设置是幂等的（返回当前值）。
+    - synchronous=NORMAL：WAL 下安全且大幅减少 fsync（断电最多丢最后一个事务，
+      不会损坏数据库），相比默认 FULL 提升写吞吐。
+    - temp_store=MEMORY：临时表/排序放内存，减少磁盘 IO。
+
+    任一项失败（如库在只读/网络文件系统上不支持 WAL）都静默降级，不影响可用性。
+    """
+    for pragma in (
+        "PRAGMA journal_mode=WAL",
+        "PRAGMA synchronous=NORMAL",
+        "PRAGMA temp_store=MEMORY",
+    ):
+        try:
+            conn.execute(pragma)
+        except Exception:
+            pass
 
 
 @contextmanager

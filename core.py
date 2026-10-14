@@ -43,7 +43,8 @@ except Exception:  # noqa: BLE001
 # star 导入白名单：显式列出下划线前缀符号，
 # 否则 `from ..core import *` 会静默跳过它们（PEP 8 默认行为）。
 __all__ = [
-    'EXEMPT_CSRF_METHODS', 'EXEMPT_CSRF_PATHS', 'EXEMPT_CSRF_PREFIXES', 'CSRF_TOKEN_LEN', '_get_csrf_token',
+    'EXEMPT_CSRF_METHODS', 'EXEMPT_CSRF_PATHS', 'EXEMPT_CSRF_PREFIXES', 'EXEMPT_CSRF_REGEXES',
+    'is_csrf_exempt_path', 'CSRF_TOKEN_LEN', '_get_csrf_token',
     '_validate_csrf_token', '_CSRF_PATCH_JS', 'MIN_PASSWORD_LENGTH', 'MAX_USERNAME_LENGTH',
     'MAX_ACTIVE_SESSIONS', 'DEFAULT_MAX_SESSIONS', 'SESSION_EXPIRE_DAYS', 'RATE_LIMITS',
     '_init_rate_limit_table', '_cleanup_rate_limits_sync', '_get_rate_limit_key',
@@ -128,9 +129,28 @@ from .core_docs import (_usage_daily, _usage_daily_by_model, DOCS_DIR, _doc_meta
 # ---------- CSRF ----------
 EXEMPT_CSRF_METHODS = {'GET', 'HEAD', 'OPTIONS', 'TRACE'}
 EXEMPT_CSRF_PATHS = {'/api/password-reset/request', '/api/password-reset/confirm', '/register', '/login'}
-# 前缀豁免：服务端对服务端回调，路径含动态段（支付渠道名）
-EXEMPT_CSRF_PREFIXES = ('/api/recharge/callback/',)
+# 前缀豁免：服务端对服务端回调，路径含动态段（支付渠道名）。
+# 收紧说明：早期用 `request.path.startswith(EXEMPT_CSRF_PREFIXES)` 裸前缀匹配，
+# 会把 `/api/recharge/callback/<method>/<任意子路径>` 也一并放行（前缀碰撞）。
+# 现改为锚定正则：仅精确匹配 `/api/recharge/callback/<单段渠道名>`，
+# 渠道名限定为字母/数字/下划线/点/连字符，杜绝越界放行。
+EXEMPT_CSRF_PREFIXES = ('/api/recharge/callback/',)   # 保留常量仅供展示/文档，勿再用于 startswith
+EXEMPT_CSRF_REGEXES = (
+    re.compile(r'^/api/recharge/callback/[A-Za-z0-9_.-]+$'),
+)
 CSRF_TOKEN_LEN = 32
+
+
+def is_csrf_exempt_path(path: str) -> bool:
+    """判断路径是否属于 CSRF 豁免（精确路径集合 + 锚定正则）。
+
+    仅放行明确的回调/登录类端点；其余一律走令牌校验。
+    """
+    if not path:
+        return False
+    if path in EXEMPT_CSRF_PATHS:
+        return True
+    return any(rx.match(path) for rx in EXEMPT_CSRF_REGEXES)
 
 def _get_csrf_token() -> str:
     """返回当前会话的 CSRF 令牌"""

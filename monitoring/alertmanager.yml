@@ -1,0 +1,25 @@
+# ============================================================================
+# Alertmanager 配置（docker compose --profile monitoring up -d 时启用）
+#
+# 默认仅内联展示告警（receiver 无外发通道），保证开箱即用不会因
+# 占位 webhook 报错。要接入真实通道（邮件 / 企业微信 / Slack / Webhook），
+# 在 receivers 下补配置并在 route.receiver 指向即可。示例：
+#
+#   receivers:
+#     - name: default
+#       webhook_configs:
+#         - url: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=<KEY>"
+#
+# 注意：Prometheus 告警规则见仓库根目录 prometheus_alerts.yml。
+# ============================================================================
+
+route:
+  receiver: default
+  group_by: ["alertname"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 3h
+
+receivers:
+  - name: default
+    # 无外发通道：仅在 Alertmanager Web UI (:9093) 内展示，避免占位地址报错

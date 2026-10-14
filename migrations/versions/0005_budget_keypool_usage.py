@@ -6,7 +6,7 @@
 - usage_logs 新列：real_prompt_tokens / real_completion_tokens（上游真实 usage，
   NULL = 未捕获），与字符计费口径并存供校准报表
 
-幂等可重入。
+幂等可重入，且方言无关（SQLite / PostgreSQL 通用）。
 
 Revision ID: 0005_budget_keypool_usage
 Revises: 0004_token_ratelimit
@@ -14,6 +14,7 @@ Create Date: 2026-10-01
 """
 
 from alembic import op
+from sqlalchemy import inspect
 
 revision = "0005_budget_keypool_usage"
 down_revision = "0004_token_ratelimit"
@@ -21,13 +22,21 @@ branch_labels = None
 depends_on = None
 
 
+def _add_column(table: str, column: str, ddl: str) -> None:
+    insp = inspect(op.get_bind())
+    if table not in insp.get_table_names():
+        return
+    if column not in {c["name"] for c in insp.get_columns(table)}:
+        op.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+
+
 def upgrade() -> None:
-    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS monthly_budget REAL DEFAULT 0")
-    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS budget_spent REAL DEFAULT 0")
-    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS budget_month TEXT DEFAULT ''")
-    op.execute("ALTER TABLE upstreams ADD COLUMN IF NOT EXISTS api_keys TEXT DEFAULT ''")
-    op.execute("ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS real_prompt_tokens INTEGER")
-    op.execute("ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS real_completion_tokens INTEGER")
+    _add_column("users", "monthly_budget", "REAL DEFAULT 0")
+    _add_column("users", "budget_spent", "REAL DEFAULT 0")
+    _add_column("users", "budget_month", "TEXT DEFAULT ''")
+    _add_column("upstreams", "api_keys", "TEXT DEFAULT ''")
+    _add_column("usage_logs", "real_prompt_tokens", "INTEGER")
+    _add_column("usage_logs", "real_completion_tokens", "INTEGER")
 
 
 def downgrade() -> None:

@@ -106,6 +106,7 @@ def smart_init():
                 status TEXT DEFAULT 'pending',
                 pay_channel TEXT DEFAULT '',
                 pay_order_no TEXT,
+                pay_qr_url TEXT,
                 admin_uid TEXT,
                 admin_name TEXT,
                 admin_remark TEXT,
@@ -117,7 +118,8 @@ def smart_init():
         # 旧库升级：补在线支付通道相关列 + 旧列改名
         cur.execute("PRAGMA table_info(recharge_requests)")
         rr_cols = {col[1] for col in cur.fetchall()}
-        for col, definition in (('pay_channel', "TEXT DEFAULT ''"), ('pay_order_no', 'TEXT')):
+        for col, definition in (('pay_channel', "TEXT DEFAULT ''"), ('pay_order_no', 'TEXT'),
+                                ('pay_qr_url', 'TEXT')):
             if col not in rr_cols:
                 print(f'  recharge_requests 添加字段: {col}')
                 try:

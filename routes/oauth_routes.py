@@ -322,6 +322,61 @@ async def oauth_device():
 
 
 
+@oauth_bp.route('/oauth/register', methods=['POST'])
+async def oauth_register():
+    """RFC 7591 动态客户端注册。
+
+    - 受 config.yaml 的 OAUTH_REGISTRATION_OPEN 控制（关闭时返回 403）。
+    - 按 IP 限流（复用 register 类别：60s / 3 次），防止被批量注册刷爆客户端表。
+    - 安全钳制：动态注册的客户端**只能获得安全基线 scope**，SENSITIVE_SCOPES
+      （user:write / transactions:write / apikeys:write / debug_console）一律剥离，
+      避免任何访客自助注册后诱导用户授权账户毁灭性 / 资金类权限。
+    """
+    if not getattr(configs, 'OAUTH_REGISTRATION_OPEN', False):
+        return jsonify({'error': 'registration_not_supported',
+                        'error_description': '动态客户端注册已关闭（OAUTH_REGISTRATION_OPEN=false）'}), 403
+
+    _allowed, _remaining = _check_rate_limit('register')
+    if not _allowed:
+        return jsonify({'error': 'too_many_requests',
+                        'error_description': '注册过于频繁，请稍后再试'}), 429
+
+    metadata = await request.get_json(silent=True)
+    if not isinstance(metadata, dict):
+        form = await request.form
+        metadata = {k: form.get(k) for k in
+                    ('client_name', 'scope', 'redirect_uris', 'grant_types', 'token_endpoint_auth_method')}
+        metadata = {k: v for k, v in metadata.items() if v}
+        for k in ('redirect_uris', 'grant_types'):
+            v = metadata.get(k)
+            if isinstance(v, str):
+                metadata[k] = [x.strip() for x in v.split(',') if x.strip()]
+
+    redirect_uris = metadata.get('redirect_uris') or []
+    if not isinstance(redirect_uris, list) or not redirect_uris:
+        return jsonify({'error': 'invalid_redirect_uri',
+                        'error_description': 'redirect_uris 至少需要一个回调地址（字符串数组）'}), 400
+    for u in redirect_uris:
+        _u = (u or '').strip()
+        _ok = (_u.startswith('https://')
+               or _u.startswith('http://localhost')
+               or _u.startswith('http://127.0.0.1'))
+        if not _ok:
+            return jsonify({'error': 'invalid_redirect_uri',
+                            'error_description': f'回调地址必须为 https://（或本机 http://localhost / http://127.0.0.1）：{u}'}), 400
+
+    name = (metadata.get('client_name') or '').strip()
+    if len(name) > 128:
+        return jsonify({'error': 'invalid_client_metadata',
+                        'error_description': 'client_name 过长（≤128 字符）'}), 400
+
+    resp = await oauth.register_client(async_db_query, metadata)
+    resp['registration_client_uri'] = '/oauth/register/' + resp['client_id']
+    resp['client_id_issued_at'] = int(time.time())
+    return jsonify(resp), 201
+
+
+
 @oauth_bp.route('/oauth/callback')
 async def oauth_callback():
     """无客户端模式下的同源回调页：展示 GitHub 风格的授权成功提示（token 在 URL 片段中，不在页面显示）。"""

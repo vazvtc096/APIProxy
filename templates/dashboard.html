@@ -2501,8 +2501,13 @@
                     window.location.href = data.pay_url;
                     return;
                 }
-                if (data.qr_code) {
-                    msg.innerHTML = '请使用对应 App 扫码或打开以下地址完成支付：<br><code style="word-break:break-all;">' + esc(data.qr_code) + '</code>';
+                if (data.qr_url || data.qr_svg) {
+                    // 扫码支付（微信 NATIVE / 支付宝当面付等）：后端已把 code_url 渲染成二维码
+                    const qr = data.qr_url
+                        ? '<img alt="支付二维码" style="width:220px;height:220px;background:#fff;padding:12px;border-radius:8px;" src="' + esc(data.qr_url) + '">'
+                        : '<div style="width:220px;height:220px;background:#fff;padding:12px;border-radius:8px;display:inline-block;">' + data.qr_svg + '</div>';
+                    msg.innerHTML = '请使用对应 App 扫描二维码完成支付：<br>' + qr +
+                        '<div style="margin-top:8px;font-size:12px;">或复制支付链接：<code style="word-break:break-all;">' + esc(data.qr_code || '') + '</code></div>';
                     return;
                 }
                 msg.textContent = '';

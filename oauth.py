@@ -45,6 +45,9 @@ __all__ = [
     'client_allows_redirect_uri',
     'get_client',
     'authenticate_client',
+    'register_client',
+    'ALLOWED_AUTH_METHODS',
+    'ALLOWED_GRANT_TYPES',
     'create_auth_code',
     'consume_auth_code',
     'issue_tokens',
@@ -271,6 +274,77 @@ async def authenticate_client(db, client_id, client_secret=None):
         if not secrets.compare_digest(_hash_secret(client_secret), client.get('client_secret_hash') or ''):
             return None
     return client
+
+
+# ---------- 动态客户端注册（RFC 7591） ----------
+# 允许的 token 端点认证方式：none=公开客户端（无 secret），其余为机密客户端。
+ALLOWED_AUTH_METHODS = ('none', 'client_secret_basic', 'client_secret_post')
+ALLOWED_GRANT_TYPES = ('authorization_code', 'refresh_token')
+
+
+def _clamp_dynamic_scopes(requested) -> str:
+    """把动态注册请求的 scope 钳制到安全基线。
+
+    只保留 DEFAULT_SAFE_SCOPES 内的项，并再次剔除 SENSITIVE_SCOPES。
+    这样即便有人试图申请 user:write / transactions:write / apikeys:write /
+    debug_console，也会被静默剥离 —— 因为动态注册对任何访客开放，绝不能自助
+    获得账户毁灭性 / 资金 / 控制台类权限。
+    """
+    safe = set(DEFAULT_SAFE_SCOPES.split()) - set(SENSITIVE_SCOPES)
+    picked = [s for s in normalize_scope(requested).split() if s in safe]
+    return normalize_scope(' '.join(picked)) or 'api profile'
+
+
+async def register_client(db, metadata: dict) -> dict:
+    """按 RFC 7591 注册一个新客户端，返回注册响应（含明文 client_secret，仅此一次）。
+
+    metadata 已由路由层做过结构校验；此处做安全钳制与落库：
+      - scope 一律钳制到安全基线（见 _clamp_dynamic_scopes）；
+      - token_endpoint_auth_method 白名单，非法值回退 none（公开）；
+      - grant_types 仅允许 authorization_code / refresh_token；
+      - redirect_uris 存为逗号分隔（与既有 client_allows_redirect_uri 对齐）。
+    """
+    client_id = _gen_client_id()
+    auth_method = (metadata.get('token_endpoint_auth_method') or 'none').strip().lower()
+    if auth_method not in ALLOWED_AUTH_METHODS:
+        auth_method = 'none'
+    is_confidential = auth_method != 'none'
+    client_secret = _gen_client_secret() if is_confidential else None
+
+    grant_types = [g for g in (metadata.get('grant_types') or list(ALLOWED_GRANT_TYPES))
+                   if g in ALLOWED_GRANT_TYPES] or list(ALLOWED_GRANT_TYPES)
+    redirect_uris = [u.strip() for u in (metadata.get('redirect_uris') or []) if u and u.strip()]
+    client_name = (metadata.get('client_name') or 'Dynamic Client').strip()[:128]
+    scopes = _clamp_dynamic_scopes(metadata.get('scopes'))
+
+    await db(
+        "INSERT INTO oauth_clients "
+        "(client_id, client_secret_hash, client_name, owner_name, redirect_uris, grant_types, scopes, "
+        " is_confidential, token_endpoint_auth_method) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
+        (client_id,
+         _hash_secret(client_secret) if client_secret else None,
+         client_name, None,
+         ','.join(redirect_uris),
+         ' '.join(grant_types),
+         scopes,
+         1 if is_confidential else 0,
+         auth_method),
+    )
+
+    resp = {
+        'client_id': client_id,
+        'client_name': client_name,
+        'redirect_uris': redirect_uris,
+        'grant_types': grant_types,
+        'response_types': ['code'],
+        'token_endpoint_auth_method': auth_method,
+        'scope': scopes,
+    }
+    if client_secret:
+        resp['client_secret'] = client_secret
+        resp['client_secret_expires_at'] = 0   # 0 = 永不过期
+    return resp
 
 
 # ---------- 授权码 ----------

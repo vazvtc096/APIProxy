@@ -53,6 +53,7 @@ def init_complete_db():
             status TEXT DEFAULT 'pending',
             pay_channel TEXT DEFAULT '',
             pay_order_no TEXT,
+            pay_qr_url TEXT,
             admin_uid TEXT,
             admin_name TEXT,
             admin_remark TEXT,
@@ -68,6 +69,12 @@ def init_complete_db():
             cur.execute('ALTER TABLE recharge_requests RENAME COLUMN bank_order_no TO pay_order_no')
         except Exception as e:
             print(f'  recharge_requests 列改名跳过: {e}')
+    # 旧库升级：补 pay_qr_url（微信 NATIVE 等扫码支付：持久化二维码内容）
+    if 'pay_qr_url' not in _rr_cols:
+        try:
+            cur.execute('ALTER TABLE recharge_requests ADD COLUMN pay_qr_url TEXT')
+        except Exception as e:
+            print(f'  recharge_requests 添加 pay_qr_url 跳过: {e}')
     print("  [OK] recharge_requests 表")
     
     # 4. login_logs 表（登录日志）

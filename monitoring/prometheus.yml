@@ -1,0 +1,31 @@
+# ============================================================================
+# Prometheus 抓取配置（docker compose --profile monitoring up -d 时启用）
+#
+# 抓取目标：容器网络内的 apiproxy:5000/metrics（开放端点，无需鉴权）。
+# 告警规则来自仓库根目录的 prometheus_alerts.yml（挂载到 /etc/prometheus/alerts.yml）。
+# 告警外发到 alertmanager:9093（原先只有规则文件、无外发通道，此栈补齐）。
+# ============================================================================
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: apiproxy
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  - job_name: apiproxy
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["apiproxy:5000"]
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

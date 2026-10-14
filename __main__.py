@@ -775,6 +775,17 @@ def main() -> None:
         return
 
     preflight_checks()
+
+    # 单实例锁：必须在任何数据库访问（Alembic 迁移 / smart_init 建表）之前拿到，
+    # 否则同一 DB + 端口的第二个实例会与第一个互锁，双方都卡死、端口永不监听。
+    # 拿不到锁立即失败退出（fail-fast），并给出可操作的原因与解决办法。
+    from .instance_lock import acquire as _acquire_instance_lock, InstanceLockError
+    try:
+        _acquire_instance_lock()
+    except InstanceLockError as e:
+        logger.critical("%s", e)
+        raise SystemExit(2)
+
     harden_file_permissions()
     create_app()
     init_database()

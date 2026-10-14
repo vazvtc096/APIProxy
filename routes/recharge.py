@@ -19,6 +19,7 @@ from ..constants import CHAR_PRICE_LOOKUP, UNEXCEPT_CHAR, MONEY_PER_MILLION_TOKE
 from ..cloudflare import get_client_ip as _cf_get_client_ip
 from .. import waf as _waf
 from .. import cache_store
+from ..utils.qr import qr_svg
 
 recharge_bp = Blueprint('recharge', __name__)
 
@@ -348,9 +349,10 @@ async def recharge_pay():
         )
         return jsonify({'error': resp.get('error') or '网关下单失败'}), 502
 
+    qr_code = str(resp.get('qr_code') or '')
     await async_db_query(
-        "UPDATE recharge_requests SET pay_order_no = ? WHERE request_id = ?",
-        (str(resp.get('order_no') or ''), request_id)
+        "UPDATE recharge_requests SET pay_order_no = ?, pay_qr_url = ? WHERE request_id = ?",
+        (str(resp.get('order_no') or ''), qr_code, request_id)
     )
     return jsonify({
         'request_id': request_id,
@@ -358,7 +360,11 @@ async def recharge_pay():
         'order_no': resp.get('order_no') or '',
         'amount': amount,
         'pay_url': resp.get('pay_url') or '',
-        'qr_code': resp.get('qr_code') or '',
+        'qr_code': qr_code,
+        # 服务端统一渲染二维码：微信 NATIVE 的 code_url 前端无法直接扫码，
+        # 这里给出二维码图片地址（前端 <img src>）与内联 SVG（即时渲染）。
+        'qr_url': f'/api/recharge/qr/{request_id}' if qr_code else '',
+        'qr_svg': qr_svg(qr_code) or '' if qr_code else '',
         'status': str(resp.get('status') or 'PENDING'),
     }), 201
 
@@ -454,6 +460,33 @@ async def payment_status(request_id):
         'pay_channel': row['pay_channel'],
         'pay_order_no': row['pay_order_no'],
     })
+
+
+@recharge_bp.route('/api/recharge/qr/<request_id>', methods=['GET'])
+async def payment_qr(request_id):
+    """返回待支付订单的二维码图片（SVG）。
+
+    微信 NATIVE 等扫码支付下单后返回的是 code_url 字符串，浏览器无法直接扫码，
+    这里由服务端渲染为二维码。安全约束：
+      - 仅订单本人可访问；
+      - 二维码内容恒取自本订单已落库的 pay_qr_url（网关下发），
+        不接受任何外部 data 参数，杜绝被当作任意二维码/钓鱼图片生成器。
+    """
+    if 'user' not in session:
+        return jsonify({'error': 'Not logged in'}), 401
+    row = await async_db_query(
+        "SELECT pay_qr_url FROM recharge_requests WHERE request_id = ? AND user_name = ?",
+        (request_id, session['user']),
+        fetch_one=True,
+    )
+    if not row or not row.get('pay_qr_url'):
+        return jsonify({'error': 'No QR code for this request'}), 404
+    svg = qr_svg(str(row['pay_qr_url']))
+    if not svg:
+        return jsonify({'error': 'QR generation unavailable'}), 503
+    resp = Response(svg, mimetype='image/svg+xml')
+    resp.headers['Cache-Control'] = 'private, max-age=300'
+    return resp
 
 
 

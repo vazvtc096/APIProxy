@@ -30,6 +30,8 @@ ENV/
 # --- 密钥与敏感文件 ---
 .session_secret
 .debug_console_key
+# 单实例锁：运行期由 instance_lock.py 生成（含持有者 PID），不入库
+.apiproxy.lock
 *.pem
 *.key
 *.crt

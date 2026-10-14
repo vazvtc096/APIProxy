@@ -3,6 +3,9 @@
 # 启动前：复制 .env.example 为 .env，填入必填密钥
 #   cp .env.example .env   （编辑 OAUTH_JWT_SECRET 等）
 #   docker compose up -d
+#
+# 可选监控栈（Prometheus + Alertmanager）：
+#   docker compose --profile monitoring up -d
 # ============================================================================
 
 services:
@@ -13,6 +16,10 @@ services:
     image: apiproxy:latest
     container_name: apiproxy
     restart: unless-stopped
+    # 优雅停机：与 Hypercorn GRACEFUL_TIMEOUT(30s) 对齐，给在途请求留足收尾时间
+    stop_grace_period: 40s
+    # PID 1 信号转发 / 回收僵尸进程
+    init: true
     ports:
       - "5000:5000"    # HTTP 主服务
       - "5001:5001"    # Debug Console 远程控制台（TLS）
@@ -61,14 +68,39 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 20s
+      start_period: 90s   # 启动含 DB 迁移 + 自检，约 70s 才监听，留足余量
+
+    # 资源上限：防止单容器吃满宿主（含内存泄漏兜底）
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2g
+        reservations:
+          cpus: "0.25"
+          memory: 256m
+
+    # 日志轮转：避免 json-file 日志无限增长撑爆磁盘
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+    depends_on:
+      # Redis 健康后再启动主服务（Redis 仅作限流/缓存加速，缺失会回退本地 C 限流）
+      redis:
+        condition: service_healthy
+
+    networks:
+      - backend
 
   # 可选：Redis（限流/会话缓存加速）。apiproxy 服务通过 REDIS_URL 引用。
   redis:
     image: redis:7-alpine
     container_name: apiproxy-redis
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "384mb", "--maxmemory-policy", "allkeys-lru"]
     volumes:
       - redis_data:/data
     healthcheck:
@@ -76,7 +108,82 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+    networks:
+      - backend
+
+  # ---------------------------------------------------------------------------
+  # 可选监控栈：docker compose --profile monitoring up -d
+  # 抓取 apiproxy /metrics，按 prometheus_alerts.yml 规则评估并外发 Alertmanager
+  # ---------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: apiproxy-prometheus
+    restart: unless-stopped
+    profiles: ["monitoring"]
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=15d"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus_alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      - alertmanager
+    networks:
+      - backend
+
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: apiproxy-alertmanager
+    restart: unless-stopped
+    profiles: ["monitoring"]
+    volumes:
+      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    ports:
+      - "9093:9093"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256m
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+    networks:
+      - backend
 
 volumes:
   apiproxy_data:
   redis_data:
+  prometheus_data:
+  alertmanager_data:
+
+networks:
+  # 独立桥接网络：监控栈与业务隔离在自定义网络内，不依赖默认 bridge
+  backend:
+    driver: bridge
