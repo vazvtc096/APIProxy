@@ -124,7 +124,7 @@ def smart_init():
                     cur.execute(f'ALTER TABLE recharge_requests ADD COLUMN {col} {definition}')
                 except Exception as e:
                     print(f'    跳过: {e}')
-        # analogBank 时代的列名 bank_order_no -> pay_order_no（在线支付通用化）
+        # 旧列名 bank_order_no -> pay_order_no（在线支付通用化）
         if 'bank_order_no' in rr_cols and 'pay_order_no' not in rr_cols:
             print('  recharge_requests 列改名: bank_order_no -> pay_order_no')
             try:
