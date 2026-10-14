@@ -17,6 +17,7 @@ import re
 import asyncio
 from .. import tokenpolicy as tokenpolicy_mod
 from .. import redeem as redeem_mod
+from .. import subscription as _subscription
 import json
 import datetime
 
@@ -2620,6 +2621,91 @@ async def admin_settings_page():
 
 import os
 DOCS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'docs')
+
+
+# ---------- 套餐 / 订阅管理 ----------
+
+async def _admin_or_403():
+    """管理员守卫：通过返回 None，否则返回 (resp, status)。"""
+    username = session.get('user')
+    if not username:
+        return jsonify({'error': 'unauthorized'}), 401
+    if not await _is_admin():
+        return jsonify({'error': 'forbidden'}), 403
+    return None
+
+
+@admin_bp.route('/api/admin/plans', methods=['GET'])
+async def admin_list_plans():
+    guard = await _admin_or_403()
+    if guard:
+        return guard
+    plans = await _subscription.get_plans(only_active=False)
+    return jsonify({'plans': plans}), 200
+
+
+@admin_bp.route('/api/admin/plans', methods=['POST'])
+async def admin_create_plan():
+    guard = await _admin_or_403()
+    if guard:
+        return guard
+    data = await request.get_json() or {}
+    pid = (data.get('id') or '').strip()
+    if not pid or not data.get('name'):
+        return jsonify({'error': 'id 与 name 必填'}), 400
+    feats = data.get('features')
+    if isinstance(feats, list):
+        feats = json.dumps(feats, ensure_ascii=False)
+    try:
+        await async_db_query(
+            """INSERT INTO subscription_plans (id, name, description, price, period_days, features, active, created_at, updated_at)
+               VALUES (?,?,?,?,?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)""",
+            (pid, data.get('name'), data.get('description', ''),
+             float(data.get('price', 0)), int(data.get('period_days', 30)),
+             feats or '[]', 1 if data.get('active', True) else 0))
+    except Exception as e:
+        return jsonify({'error': f'创建失败（id 可能已存在）：{e}'}), 400
+    return jsonify({'plan': await _subscription.get_plan(pid)}), 201
+
+
+@admin_bp.route('/api/admin/plans/<plan_id>', methods=['PUT'])
+async def admin_update_plan(plan_id: str):
+    guard = await _admin_or_403()
+    if guard:
+        return guard
+    data = await request.get_json() or {}
+    fields, params = [], []
+    for key in ('name', 'description', 'price', 'period_days', 'active'):
+        if key in data and data[key] is not None:
+            fields.append(f"{key} = ?")
+            params.append(data[key] if key not in ('price', 'period_days')
+                          else (float(data[key]) if key == 'price' else int(data[key])))
+    if 'active' in data:
+        # 上面已处理为 0/1，确保类型
+        fields[-1] = "active = ?"
+        params[-1] = 1 if data['active'] else 0
+    feats = data.get('features')
+    if feats is not None:
+        fields.append("features = ?")
+        params.append(json.dumps(feats, ensure_ascii=False) if isinstance(feats, list) else str(feats))
+    if not fields:
+        return jsonify({'plan': await _subscription.get_plan(plan_id)}), 200
+    params.append(plan_id)
+    await async_db_query(
+        f"UPDATE subscription_plans SET {', '.join(fields)}, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        params)
+    return jsonify({'plan': await _subscription.get_plan(plan_id)}), 200
+
+
+@admin_bp.route('/api/admin/plans/<plan_id>', methods=['DELETE'])
+async def admin_delete_plan(plan_id: str):
+    guard = await _admin_or_403()
+    if guard:
+        return guard
+    # 软删除：下架而非物理删除，避免已订阅用户产生孤儿记录
+    await async_db_query("UPDATE subscription_plans SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (plan_id,))
+    return jsonify({'ok': True}), 200
+
 
 
 

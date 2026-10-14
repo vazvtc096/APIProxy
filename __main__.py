@@ -98,6 +98,18 @@ def create_app():
     # 蓝图化后 endpoint 带前缀，兼容历史裸名 url_for 调用
     register_endpoint_aliases(app)
 
+    # 插件系统：挂载 plugins/ 目录下的插件。
+    # 放在蓝图之后，使插件在 app 就绪后注册自己的路由；单个插件失败不致命。
+    try:
+        from .plugin import load_plugins, attach_hot_reload
+        load_plugins(app)
+        # 热重载默认关闭；开启后会在 before_serving 里拿到服务循环再启动巡检，
+        # 保证路由变更始终发生在事件循环线程内。
+        attach_hot_reload(app)
+        logger.info("Plugin system initialized")
+    except Exception as e:
+        logger.error(f"Failed to initialize plugin system: {e}")
+
     # hooks / announcements 的依赖注入（需在蓝图导入之后）
     core.init_integrations()
 

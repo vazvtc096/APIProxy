@@ -975,8 +975,11 @@ def smart_init():
             print(f"  索引跳过: {e}")
     print("  [OK] 通知/钩子/用量统计相关表与索引已就绪")
 
-    # 6.1 确保内置公开 OAuth 客户端 'default' 存在（无客户端/公共客户端模式使用，强制 PKCE，授予全部非管理员 scope）
-    DEFAULT_SCOPES = 'api profile openid email posts:read posts:write friends:read friends:write chat:read chat:write transactions:read transactions:write apikeys:read apikeys:write user:read user:write'
+    # 6.1 确保内置公开 OAuth 客户端 'default' 存在（无客户端/公共客户端模式使用，强制 PKCE）。
+    # 收紧：默认仅授予身份标识与只读/社交类 scope，剔除一切写操作与管理类高危 scope
+    # （user:write / transactions:write / apikeys:write / rcon），避免第三方应用一键索取账户毁灭性权限。
+    from .oauth import DEFAULT_SAFE_SCOPES
+    DEFAULT_SCOPES = DEFAULT_SAFE_SCOPES
     cur.execute("SELECT id FROM oauth_clients WHERE client_id = 'default'")
     if not cur.fetchone():
         print("创建内置默认 OAuth 客户端 'default'（公开客户端，强制 PKCE）...")
@@ -989,6 +992,86 @@ def smart_init():
         # 已存在：确保 scope 已扩展到最新全集（兼容旧库仅含 'api' 的情况）
         print("内置默认 OAuth 客户端 'default' 已存在，同步最新 scope ...")
         cur.execute("UPDATE oauth_clients SET scopes = ? WHERE client_id = 'default'", (DEFAULT_SCOPES,))
+
+    # 6.2 OIDC 外部登录（APIProxy 作为 OIDC 客户端 / 依赖方 RP）：提供方与账号关联表
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS oidc_providers (
+            id                   TEXT PRIMARY KEY,
+            name                 TEXT NOT NULL,
+            display_name         TEXT NOT NULL DEFAULT '',
+            issuer               TEXT NOT NULL DEFAULT '',
+            authorization_endpoint TEXT NOT NULL,
+            token_endpoint       TEXT NOT NULL,
+            userinfo_endpoint    TEXT NOT NULL,
+            jwks_uri             TEXT NOT NULL DEFAULT '',
+            client_id            TEXT NOT NULL DEFAULT '',
+            client_secret        TEXT NOT NULL DEFAULT '',
+            client_secret_hash   TEXT NOT NULL DEFAULT '',
+            enabled              INTEGER NOT NULL DEFAULT 1,
+            auto_create          INTEGER NOT NULL DEFAULT 0,
+            button_order         INTEGER NOT NULL DEFAULT 0,
+            created_at           TEXT
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS user_oidc_links (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_uid     TEXT NOT NULL DEFAULT '',
+            user_name    TEXT NOT NULL,
+            provider_id  TEXT NOT NULL,
+            subject_id   TEXT NOT NULL,
+            email        TEXT NOT NULL DEFAULT '',
+            created_at   TEXT,
+            UNIQUE(provider_id, subject_id)
+        )
+    """)
+    print("  [OK] OIDC 外部登录表就绪")
+
+    # 6.3 套餐 / 订阅（花账户余额）：套餐定义 + 用户订阅记录
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS subscription_plans (
+            id           TEXT PRIMARY KEY,
+            name         TEXT NOT NULL,
+            description  TEXT NOT NULL DEFAULT '',
+            price        REAL NOT NULL DEFAULT 0,
+            period_days  INTEGER NOT NULL DEFAULT 30,
+            features     TEXT NOT NULL DEFAULT '[]',
+            active       INTEGER NOT NULL DEFAULT 1,
+            created_at   TEXT,
+            updated_at   TEXT
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS user_subscriptions (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_uid    TEXT NOT NULL DEFAULT '',
+            user_name   TEXT NOT NULL,
+            plan_id     TEXT NOT NULL,
+            started_at  INTEGER NOT NULL,
+            expires_at  INTEGER NOT NULL,
+            status      TEXT NOT NULL DEFAULT 'active',
+            auto_renew  INTEGER NOT NULL DEFAULT 0,
+            created_at  INTEGER NOT NULL,
+            updated_at  INTEGER
+        )
+    """)
+    # 写入默认三档套餐（仅插入缺失项，保留管理员已修改的价格/权益）
+    _default_plans = [
+        ('free', '体验版', '零门槛体验全部基础能力', 0.0, 30,
+         '["基础模型访问","社区支持","标准速率"]', 1),
+        ('standard', '标准版', '个人高频使用的均衡之选', 30.0, 30,
+         '["全部模型访问","更高并发额度","优先工单支持"]', 1),
+        ('pro', '专业版', '团队与生产环境的强力支撑', 99.0, 30,
+         '["全部模型与高配额","最高并发","API 优先支持","专属客服通道"]', 1),
+    ]
+    for pid, name, desc, price, period, feats, active in _default_plans:
+        cur.execute("SELECT 1 FROM subscription_plans WHERE id = ?", (pid,))
+        if not cur.fetchone():
+            cur.execute(
+                "INSERT INTO subscription_plans (id, name, description, price, period_days, features, active, created_at, updated_at) "
+                "VALUES (?,?,?,?,?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",
+                (pid, name, desc, price, period, feats, active))
+    print("  [OK] 套餐/订阅表与默认套餐就绪")
 
     # 6.3 价格表迁 DB：model_prices（支持自动扩展上游模型 + 管理员动态定价）
     cur.execute("""

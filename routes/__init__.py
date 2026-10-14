@@ -11,9 +11,11 @@ def register_blueprints(app):
     from .chat_proxy import chat_proxy_bp
     from .openai_extra import openai_extra_bp
     from .claude_compat import claude_bp
+    from .gemini_compat import gemini_bp
     from .openai_extra import openai_extra_bp
     from .social import social_bp
     from .oauth_routes import oauth_bp
+    from .oidc_routes import oidc_bp
     from .rcon_routes import rcon_bp
     from .console_routes import console_bp
     from .audit_routes import audit_bp
@@ -33,8 +35,10 @@ def register_blueprints(app):
     app.register_blueprint(chat_proxy_bp)
     app.register_blueprint(openai_extra_bp)
     app.register_blueprint(claude_bp)
+    app.register_blueprint(gemini_bp)
     app.register_blueprint(social_bp)
     app.register_blueprint(oauth_bp)
+    app.register_blueprint(oidc_bp)
     app.register_blueprint(rcon_bp)
     app.register_blueprint(console_bp)
     app.register_blueprint(audit_bp)

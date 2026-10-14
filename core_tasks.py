@@ -161,6 +161,13 @@ class UserTaskManager:
         """处理非流式 API 调用任务"""
         apikey_obj = task_data['apikey_obj']
         req_data = task_data['req_data']
+        # 服务端工具接地（WebSearch 等）：请求携带服务端工具时，由网关先检索并把
+        # 结果注入上下文，再剥离该工具转发上游。正常请求无服务端工具，零影响。
+        try:
+            from .tools.grounding import ground_server_tools
+            req_data = await ground_server_tools(req_data)
+        except Exception as _gte:  # 接地失败绝不阻断主请求
+            logging.warning("websearch grounding skipped: %s", _gte)
         model = req_data.get('model')
         messages = req_data.get('messages')
         kwargs = {k: v for k, v in req_data.items() if k not in ['model', 'messages', 'stream']}
@@ -296,6 +303,12 @@ class UserTaskManager:
         """处理流式 API 调用任务，将每个 chunk 放入 chunk_queue"""
         apikey_obj = task_data['apikey_obj']
         req_data = task_data['req_data']
+        # 服务端工具接地（同 _process_task）：WebSearch 等由网关检索后注入上下文
+        try:
+            from .tools.grounding import ground_server_tools
+            req_data = await ground_server_tools(req_data)
+        except Exception as _gte:
+            logging.warning("websearch grounding skipped: %s", _gte)
         model = req_data.get('model')
         messages = req_data.get('messages')
         kwargs = {k: v for k, v in req_data.items() if k not in ['model', 'messages', 'stream']}
@@ -511,6 +524,9 @@ class UserTaskManager:
         elif kind == 'images':
             input_text = f"[image-gen:{model}]"
             input_cost = round(media['image_per_unit'] * int(payload.get('n') or 1), 6)
+        elif kind == 'videos':
+            input_text = f"[video-gen:{model}]"
+            input_cost = round(media['video_per_unit'] * int(payload.get('n') or 1), 6)
         elif kind == 'audio_transcriptions':
             nbytes = len(task_data.get('file_bytes') or b'')
             input_text = f"[audio-transcribe:{model},{max(1, nbytes // 1024)}KB]"
@@ -616,6 +632,7 @@ class UserTaskManager:
                                 endpoint={'completions': 'completions',
                                           'embeddings': 'embeddings',
                                           'images': 'images.generations',
+                                          'videos': 'videos.generations',
                                           'audio_transcriptions': 'audio.transcriptions',
                                           'audio_speech': 'audio.speech'}.get(kind, kind),
                                 real_prompt_tokens=real_in, real_completion_tokens=real_out,
@@ -645,6 +662,9 @@ class UserTaskManager:
             return await client.embeddings.create(model=mapped_model, **payload)
         if kind == 'images':
             return await client.images.generate(model=mapped_model, **payload)
+        if kind == 'videos':
+            # 视频生成无标准 OpenAI SDK 资源，按 rerank 方式自定义转发到上游 /videos/generations
+            return await self._call_video(client, payload, mapped_model)
         if kind == 'audio_transcriptions':
             fobj = task_data['file']
             return await client.audio.transcriptions.create(model=mapped_model, file=fobj, **payload)
@@ -659,11 +679,34 @@ class UserTaskManager:
             _base = str(client.base_url).rstrip('/')
             _headers = {'Authorization': f'Bearer {_key}',
                         'Content-Type': 'application/json'}
-            async with _httpx.AsyncClient(timeout=120) as _hc:
-                _resp = await _hc.post(_base + '/rerank', json=payload, headers=_headers)
-                _resp.raise_for_status()
-                return _resp.json()
+        async with _httpx.AsyncClient(timeout=120) as _hc:
+            _resp = await _hc.post(_base + '/rerank', json=payload, headers=_headers)
+            _resp.raise_for_status()
+            return _resp.json()
         raise ValueError(f"unknown kind: {kind}")
+
+    @staticmethod
+    async def _call_video(client, payload: dict, mapped_model: str):
+        """视频生成：OpenAI SDK 无 videos 资源，直连上游 /videos/generations（OpenAI 风格）。
+
+        兼容 Seedance / Runway 类代理。响应格式按各上游返回原样透传（通常为
+        {data:[{url|b64_json|task_id}]} 或任务轮询结构），由调用方决定如何呈现。
+        """
+        import httpx as _httpx
+        _key = client.api_key
+        if hasattr(_key, 'get_secret_value'):
+            _key = _key.get_secret_value()
+        _base = str(client.base_url).rstrip('/')
+        _headers = {'Authorization': f'Bearer {_key}', 'Content-Type': 'application/json'}
+        _payload = dict(payload)
+        _payload['model'] = mapped_model
+        async with _httpx.AsyncClient(timeout=600) as _hc:
+            _resp = await _hc.post(_base + '/videos/generations', json=_payload, headers=_headers)
+            _resp.raise_for_status()
+            try:
+                return _resp.json()
+            except Exception:
+                return {'raw': _resp.text}
 
 
 task_manager = UserTaskManager()

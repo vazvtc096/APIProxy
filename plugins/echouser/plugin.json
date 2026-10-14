@@ -1,0 +1,12 @@
+{
+  "name": "echouser",
+  "version": "1.1.0",
+  "description": "回显当前登录用户信息（异步示例插件）",
+  "author": "vazvtc096",
+  "license": "MIT",
+  "homepage": "",
+  "tags": ["demo", "async", "web"],
+  "min_api": "1.1.0",
+  "python": ">=3.9",
+  "requirements": []
+}

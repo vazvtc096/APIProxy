@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>外部账号登录 - Cloud LLM API 代理</title>
+<style nonce="{{ csp_nonce }}">
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; background:#f6f8fa; color:#1f2328; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; }
+  .wrap { width:400px; }
+  .card { background:#fff; border:1px solid #d0d7de; border-radius:10px; padding:28px; }
+  h1 { font-size:18px; font-weight:600; margin-bottom:6px; }
+  .sub { color:#656d76; font-size:14px; margin-bottom:20px; }
+  .providers { display:flex; flex-direction:column; gap:10px; }
+  .pbtn { display:flex; align-items:center; justify-content:center; gap:8px; padding:12px; border:1px solid #d0d7de; border-radius:8px; text-decoration:none; color:#1f2328; font-size:14px; font-weight:500; background:#fff; }
+  .pbtn:hover { background:#f6f8fa; border-color:#8c959f; }
+  .pbtn svg { width:18px; height:18px; color:#6b7280; }
+  .empty { color:#656d76; font-size:14px; text-align:center; padding:20px 0; }
+  .back { display:block; text-align:center; margin-top:16px; color:#0969da; font-size:14px; text-decoration:none; }
+  .err { background:#fff5f5; border:1px solid #ffc1c1; color:#cf222e; padding:10px 12px; border-radius:8px; font-size:13px; margin-bottom:16px; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>使用外部账号登录</h1>
+      <div class="sub">选择一个已启用的身份提供方继续。</div>
+      {% if error %}<div class="err">{{ error }}</div>{% endif %}
+      {% if providers %}
+      <div class="providers">
+        {% for p in providers %}
+        <a class="pbtn" href="/oidc/login/{{ p.id }}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 2a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-1V6a5 5 0 0 0-5-5z"/></svg>
+          使用 {{ p.display_name or p.name }} 登录
+        </a>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="empty">暂未配置可用的外部登录提供方。</div>
+      {% endif %}
+      <a class="back" href="/login">返回账号密码登录</a>
+    </div>
+  </div>
+</body>
+</html>

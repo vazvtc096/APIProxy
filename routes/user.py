@@ -13,6 +13,7 @@ from ..cloudflare import get_client_ip as _cf_get_client_ip
 from .. import waf as _waf
 from .. import tokenpolicy as _tokenpolicy
 from .. import budget as _budget
+from .. import subscription as _subscription
 
 user_bp = Blueprint('user', __name__)
 
@@ -405,6 +406,53 @@ async def delete_apikey(key):
 
 
 
+
+
+# ---------- 套餐 / 订阅（花账户余额） ----------
+
+@user_bp.route('/api/plans', methods=['GET'])
+async def list_plans():
+    """列出可订阅套餐（含已解析的权益列表）。"""
+    plans = await _subscription.get_plans(only_active=True)
+    return jsonify({'plans': plans}), 200
+
+
+@user_bp.route('/api/subscribe', methods=['POST'])
+async def do_subscribe():
+    if 'user' not in session:
+        return jsonify({'error': 'unauthorized'}), 401
+    data = await request.get_json() or {}
+    plan_id = (data.get('plan_id') or '').strip()
+    if not plan_id:
+        return jsonify({'error': 'plan_id required'}), 400
+    ok, msg, sub = await _subscription.subscribe(session['user'], plan_id)
+    if not ok:
+        return jsonify({'error': msg}), 400
+    return jsonify({'message': msg, 'subscription': sub}), 200
+
+
+@user_bp.route('/api/my/subscriptions', methods=['GET'])
+async def my_subscriptions():
+    if 'user' not in session:
+        return jsonify({'error': 'unauthorized'}), 401
+    subs = await _subscription.list_my_subscriptions(session['user'])
+    active = await _subscription.get_active_subscription(session['user'])
+    return jsonify({'active': active, 'subscriptions': subs}), 200
+
+
+@user_bp.route('/api/my/subscriptions/<int:sub_id>', methods=['DELETE'])
+async def cancel_my_subscription(sub_id: int):
+    if 'user' not in session:
+        return jsonify({'error': 'unauthorized'}), 401
+    ok, msg, _ = await _subscription.cancel_subscription(session['user'], sub_id)
+    return jsonify({'message': msg}), 200 if ok else 400
+
+
+@user_bp.route('/plans', methods=['GET'])
+async def plans_page():
+    if 'user' not in session:
+        return redirect('/login')
+    return await render_template('plans.html')
 
 
 # ---------- 会话管理（多设备登录限制） ----------

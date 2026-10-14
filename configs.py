@@ -546,6 +546,7 @@ _media_raw = (PRICING.get("media") or {}) if isinstance(PRICING, dict) else {}
 MEDIA_PRICING = {
     "image_per_unit": float(_media_raw.get("image_per_unit", 0.1)),   # 每张图
     "audio_per_kb": float(_media_raw.get("audio_per_kb", 0.002)),     # 每 KB 音频
+    "video_per_unit": float(_media_raw.get("video_per_unit", 1.0)),   # 每段视频（按 n 计）
     "rerank_per_doc": float(_media_raw.get("rerank_per_doc", 0.0001)),  # rerank 每文档
 }
 

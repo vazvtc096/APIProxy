@@ -1,0 +1,6 @@
+这是 pluginlist 插件包内的静态资源示例。
+由 serve_assets("/pluginlist-assets", "assets") 挂载，
+可通过 GET /pluginlist-assets/hello.txt 访问。
+
+目录形态与 zip 形态下都能读到 —— 因为读取统一走 PluginPackage 的成员 IO，
+zip 形态不需要解压到磁盘。

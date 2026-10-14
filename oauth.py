@@ -91,6 +91,44 @@ SCOPES = {
     'rcon': '远程控制台（仅管理员）',
 }
 
+# 高危 scope：一旦授予第三方应用即具备破坏能力，绝不允许出现在默认公开客户端，
+# 也不允许通过动态/自助方式获取。仅限管理员显式创建的可信机密客户端、且由资源
+# 所有者本人在授权页明确确认后才能授予。
+SENSITIVE_SCOPES = (
+    'user:write',        # 可修改密码 / 注销账号（账户毁灭性操作）
+    'transactions:write',# 可发起充值 / 转账（资金操作）
+    'apikeys:write',     # 可创建 / 删除 API Key（凭证泄露风险）
+    'rcon',              # 远程控制台（服务器级控制，仅管理员）
+)
+
+# 默认公开客户端（'default'）允许授予的 scope 安全基线：
+# 仅含身份标识与只读类 scope，剔除一切写操作与管理类 scope。
+# 任何超出此集合的请求 scope 在授权端点会被静默剥离（见 oauth_routes.oauth_authorize）。
+DEFAULT_SAFE_SCOPES = 'api profile openid email posts:read posts:write friends:read friends:write chat:read chat:write transactions:read apikeys:read user:read'
+
+
+def is_sensitive_scope(scope: str) -> bool:
+    return scope in SENSITIVE_SCOPES
+
+
+def categorize_scopes(scope_str) -> list:
+    """将 scope 字符串拆为有序列表，每项含 (scope, 说明, 是否高危)。
+
+    供授权确认页按「普通 / 高危」分区渲染，高危项显式红色警示。
+    """
+    out = []
+    seen = set()
+    for s in (scope_str or '').split():
+        if not s or s in seen:
+            continue
+        seen.add(s)
+        out.append({
+            'scope': s,
+            'desc': SCOPES.get(s, s),
+            'sensitive': s in SENSITIVE_SCOPES,
+        })
+    return out
+
 
 # ---------- 密钥与基础工具 ----------
 def _secret() -> str:

@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>套餐订阅 - Cloud LLM API 代理</title>
+<style nonce="{{ csp_nonce }}">
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; background:#f6f8fa; color:#1f2328; min-height:100vh; padding:40px 20px; }
+  .wrap { max-width:980px; margin:0 auto; }
+  h1 { font-size:24px; font-weight:600; margin-bottom:6px; }
+  .sub { color:#656d76; font-size:14px; margin-bottom:24px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:18px; }
+  .card { background:#fff; border:1px solid #d0d7de; border-radius:12px; padding:24px; display:flex; flex-direction:column; }
+  .card.active-plan { border-color:#1f883d; box-shadow:0 0 0 3px rgba(31,136,61,.15); }
+  .pname { font-size:18px; font-weight:600; }
+  .pprice { font-size:30px; font-weight:700; margin:12px 0 4px; }
+  .pprice small { font-size:14px; font-weight:400; color:#656d76; }
+  .pdesc { color:#656d76; font-size:13px; min-height:38px; margin-bottom:12px; }
+  .feats { list-style:none; margin:0 0 18px; padding:0; flex:1; }
+  .feats li { font-size:14px; padding:6px 0; border-top:1px solid #eee; }
+  .feats li:first-child { border-top:none; }
+  .btn { width:100%; padding:11px; border:1px solid rgba(27,31,36,.15); border-radius:8px; background:#1f883d; color:#fff; font-size:14px; font-weight:600; cursor:pointer; }
+  .btn:hover { background:#1a7f37; }
+  .btn:disabled { opacity:.55; cursor:not-allowed; }
+  .btn.secondary { background:#fff; color:#1f2328; }
+  .btn.secondary:hover { background:#f6f8fa; }
+  .badge { display:inline-block; font-size:12px; background:#dafbe1; color:#1a7f37; border:1px solid #a0e7b0; border-radius:999px; padding:2px 10px; margin-bottom:10px; }
+  .msg { margin-top:18px; font-size:14px; padding:10px 14px; border-radius:8px; display:none; }
+  .msg.err { background:#fff5f5; border:1px solid #ffc1c1; color:#cf222e; }
+  .msg.ok { background:#dafbe1; border:1px solid #a0e7b0; color:#1a7f37; }
+  .back { display:inline-block; margin-top:24px; color:#0969da; font-size:14px; text-decoration:none; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>套餐订阅</h1>
+    <div class="sub">订阅从你的账户余额扣费，立即生效。当前余额：<b id="bal">—</b></div>
+    <div class="grid" id="planGrid"></div>
+    <div class="msg" id="msg"></div>
+    <a class="back" href="/dashboard">← 返回仪表板</a>
+  </div>
+<script nonce="{{ csp_nonce }}">
+  const grid = document.getElementById('planGrid');
+  const msg = document.getElementById('msg');
+  function showMsg(text, kind){ msg.textContent = text; msg.className = 'msg ' + kind; msg.style.display='block'; }
+  async function load(){
+    try {
+      const [p, me] = await Promise.all([
+        fetch('/api/plans').then(r=>r.json()),
+        fetch('/api/my/subscriptions').then(r=>r.json()).catch(()=>({}))
+      ]);
+      const activeId = me.active && me.active.plan_id;
+      const bal = (me.active && me.active.balance!==undefined) ? me.active.balance : null;
+      // 余额单独取
+      const ui = await fetch('/userinfo').then(r=>r.ok?r.json():null).catch(()=>null);
+      document.getElementById('bal').textContent = '¥' + (ui? Number(ui.balence||0).toFixed(2) : '—');
+      grid.innerHTML = '';
+      (p.plans||[]).forEach(plan => {
+        const isActive = plan.id === activeId;
+        const card = document.createElement('div');
+        card.className = 'card' + (isActive ? ' active-plan' : '');
+        const feats = (plan.features||[]).map(f=>`<li>${f}</li>`).join('');
+        card.innerHTML = `
+          ${isActive ? '<span class="badge">当前套餐</span>' : ''}
+          <div class="pname">${plan.name}</div>
+          <div class="pprice">¥${Number(plan.price).toFixed(2)} <small>/ ${plan.period_days} 天</small></div>
+          <div class="pdesc">${plan.description||''}</div>
+          <ul class="feats">${feats}</ul>
+          ${isActive
+            ? '<button class="btn secondary" disabled>已订阅</button>'
+            : `<button class="btn" data-id="${plan.id}">订阅（扣 ¥${Number(plan.price).toFixed(2)}）</button>`}
+        `;
+        grid.appendChild(card);
+      });
+      grid.querySelectorAll('button[data-id]').forEach(b=>{
+        b.addEventListener('click', async ()=>{
+          b.disabled = true;
+          try {
+            const r = await fetch('/api/subscribe', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({plan_id:b.dataset.id})});
+            const d = await r.json();
+            if (r.ok) { showMsg(d.message||'订阅成功', 'ok'); load(); }
+            else { showMsg(d.error||'订阅失败', 'err'); b.disabled=false; }
+          } catch(e){ showMsg('网络错误', 'err'); b.disabled=false; }
+        });
+      });
+    } catch(e){ showMsg('加载失败', 'err'); }
+  }
+  load();
+</script>
+</body>
+</html>

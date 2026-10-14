@@ -65,6 +65,13 @@ async def oauth_authorize():
         if response_type and response_type != 'code':
             return _oauth_redirect_error(redirect_uri, 'unsupported_response_type', state)
         scope = oauth.normalize_scope(scope) or 'api'
+        # 收紧：默认公开客户端只授予安全基线 scope，剥离任何高危 scope
+        # （user:write / transactions:write / apikeys:write / rcon），避免第三方应用一键索取账户毁灭性权限。
+        _req_scopes = set(scope.split())
+        _unsafe = _req_scopes & set(oauth.SENSITIVE_SCOPES)
+        if _unsafe:
+            _safe = _req_scopes - set(oauth.SENSITIVE_SCOPES)
+            scope = oauth.normalize_scope(' '.join(sorted(_safe))) or 'api'
     else:
         client = await oauth.get_client(async_db_query, client_id)
         if not client:
@@ -99,8 +106,14 @@ async def oauth_authorize():
         # 登录成功，继续向下进入授权确认
 
     # 已登录（或刚登录成功）：展示授权确认页，确认后才发授权码
+    _scopes_categorized = oauth.categorize_scopes(scope)
     if request.method == 'POST' and decision:
         if decision == 'allow':
+            # rcon 仅为管理员保留：非管理员请求到含 rcon 的 scope 直接拒绝
+            if 'rcon' in scope.split():
+                _u = await async_db_query("SELECT is_admin FROM users WHERE user_name = ?", (session['user'],))
+                if not _u or not int(_u[0].get('is_admin') or 0):
+                    return _oauth_redirect_error(redirect_uri, 'access_denied', state)
             urows = await async_db_query("SELECT uid, user_name FROM users WHERE user_name = ?", (session['user'],))
             uid = urows[0]['uid'] if urows else ''
             code = await oauth.create_auth_code(async_db_query, client_id, uid, session['user'], scope,
@@ -109,7 +122,8 @@ async def oauth_authorize():
             return redirect(f"{redirect_uri}{sep}code={code}&state={state}")
         return _oauth_redirect_error(redirect_uri, 'access_denied', state)
 
-    return await render_template('oauth_consent.html', client=client, scope=scope, state=state,
+    return await render_template('oauth_consent.html', client=client, scope=scope,
+                                 scopes_categorized=_scopes_categorized, state=state,
                                  client_id=client_id, redirect_uri=redirect_uri, response_type=response_type,
                                  code_challenge=code_challenge, code_challenge_method=code_challenge_method,
                                  user_name=session['user'])

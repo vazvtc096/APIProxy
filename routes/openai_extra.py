@@ -150,6 +150,29 @@ async def images_generations_api():
     return err if err else (jsonify(result), 200)
 
 
+@openai_extra_bp.route('/v1/videos/generations', methods=['POST'])
+async def videos_generations_api():
+    """视频生成：与图像生成同管道（Bearer 鉴权 / 限流 / 封禁 / 用户组 / 预扣费 / 用量日志）。
+
+    转发到上游的 /videos/generations（OpenAI 风格视频生成端点，Seedance / Runway 类代理兼容）。
+    无原生视频上游时由上游返回错误，网关按既有错误处理（退款+400/500），不另行特判。
+    """
+    allowed, _ = _check_rate_limit('chat')
+    if not allowed:
+        return jsonify({'error': 'Rate limit exceeded, please slow down'}), 429
+    api_key_obj, err = await _authenticate()
+    if err:
+        return err
+    req_data = await request.get_json() or {}
+    if not req_data.get('model'):
+        return jsonify({'error': 'model is required'}), 400
+    mult, _kh, err = await _precheck_owner(api_key_obj.owner, req_data['model'])
+    if err:
+        return err
+    result, err = await _submit(req_data, 'videos', api_key_obj, mult, _kh)
+    return err if err else (jsonify(result), 200)
+
+
 @openai_extra_bp.route('/v1/rerank', methods=['POST'])
 async def rerank_api():
     """Cohere/Jina 兼容 rerank：{model, query, documents:[...], top_n}"""

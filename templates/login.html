@@ -260,6 +260,41 @@
                 font-size: 24px;
             }
         }
+        /* 外部登录分隔与按钮（中性样式，不复制第三方品牌商标） */
+        .divider {
+            display: flex;
+            align-items: center;
+            text-align: center;
+            margin: 28px 0 18px;
+            color: #9ca3af;
+            font-size: 12px;
+        }
+        .divider::before, .divider::after {
+            content: '';
+            flex: 1;
+            border-top: 1px solid #e5e7eb;
+        }
+        .divider span { padding: 0 12px; }
+        .oidc-providers { display: flex; flex-direction: column; gap: 10px; }
+        .oidc-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            padding: 12px;
+            font-size: 14px;
+            font-weight: 500;
+            color: #374151;
+            background: #fff;
+            border: 1.5px solid #e5e7eb;
+            border-radius: 10px;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+        .oidc-btn:hover { border-color: #667eea; background: #f8f9ff; }
+        .oidc-btn svg { width: 18px; height: 18px; color: #6b7280; }
     </style>
 </head>
 <body>
@@ -301,6 +336,9 @@
                     <span id="loginBtnText">登录</span>
                 </button>
             </form>
+            <!-- 外部登录（OIDC 客户端）：由 JS 拉取已启用提供方并渲染中性按钮 -->
+            <div class="divider"><span>或使用外部账号登录</span></div>
+            <div class="oidc-providers" id="oidcProviders"></div>
             <!-- 切换到注册 -->
             <div class="auth-switch">
                 还没有账户？<a href="/register">立即注册</a>
@@ -395,6 +433,27 @@
         }
 
         checkLogin();
+
+        // 拉取已启用的外部登录提供方并渲染中性按钮
+        (async () => {
+            const box = document.getElementById('oidcProviders');
+            if (!box) return;
+            try {
+                const resp = await fetch('/login/oidc', { headers: { 'Accept': 'application/json' } });
+                if (!resp.ok) return;
+                const data = await resp.json();
+                const providers = (data.providers || []).filter(p => p.id);
+                if (!providers.length) return;
+                box.innerHTML = '';
+                for (const p of providers) {
+                    const a = document.createElement('a');
+                    a.className = 'oidc-btn';
+                    a.href = '/oidc/login/' + encodeURIComponent(p.id);
+                    a.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 2a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-1V6a5 5 0 0 0-5-5z"/></svg> 使用 ' + (p.display_name || p.name) + ' 登录';
+                    box.appendChild(a);
+                }
+            } catch (e) { /* 静默：外部登录不可用时不影响主登录 */ }
+        })();
     </script>
 </body>
 </html>
