@@ -659,6 +659,29 @@
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
         }
 
+        /* 在线支付方式选择 */
+        .pay-method {
+            padding: 8px 18px;
+            font-size: 14px;
+            font-weight: 500;
+            color: white;
+            background: rgba(255, 255, 255, 0.18);
+            border: 1px solid rgba(255, 255, 255, 0.45);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .pay-method:hover {
+            background: rgba(255, 255, 255, 0.28);
+        }
+
+        .pay-method.active {
+            background: white;
+            color: #667eea;
+            font-weight: 700;
+        }
+
         /* 表格 */
         .table-card {
             background: white;
@@ -1406,6 +1429,17 @@
                     </div>
                 </div>
 
+                <div class="recharge-card" id="onlinePayCard" style="display:none;">
+                    <h2 class="recharge-title">在线支付</h2>
+                    <p class="recharge-desc">选择支付方式，跳转收银台完成付款后余额自动到账</p>
+                    <div id="payMethods" style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px;"></div>
+                    <div class="recharge-form">
+                        <input type="number" class="recharge-input" id="onlineAmount" placeholder="输入充值金额（元）" min="1">
+                        <button class="recharge-btn" id="onlinePayBtn">去支付</button>
+                    </div>
+                    <p id="onlinePayMsg" style="margin-top:10px; font-size:13px; line-height:1.5;"></p>
+                </div>
+
                 <div class="recharge-card">
                     <h2 class="recharge-title">兑换码充值</h2>
                     <p class="recharge-desc">输入管理员发放的兑换码，余额即时到账</p>
@@ -2147,7 +2181,7 @@
             overview:      ['loadApiKeys', 'loadOverviewUsage'],
             usage:         ['loadUsagePage'],
             apikeys:       ['loadApiKeys'],
-            recharge:      ['loadRechargeHistory'],
+            recharge:      ['loadRechargeHistory', 'loadPaymentMethods'],
             admin:         ['loadAdminRequests'],
             users:         ['loadUserList'],
             stats:         ['loadAdminStats'],
@@ -2410,6 +2444,83 @@
             }
         }
 
+        let selectedPayMethod = null;
+
+        // 加载在线支付方式（无可用渠道时隐藏整卡）
+        async function loadPaymentMethods() {
+            try {
+                const resp = await fetch('/api/payment-methods');
+                if (!resp.ok) return;
+                const data = await resp.json();
+                const card = document.getElementById('onlinePayCard');
+                const box = document.getElementById('payMethods');
+                if (!data.enabled || !(data.methods || []).length) {
+                    card.style.display = 'none';
+                    return;
+                }
+                card.style.display = '';
+                box.innerHTML = data.methods.map((m, i) =>
+                    `<button type="button" class="pay-method${i === 0 ? ' active' : ''}" data-method="${esc(m.type)}">${esc(m.label)}</button>`
+                ).join('');
+                selectedPayMethod = data.methods[0].type;
+                box.querySelectorAll('.pay-method').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        box.querySelectorAll('.pay-method').forEach(b => b.classList.remove('active'));
+                        btn.classList.add('active');
+                        selectedPayMethod = btn.dataset.method;
+                    });
+                });
+                document.getElementById('onlinePayBtn').onclick = submitOnlinePay;
+            } catch (e) {
+                console.error('加载支付方式失败:', e);
+            }
+        }
+
+        // 发起在线支付：创建订单后跳转收银台
+        async function submitOnlinePay() {
+            const msg = document.getElementById('onlinePayMsg');
+            const amount = parseFloat(document.getElementById('onlineAmount').value);
+            if (!selectedPayMethod) { showToast('请选择支付方式', 'error'); return; }
+            if (!amount || amount <= 0) { showToast('请输入有效的充值金额', 'error'); return; }
+            const btn = document.getElementById('onlinePayBtn');
+            btn.disabled = true;
+            msg.textContent = '正在创建订单…';
+            try {
+                const resp = await fetch('/api/recharge/pay', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ amount, method: selectedPayMethod })
+                });
+                const data = await resp.json();
+                if (!resp.ok) {
+                    msg.textContent = '';
+                    showToast(data.error || '下单失败', 'error');
+                    return;
+                }
+                if (data.pay_url) {
+                    window.location.href = data.pay_url;
+                    return;
+                }
+                if (data.qr_code) {
+                    msg.innerHTML = '请使用对应 App 扫码或打开以下地址完成支付：<br><code style="word-break:break-all;">' + esc(data.qr_code) + '</code>';
+                    return;
+                }
+                msg.textContent = '';
+                showToast('网关未返回支付地址', 'error');
+            } catch (e) {
+                msg.textContent = '';
+                showToast('网络错误', 'error');
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // 支付渠道展示名
+        function payChannelLabel(ch) {
+            const map = { epay: '易支付', wechatpay: '微信支付', alipay: '支付宝', stripe: 'Stripe', paypal: 'PayPal' };
+            return map[ch] || ch;
+        }
+
         // 加载充值记录
         async function loadRechargeHistory() {
             try {
@@ -2440,7 +2551,7 @@
                             </span>
                         </td>
                         <td>${req.processed_at ? formatDate(req.processed_at) : '-'}</td>
-                        <td>${req.pay_channel === 'analogbank' ? '[analogBank 在线支付] ' : ''}${esc(req.admin_remark) || '-'}</td>
+                        <td>${req.pay_channel ? '[' + esc(payChannelLabel(req.pay_channel)) + '] ' : ''}${esc(req.admin_remark) || '-'}</td>
                     </tr>
                 `).join('');
                 

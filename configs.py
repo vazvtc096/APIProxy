@@ -621,21 +621,25 @@ PLAYGROUND = {
     "msg_max_len": int(_pg_raw.get("msg_max_len", 0)),
 }
 
-# ---------- analogBank 商户支付网关（余额在线充值） ----------
-_bank_pay = _RAW.get("bank_pay", {}) or {}
-BANK_PAY = {
-    "enabled": bool(_bank_pay.get("enabled")),
-    "api_url": str(_bank_pay.get("api_url") or "").rstrip("/"),
-    # 用户侧收银台前缀（给浏览器跳转用）；未配置时回退 api_url
-    "public_url": str(_bank_pay.get("public_url") or _bank_pay.get("api_url") or "").rstrip("/"),
-    "api_key": str(_bank_pay.get("api_key") or ""),
-    "api_secret": str(_bank_pay.get("api_secret") or ""),
-    # 银行服务器异步回调本服务的地址（同机部署走 127.0.0.1:PORT）
-    "callback_url": str(_bank_pay.get("callback_url")
-                        or "http://127.0.0.1:%s/api/recharge/bank/callback" % _get("PORT", 5000)),
+# ---------- 在线支付（可配置多支付方式） ----------
+# 渠道配置见 config.yaml 的 payments.methods.<type> 段（epay/wechatpay/alipay/
+# stripe/paypal），各渠道 enabled 独立控制。是否「真正可用」还需渠道必填项齐备，
+# 统一由 payments.registry.enabled(PAYMENT) 判定。
+_payment = _RAW.get("payments", {}) or {}
+_payment_methods = {
+    k: dict(v or {})
+    for k, v in (_payment.get("methods") or {}).items()
+    if isinstance(v, dict)
 }
-BANK_PAY_ENABLED = bool(BANK_PAY["enabled"] and BANK_PAY["api_url"]
-                        and BANK_PAY["api_key"] and BANK_PAY["api_secret"])
+PAYMENT = {
+    "enabled": bool(_payment.get("enabled", True)),
+    # 回调 / 返回地址基址（网关需公网可达）；未配置时回退 BASEURL
+    "callback_base": str(_payment.get("callback_base") or BASEURL or "").rstrip("/"),
+    "methods": _payment_methods,
+}
+# 粗粒度开关（全局 enabled 且至少一个渠道勾选 enabled）；精确判定用 payments.enabled()
+PAYMENT_ENABLED = bool(PAYMENT["enabled"] and any(
+    bool(m.get("enabled")) for m in _payment_methods.values()))
 
 
 # ---------- 启动时密钥检查 ----------

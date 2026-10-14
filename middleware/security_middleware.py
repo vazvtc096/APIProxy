@@ -15,7 +15,7 @@ from ..app import app
 from ..core import (
     _get_csrf_token, _validate_csrf_token, _get_client_ip, _get_user_agent,
     async_db_query, _whitelist_bypass, _validate_session,
-    EXEMPT_CSRF_METHODS, EXEMPT_CSRF_PATHS, _CSRF_PATCH_JS,
+    EXEMPT_CSRF_METHODS, EXEMPT_CSRF_PATHS, EXEMPT_CSRF_PREFIXES, _CSRF_PATCH_JS,
 )
 from ..configs import SSL_ENABLED, HSTS_ENABLED, HSTS_MAX_AGE, HSTS_INCLUDE_SUBDOMAINS, HSTS_PRELOAD, STATIC_CACHE_MAX_AGE
 from .. import waf as _waf
@@ -1051,7 +1051,7 @@ def register_middleware(app):
         """CSRF 保护：同步令牌 + Origin/Referer 双校验"""
         if request.method in EXEMPT_CSRF_METHODS:
             return
-        if request.path in EXEMPT_CSRF_PATHS:
+        if request.path in EXEMPT_CSRF_PATHS or request.path.startswith(EXEMPT_CSRF_PREFIXES):
             return
         # OpenAI 兼容推理端点走 Bearer API Key，非浏览器会话请求
         if request.path.startswith('/api/chat/completions'):

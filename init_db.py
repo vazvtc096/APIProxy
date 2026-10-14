@@ -52,7 +52,7 @@ def init_complete_db():
             amount REAL,
             status TEXT DEFAULT 'pending',
             pay_channel TEXT DEFAULT '',
-            bank_order_no TEXT,
+            pay_order_no TEXT,
             admin_uid TEXT,
             admin_name TEXT,
             admin_remark TEXT,
@@ -60,6 +60,14 @@ def init_complete_db():
             processed_at TIMESTAMP
         )
     """)
+    # 旧库升级：bank_order_no -> pay_order_no（在线支付通用化）
+    cur.execute("PRAGMA table_info(recharge_requests)")
+    _rr_cols = {c[1] for c in cur.fetchall()}
+    if 'bank_order_no' in _rr_cols and 'pay_order_no' not in _rr_cols:
+        try:
+            cur.execute('ALTER TABLE recharge_requests RENAME COLUMN bank_order_no TO pay_order_no')
+        except Exception as e:
+            print(f'  recharge_requests 列改名跳过: {e}')
     print("  [OK] recharge_requests 表")
     
     # 4. login_logs 表（登录日志）

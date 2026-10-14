@@ -105,7 +105,7 @@ def smart_init():
                 amount REAL,
                 status TEXT DEFAULT 'pending',
                 pay_channel TEXT DEFAULT '',
-                bank_order_no TEXT,
+                pay_order_no TEXT,
                 admin_uid TEXT,
                 admin_name TEXT,
                 admin_remark TEXT,
@@ -114,16 +114,23 @@ def smart_init():
             )
         """)
     else:
-        # 旧库升级：补 analogBank 支付通道相关列
+        # 旧库升级：补在线支付通道相关列 + 旧列改名
         cur.execute("PRAGMA table_info(recharge_requests)")
         rr_cols = {col[1] for col in cur.fetchall()}
-        for col, definition in (('pay_channel', "TEXT DEFAULT ''"), ('bank_order_no', 'TEXT')):
+        for col, definition in (('pay_channel', "TEXT DEFAULT ''"), ('pay_order_no', 'TEXT')):
             if col not in rr_cols:
                 print(f'  recharge_requests 添加字段: {col}')
                 try:
                     cur.execute(f'ALTER TABLE recharge_requests ADD COLUMN {col} {definition}')
                 except Exception as e:
                     print(f'    跳过: {e}')
+        # analogBank 时代的列名 bank_order_no -> pay_order_no（在线支付通用化）
+        if 'bank_order_no' in rr_cols and 'pay_order_no' not in rr_cols:
+            print('  recharge_requests 列改名: bank_order_no -> pay_order_no')
+            try:
+                cur.execute('ALTER TABLE recharge_requests RENAME COLUMN bank_order_no TO pay_order_no')
+            except Exception as e:
+                print(f'    跳过: {e}')
     
     
     # 4. login_logs 表（登录日志）

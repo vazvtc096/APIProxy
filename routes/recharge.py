@@ -8,12 +8,12 @@ from ..core import *
 from .. import social, oauth, upstreams, pricing
 from .. import hooks as _hooks
 from .. import announcements as _ann
-from .. import bank_pay
+from .. import payments as _payments
 from .. import db as _db
 from ..core_db import _get_conn
 from ..apikey import APIKey, hash_password, verify_password, generate_uid, _get_user_by_name, _verify_user_password
 from ..configs import BASEURL, APIKEY, DEBUG_CONSOLE_ENABLED, DEBUG_CONSOLE_SECRET, SSL_ENABLED, SESSION_SECRET, OAUTH_JWT_SECRET, SMTP_CONFIGURED
-from ..configs import BANK_PAY, BANK_PAY_ENABLED
+from ..configs import PAYMENT, PAYMENT_ENABLED
 from .. import configs
 from ..constants import CHAR_PRICE_LOOKUP, UNEXCEPT_CHAR, MONEY_PER_MILLION_TOKENS, UNEXCEPT_MODEL, MAX_OVERDRAFT
 from ..cloudflare import get_client_ip as _cf_get_client_ip
@@ -219,13 +219,14 @@ async def api_usage_summary():
 
 
 # ============================================================================
-# analogBank 在线支付通道（商户网关：下单 -> 收银台 -> 异步回调入账）
+# 在线支付（可配置多支付方式：epay / wechatpay / alipay / stripe / paypal）
+# 下单 -> 网关收银台 -> 异步回调入账；查单兜底
 # ============================================================================
 
 MAX_RECHARGE_AMOUNT = 10000  # 与 /api/recharge/request 保持一致
 
 
-async def _bank_credit(request_id: str, bank_order_no: str, amount: float) -> tuple:
+async def _credit_request(request_id: str, order_no: str, channel: str, amount: float) -> tuple:
     """幂等入账：CAS 抢占（pending/failed -> approved），成功者才加余额并记账。
 
     返回 (ok, message)。并发回调 / 查单兜底同时触发时仅第一个事务生效。
@@ -244,13 +245,13 @@ async def _bank_credit(request_id: str, bank_order_no: str, amount: float) -> tu
             if req['status'] not in ('pending', 'failed'):
                 return False, f"充值请求状态为 {req['status']}，无法入账"
             if abs(float(req['amount'] or 0) - float(amount)) > 1e-6:
-                return False, f"金额不匹配（本地 {req['amount']} / 银行 {amount}），拒绝入账"
+                return False, f"金额不匹配（本地 {req['amount']} / 网关 {amount}），拒绝入账"
             now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             cur.execute(
                 """UPDATE recharge_requests
-                   SET status = 'approved', processed_at = ?, pay_channel = 'analogbank', bank_order_no = ?
+                   SET status = 'approved', processed_at = ?, pay_channel = ?, pay_order_no = ?
                    WHERE request_id = ? AND status IN ('pending', 'failed')""",
-                (now, bank_order_no, request_id)
+                (now, channel, str(order_no or ''), request_id)
             )
             if cur.rowcount != 1:
                 conn.rollback()
@@ -267,8 +268,8 @@ async def _bank_credit(request_id: str, bank_order_no: str, amount: float) -> tu
                    (transaction_id, user_uid, user_name, type, amount, balence_after, related_id, remark)
                    VALUES (?, ?, ?, 'recharge', ?, ?, ?, ?)""",
                 ('bt_' + generate_uid(), req['user_uid'], req['user_name'],
-                 round(float(amount), 6), round(new_bal, 6), bank_order_no,
-                 'analogBank 在线支付')
+                 round(float(amount), 6), round(new_bal, 6), str(order_no or ''),
+                 f'{channel} 在线支付')
             )
             conn.commit()
             return True, "入账成功"
@@ -283,10 +284,21 @@ async def _bank_credit(request_id: str, bank_order_no: str, amount: float) -> tu
     return await asyncio.to_thread(_tx)
 
 
-@recharge_bp.route('/api/recharge/bank/pay', methods=['POST'])
-async def bank_pay_create():
-    """在线充值：在 analogBank 创建支付订单，返回收银台跳转地址"""
-    if not bank_pay.bank_pay_enabled():
+@recharge_bp.route('/api/payment-methods', methods=['GET'])
+async def payment_methods():
+    """返回当前可用的在线支付方式（前端渲染支付选择器）"""
+    if 'user' not in session:
+        return jsonify({'error': 'Not logged in'}), 401
+    return jsonify({
+        'enabled': _payments.enabled(PAYMENT),
+        'methods': _payments.available_methods(PAYMENT),
+    })
+
+
+@recharge_bp.route('/api/recharge/pay', methods=['POST'])
+async def recharge_pay():
+    """在线充值：按所选支付方式在网关创建订单，返回收银台跳转地址"""
+    if not _payments.enabled(PAYMENT):
         return jsonify({'error': '在线支付通道未启用'}), 404
     allowed, _ = _check_rate_limit('recharge')
     if not allowed:
@@ -298,6 +310,7 @@ async def bank_pay_create():
         return jsonify({'error': 'Not logged in'}), 401
 
     data = await request.get_json() or {}
+    method = str(data.get('method') or '').strip().lower()
     try:
         amount = round(float(data.get('amount', 0)), 2)
     except (TypeError, ValueError):
@@ -306,6 +319,10 @@ async def bank_pay_create():
         return jsonify({'error': 'Amount must be a positive number'}), 400
     if amount > MAX_RECHARGE_AMOUNT:
         return jsonify({'error': f'Amount too large (max {MAX_RECHARGE_AMOUNT})'}), 400
+
+    provider = _payments.get_provider(PAYMENT, method)
+    if not provider or not provider.enabled:
+        return jsonify({'error': '不支持的支付方式或该方式未启用'}), 400
 
     user_name = session['user']
     users = await async_db_query(
@@ -318,73 +335,96 @@ async def bank_pay_create():
     await async_db_query(
         """INSERT INTO recharge_requests
            (request_id, user_uid, user_name, amount, status, pay_channel)
-           VALUES (?, ?, ?, ?, 'pending', 'analogbank')""",
-        (request_id, user_data['uid'], user_name, amount)
+           VALUES (?, ?, ?, ?, 'pending', ?)""",
+        (request_id, user_data['uid'], user_name, amount, method)
     )
 
-    resp = await bank_pay.create_order(request_id, f"{amount:.2f}", f"APIProxy 余额充值")
-    if resp.get('error') or not resp.get('order_no'):
-        # 下单失败：标记 failed（银行若实际已建单，回调/查单仍可入账）
+    resp = await provider.create_order(request_id, amount, "APIProxy 余额充值")
+    if resp.get('error') or not (resp.get('pay_url') or resp.get('qr_code')):
+        # 下单失败：标记 failed（网关若实际已建单，回调/查单仍可入账）
         await async_db_query(
             "UPDATE recharge_requests SET status = 'failed', admin_remark = ? WHERE request_id = ?",
-            (str(resp.get('error'))[:200], request_id)
+            (str(resp.get('error') or '网关未返回支付地址')[:200], request_id)
         )
-        return jsonify({'error': resp.get('error') or '银行网关下单失败'}), 502
+        return jsonify({'error': resp.get('error') or '网关下单失败'}), 502
 
     await async_db_query(
-        "UPDATE recharge_requests SET bank_order_no = ? WHERE request_id = ?",
-        (resp['order_no'], request_id)
+        "UPDATE recharge_requests SET pay_order_no = ? WHERE request_id = ?",
+        (str(resp.get('order_no') or ''), request_id)
     )
-    pay_url = resp.get('pay_url') or f"/pay/{resp['order_no']}"
     return jsonify({
         'request_id': request_id,
-        'order_no': resp['order_no'],
+        'method': method,
+        'order_no': resp.get('order_no') or '',
         'amount': amount,
-        'pay_url': BANK_PAY['public_url'] + pay_url,
-        'status': resp.get('status', 'PENDING'),
+        'pay_url': resp.get('pay_url') or '',
+        'qr_code': resp.get('qr_code') or '',
+        'status': str(resp.get('status') or 'PENDING'),
     }), 201
 
 
-@recharge_bp.route('/api/recharge/bank/callback', methods=['POST'])
-async def bank_pay_callback():
-    """analogBank 异步回调（服务端对服务端，HMAC-SHA256 验签，无会话）"""
-    data = await request.get_json(silent=True) or {}
-    if not bank_pay.verify_callback(data):
-        return jsonify({'error': '签名校验失败'}), 401
-    # 非成功事件（过期等）直接确认，避免银行无谓重试
-    if data.get('event') != 'payment.success' or data.get('status') != 'PAID':
-        return jsonify({'ok': True})
+@recharge_bp.route('/api/recharge/callback/<method>', methods=['GET', 'POST'])
+async def payment_callback(method):
+    """网关异步回调（服务端对服务端，验签，无会话）。
 
-    order_no = str(data.get('order_no') or '')
-    merchant_order = str(data.get('merchant_order') or '')
-    try:
-        amount = float(data.get('amount'))
-    except (TypeError, ValueError):
-        return jsonify({'error': 'amount 非法'}), 400
+    同时接受 GET（易支付等）与 POST（JSON / 表单 / XML，微信）两种回调。
+    """
+    provider = _payments.get_provider(PAYMENT, method)
+    if not provider or not provider.enabled:
+        return jsonify({'error': 'unknown payment method'}), 404
 
+    if request.method == 'GET':
+        data = dict(request.args)
+        raw = b""
+    else:
+        raw = await request.get_data()
+        data = await request.get_json(silent=True)
+        if data is None:
+            form = await request.form
+            data = dict(form) if form else {}
+    headers = {k: v for k, v in request.headers.items()}
+
+    res = await provider.parse_callback(data, headers=headers, raw=raw)
+    if not res.get('ok'):
+        body, mime = provider.callback_ack(False)
+        return Response(body, mimetype=mime), 400
+
+    # 非成功事件（下单/过期等）：确认即可，避免网关无谓重试
+    if str(res.get('status') or '').upper() != 'PAID':
+        body, mime = provider.callback_ack(True)
+        return Response(body, mimetype=mime), 200
+
+    request_id = str(res.get('request_id') or '')
+    order_no = str(res.get('order_no') or '')
     row = await async_db_query(
         "SELECT request_id, user_name, amount FROM recharge_requests"
-        " WHERE bank_order_no = ? OR request_id = ?",
-        (order_no, merchant_order),
+        " WHERE request_id = ? OR (pay_order_no IS NOT NULL AND pay_order_no != '' AND pay_order_no = ?)",
+        (request_id, order_no),
         fetch_one=True,
     )
     if not row:
-        # 本地无此订单：200 确认（银行重试也无法处理），留日志排查
+        # 本地无此订单：确认（网关重试也无法处理），留日志排查
         return jsonify({'ok': True, 'ignored': 'unknown order'}), 200
 
-    ok, msg = await _bank_credit(row['request_id'], order_no, amount)
+    try:
+        amount = float(res.get('amount'))
+    except (TypeError, ValueError):
+        amount = float(row['amount'])
+    ok, msg = await _credit_request(row['request_id'], order_no, str(method), amount)
     if not ok:
-        # 让银行按 30s/120s 重试
-        return jsonify({'error': msg}), 500
+        # 让网关按各自策略重试
+        body, mime = provider.callback_ack(False)
+        return Response(body, mimetype=mime), 500
 
     await _hooks.fire_event('RECHARGE_APPROVED', trigger_user=row['user_name'],
                             target_user=row['user_name'], amount=row['amount'])
-    return jsonify({'ok': True}), 200
+    body, mime = provider.callback_ack(True)
+    return Response(body, mimetype=mime), 200
 
 
-@recharge_bp.route('/api/recharge/bank/status/<request_id>', methods=['GET'])
-async def bank_pay_status(request_id):
-    """查单兜底：银行回调丢失时，主动向银行查单并补入账"""
+@recharge_bp.route('/api/recharge/status/<request_id>', methods=['GET'])
+async def payment_status(request_id):
+    """查单兜底：网关回调丢失时，主动向网关查单并补入账"""
     if 'user' not in session:
         return jsonify({'error': 'Not logged in'}), 401
     row = await async_db_query(
@@ -395,11 +435,14 @@ async def bank_pay_status(request_id):
     if not row:
         return jsonify({'error': 'Request not found'}), 404
 
-    if row['status'] in ('pending', 'failed') and row['pay_channel'] == 'analogbank' \
-            and bank_pay.bank_pay_enabled():
-        q = await bank_pay.query_order(request_id)
-        if q.get('status') == 'PAID':
-            ok, _ = await _bank_credit(request_id, q.get('order_no') or '', float(row['amount']))
+    channel = str(row['pay_channel'] or '')
+    provider = _payments.get_provider(PAYMENT, channel) if channel else None
+    if row['status'] in ('pending', 'failed') and provider and provider.enabled:
+        q = await provider.query_order(request_id, row['pay_order_no'])
+        if str(q.get('status') or '').upper() == 'PAID':
+            ok, _ = await _credit_request(request_id,
+                                          str(q.get('order_no') or row['pay_order_no'] or ''),
+                                          channel, float(row['amount']))
             if ok:
                 await _hooks.fire_event('RECHARGE_APPROVED', trigger_user=row['user_name'],
                                         target_user=row['user_name'], amount=row['amount'])
@@ -409,7 +452,7 @@ async def bank_pay_status(request_id):
         'amount': row['amount'],
         'status': row['status'],
         'pay_channel': row['pay_channel'],
-        'bank_order_no': row['bank_order_no'],
+        'pay_order_no': row['pay_order_no'],
     })
 
 

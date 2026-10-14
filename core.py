@@ -43,7 +43,7 @@ except Exception:  # noqa: BLE001
 # star 导入白名单：显式列出下划线前缀符号，
 # 否则 `from ..core import *` 会静默跳过它们（PEP 8 默认行为）。
 __all__ = [
-    'EXEMPT_CSRF_METHODS', 'EXEMPT_CSRF_PATHS', 'CSRF_TOKEN_LEN', '_get_csrf_token',
+    'EXEMPT_CSRF_METHODS', 'EXEMPT_CSRF_PATHS', 'EXEMPT_CSRF_PREFIXES', 'CSRF_TOKEN_LEN', '_get_csrf_token',
     '_validate_csrf_token', '_CSRF_PATCH_JS', 'MIN_PASSWORD_LENGTH', 'MAX_USERNAME_LENGTH',
     'MAX_ACTIVE_SESSIONS', 'DEFAULT_MAX_SESSIONS', 'SESSION_EXPIRE_DAYS', 'RATE_LIMITS',
     '_init_rate_limit_table', '_cleanup_rate_limits_sync', '_get_rate_limit_key',
@@ -127,8 +127,9 @@ from .core_docs import (_usage_daily, _usage_daily_by_model, DOCS_DIR, _doc_meta
 
 # ---------- CSRF ----------
 EXEMPT_CSRF_METHODS = {'GET', 'HEAD', 'OPTIONS', 'TRACE'}
-EXEMPT_CSRF_PATHS = {'/api/password-reset/request', '/api/password-reset/confirm', '/register', '/login',
-                     '/api/recharge/bank/callback'}
+EXEMPT_CSRF_PATHS = {'/api/password-reset/request', '/api/password-reset/confirm', '/register', '/login'}
+# 前缀豁免：服务端对服务端回调，路径含动态段（支付渠道名）
+EXEMPT_CSRF_PREFIXES = ('/api/recharge/callback/',)
 CSRF_TOKEN_LEN = 32
 
 def _get_csrf_token() -> str:
