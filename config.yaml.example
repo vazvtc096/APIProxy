@@ -173,6 +173,14 @@ DEBUG_CONSOLE_RSA_KEY_SIZE: 2048
 CONSOLE_MAX_TIER: 2              # 主密钥最高权限 admin（0=info 1=op 2=admin）
 
 # ----------------------------------------------------------------------------
+# Prometheus /metrics 端点
+#   留空 METRICS_TOKEN：仅放行回环与私网（本机 Prometheus / 容器内网）；
+#   设置后必须带 Authorization: Bearer <token>（或 ?token=），公网抓取一律拒绝。
+# ----------------------------------------------------------------------------
+METRICS_TOKEN: ""
+METRICS_ALLOW_PRIVATE: true
+
+# ----------------------------------------------------------------------------
 # Cloudflare 真实客户端 IP（未套 CF 时 auto 自动探测，无副作用）
 # ----------------------------------------------------------------------------
 CLOUDFLARE_TRUSTED: "auto"

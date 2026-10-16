@@ -1,7 +1,10 @@
 # ============================================================================
 # Prometheus 抓取配置（docker compose --profile monitoring up -d 时启用）
 #
-# 抓取目标：容器网络内的 apiproxy:5000/metrics（开放端点，无需鉴权）。
+# 抓取目标：容器网络内的 apiproxy:5000/metrics。
+#   默认鉴权策略：未配置 METRICS_TOKEN 时仅放行回环/私网来源；容器内网（私网 IP）
+#   直接可抓，因此本文件开箱可用。若设置了 METRICS_TOKEN，则需给下面的 job 加上
+#   authorization (见注释)，或用 credentials_file 挂载令牌。
 # 告警规则来自仓库根目录的 prometheus_alerts.yml（挂载到 /etc/prometheus/alerts.yml）。
 # 告警外发到 alertmanager:9093（原先只有规则文件、无外发通道，此栈补齐）。
 # ============================================================================
@@ -23,6 +26,9 @@ alerting:
 scrape_configs:
   - job_name: apiproxy
     metrics_path: /metrics
+    # 若在 config.yaml 设置了 METRICS_TOKEN，取消下面两行注释并挂载令牌文件：
+    # authorization:
+    #   credentials_file: /etc/prometheus/metrics_token
     static_configs:
       - targets: ["apiproxy:5000"]
 

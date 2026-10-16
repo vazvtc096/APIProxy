@@ -351,3 +351,63 @@ def test_config_example_has_no_real_secrets():
         offending.append((i, key, val))
     assert offending == [], offending
 
+
+# ---- /metrics 访问控制 ------------------------------------------------------
+
+def _make_bare_app():
+    """轻量 Quart 应用，只为构造请求上下文（避免 create_app 的 70s 自检）。"""
+    from quart import Quart
+
+    return Quart(__name__)
+
+
+def test_metrics_requires_token_when_configured(monkeypatch):
+    """/metrics 配置了令牌后：无令牌/错令牌拒绝，Bearer 与 ?token= 均放行。"""
+    import asyncio
+
+    from APIProxy import configs
+    from APIProxy.utils import metrics as M
+
+    monkeypatch.setattr(configs, "METRICS_TOKEN", "m-token")
+    app = _make_bare_app()
+
+    async def probe(headers, args=None):
+        async with app.test_request_context("/metrics", headers=headers,
+                                            query_string=args or {}):
+            return M._metrics_authorized()
+
+    assert asyncio.run(probe({}))[0] is False
+    assert asyncio.run(probe({"Authorization": "Bearer wrong"}))[0] is False
+    assert asyncio.run(probe({"Authorization": "Bearer m-token"}))[0] is True
+    assert asyncio.run(probe({}, args={"token": "m-token"}))[0] is True
+
+
+def test_metrics_private_only_when_no_token(monkeypatch):
+    """未配置令牌时仅放行回环/私网；公网来源（含隧道还原后的真实 IP）一律拒绝。"""
+    import asyncio
+
+    from APIProxy import cloudflare, configs
+    from APIProxy.utils import metrics as M
+
+    monkeypatch.setattr(configs, "METRICS_TOKEN", "")
+    monkeypatch.setattr(configs, "METRICS_ALLOW_PRIVATE", True)
+    app = _make_bare_app()
+
+    async def probe(ip):
+        monkeypatch.setattr(cloudflare, "get_client_ip", lambda: ip)
+        async with app.test_request_context("/metrics"):
+            return M._metrics_authorized()
+
+    assert asyncio.run(probe("127.0.0.1"))[0] is True
+    assert asyncio.run(probe("10.0.0.5"))[0] is True
+    assert asyncio.run(probe("192.168.1.9"))[0] is True
+    # 注意：203.0.113.0/24 是 IANA 文档段，Python 的 ipaddress 视其为 private，
+    # 故这里必须用真实公网 IP 验证拒绝路径。
+    assert asyncio.run(probe("8.8.8.8"))[0] is False
+
+
+def test_metrics_endpoint_gate_present():
+    src = open("E:/Code/APIProxy/utils/metrics.py", encoding="utf-8").read()
+    assert "_metrics_authorized()" in src
+    assert "status=403" in src
+

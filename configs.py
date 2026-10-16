@@ -297,6 +297,14 @@ DEBUG_CONSOLE_RSA_KEY_SIZE = _get_int("DEBUG_CONSOLE_RSA_KEY_SIZE", 2048)
 CONSOLE_ENABLED = DEBUG_CONSOLE_ENABLED
 CONSOLE_SECRET = DEBUG_CONSOLE_SECRET
 
+# ---------- Prometheus /metrics 端点 ----------
+# 指标含用量、费用、上游错误等业务信息，默认不再对公网开放：
+#   - 配置 METRICS_TOKEN 时，要求 Authorization: Bearer <token>（或 ?token=）；
+#   - 未配置时，仅放行回环与私网（RFC1918/ULA）来源（本机 Prometheus、容器内网）。
+# 经 Cloudflare 隧道访问时 get_client_ip() 会还原为真实公网 IP，故公网抓取一律被拒。
+METRICS_TOKEN = _env_str("APIPROXY_METRICS_TOKEN", "METRICS_TOKEN", "") or ""
+METRICS_ALLOW_PRIVATE = _env_bool("APIPROXY_METRICS_ALLOW_PRIVATE", "METRICS_ALLOW_PRIVATE", True)
+
 # ---------- HTTPS/SSL ----------
 # ---------- IP 直接访问策略 ----------
 # 裸 IP 访问时 TLS 证书无法匹配（证书签给域名），session cookie 可能经明文 HTTP 泄漏。

@@ -138,6 +138,44 @@ def upstream_latency_summary() -> list:
     return out
 
 
+def _metrics_authorized() -> tuple:
+    """校验 /metrics 访问权限：配置令牌则必须匹配，否则仅放行回环/私网来源。
+
+    指标暴露了用量、费用、上游错误率等业务信息，经 Cloudflare 隧道时
+    get_client_ip() 会还原真实公网 IP，故公网抓取一律被拒。
+    """
+    import hmac
+    import ipaddress
+
+    from quart import request
+
+    from .. import configs
+    from ..cloudflare import get_client_ip
+
+    token = (getattr(configs, "METRICS_TOKEN", "") or "").strip()
+    if token:
+        auth = (request.headers.get("Authorization") or "").strip()
+        if auth[:7].lower() == "bearer ":
+            presented = auth[7:].strip()
+        else:
+            presented = (request.args.get("token") or "").strip()
+        if hmac.compare_digest(presented, token):
+            return True, ""
+        return False, "invalid metrics token"
+
+    if not getattr(configs, "METRICS_ALLOW_PRIVATE", True):
+        return False, "metrics endpoint disabled"
+
+    ip = (get_client_ip() or "").strip()
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False, "metrics endpoint restricted to internal networks"
+    if addr.is_loopback or addr.is_private or addr.is_link_local:
+        return True, ""
+    return False, "metrics endpoint restricted to internal networks"
+
+
 def setup_metrics(app):
     """注册 /metrics 端点与请求追踪钩子。"""
     from quart import Response, g, request
@@ -161,6 +199,9 @@ def setup_metrics(app):
 
     @app.route("/metrics", methods=["GET"])
     async def metrics():
+        ok, err = _metrics_authorized()
+        if not ok:
+            return Response(err + "\n", status=403, mimetype="text/plain")
         return Response(generate_latest(), mimetype=CONTENT_TYPE_LATEST)
 
     return app
