@@ -411,3 +411,30 @@ def test_metrics_endpoint_gate_present():
     assert "_metrics_authorized()" in src
     assert "status=403" in src
 
+
+# ---- 健康自检明细默认仅内网 ------------------------------------------------
+
+def test_health_detail_restricted_to_internal(monkeypatch):
+    """含完整路由表的自检明细默认仅回环/私网可见，避免公网侦察。"""
+    from APIProxy import configs
+    from APIProxy.routes import health as H
+
+    monkeypatch.setattr(configs, "HEALTH_DETAIL_INTERNAL_ONLY", True)
+    monkeypatch.setattr(H, "is_private_client", lambda: False)
+    assert H._detail_allowed() is False
+    monkeypatch.setattr(H, "is_private_client", lambda: True)
+    assert H._detail_allowed() is True
+    # 显式关闭限制后放开
+    monkeypatch.setattr(configs, "HEALTH_DETAIL_INTERNAL_ONLY", False)
+    assert H._detail_allowed() is True
+
+
+def test_health_detail_endpoints_are_gated():
+    src = open("E:/Code/APIProxy/routes/health.py", encoding="utf-8").read()
+    assert "health detail is restricted to internal networks" in src
+    # /health 与 /ready 必须保持公开（供 LB 探针使用），不得挂鉴权
+    assert '@health_bp.route("/health"' in src
+    assert '@health_bp.route("/ready"' in src
+    # 明细端点必须调用 _detail_allowed()
+    assert src.count("_detail_allowed()") >= 3  # 定义 1 + 调用 2
+

@@ -337,6 +337,21 @@ def is_loopback_client() -> bool:
         return False
 
 
+def is_private_client() -> bool:
+    """本次请求的【真实客户端】是否来自回环 / 私网 / 链路本地。
+
+    用于把运维面只读端点（/metrics、健康自检明细）限制在内网：
+    get_client_ip() 是可信解析结果——经 Cloudflare 隧道时会还原为真实公网 IP，
+    故公网请求不会被误判为内网。
+    """
+    ip = (get_client_ip() or "").strip()
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return bool(addr.is_loopback or addr.is_private or addr.is_link_local)
+
+
 def get_client_country() -> str:
     """返回 Cloudflare 提供的客户端国家代码（ISO 3166-1 alpha-2）。"""
     return (request.headers.get("CF-IPCountry") or "").strip()

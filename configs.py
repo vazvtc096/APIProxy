@@ -305,6 +305,13 @@ CONSOLE_SECRET = DEBUG_CONSOLE_SECRET
 METRICS_TOKEN = _env_str("APIPROXY_METRICS_TOKEN", "METRICS_TOKEN", "") or ""
 METRICS_ALLOW_PRIVATE = _env_bool("APIPROXY_METRICS_ALLOW_PRIVATE", "METRICS_ALLOW_PRIVATE", True)
 
+# ---------- 健康自检明细端点 ----------
+# /api/health/endpoints 与 /health/ui 会回传【完整 GET 路由表 + 各端点状态】，
+# 属侦察面。默认仅回环/私网可见；确需公网访问时置 False，或改由反代鉴权。
+# 注意：/health 与 /ready 保持公开（供 LB / 探针使用）。
+HEALTH_DETAIL_INTERNAL_ONLY = _env_bool(
+    "APIPROXY_HEALTH_DETAIL_INTERNAL_ONLY", "HEALTH_DETAIL_INTERNAL_ONLY", True)
+
 # ---------- HTTPS/SSL ----------
 # ---------- IP 直接访问策略 ----------
 # 裸 IP 访问时 TLS 证书无法匹配（证书签给域名），session cookie 可能经明文 HTTP 泄漏。

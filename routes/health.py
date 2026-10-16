@@ -4,19 +4,36 @@ GET /health: 返回服务状态、版本、运行时间、数据库连接状态�
 无需认证，可被负载均衡 / 容器编排调用。
 
 接口自检（目标 4.1）：
-  GET /api/health/summary    最近一次自检摘要
-  GET /api/health/endpoints  完整端点列表与状态
-  GET /health/ui             人类可读的状态页（纯 HTML）
+  GET /api/health/summary    最近一次自检摘要（仅计数）
+  GET /api/health/endpoints  完整端点列表与状态（含完整路由表 → 默认仅内网）
+  GET /health/ui             人类可读的状态页（纯 HTML，含完整路由表 → 默认仅内网）
 """
 import time
 import sqlite3
 from quart import Blueprint, jsonify, request
 
+from .. import configs
 from .. import selftest
+from ..cloudflare import is_private_client
 
 health_bp = Blueprint("health", __name__)
 
 _START_TIME = time.time()
+
+
+def _detail_allowed() -> bool:
+    """健康自检明细是否允许当前请求读取。
+
+    回传完整路由表属侦察面，默认仅回环/私网可见（经隧道时 get_client_ip()
+    还原真实公网 IP，故公网请求被正确拒绝）。置 configs.HEALTH_DETAIL_INTERNAL_ONLY
+    为 False 可放开。
+    """
+    if not getattr(configs, "HEALTH_DETAIL_INTERNAL_ONLY", True):
+        return True
+    try:
+        return is_private_client()
+    except Exception:
+        return False
 
 try:
     from importlib.metadata import version as _pkg_version
@@ -116,11 +133,16 @@ async def health_summary():
 
 @health_bp.route("/api/health/endpoints", methods=["GET"])
 async def health_endpoints():
+    if not _detail_allowed():
+        return jsonify({"error": "health detail is restricted to internal networks"}), 403
     return jsonify(selftest.get_cached_results()), 200
 
 
 @health_bp.route("/health/ui", methods=["GET"])
 async def health_ui():
+    if not _detail_allowed():
+        return ("health detail is restricted to internal networks", 403,
+                {"Content-Type": "text/plain; charset=utf-8"})
     data = selftest.get_cached_results()
     s = data.get("summary", {})
     rows = []

@@ -145,12 +145,11 @@ def _metrics_authorized() -> tuple:
     get_client_ip() 会还原真实公网 IP，故公网抓取一律被拒。
     """
     import hmac
-    import ipaddress
 
     from quart import request
 
     from .. import configs
-    from ..cloudflare import get_client_ip
+    from ..cloudflare import is_private_client
 
     token = (getattr(configs, "METRICS_TOKEN", "") or "").strip()
     if token:
@@ -166,12 +165,7 @@ def _metrics_authorized() -> tuple:
     if not getattr(configs, "METRICS_ALLOW_PRIVATE", True):
         return False, "metrics endpoint disabled"
 
-    ip = (get_client_ip() or "").strip()
-    try:
-        addr = ipaddress.ip_address(ip)
-    except ValueError:
-        return False, "metrics endpoint restricted to internal networks"
-    if addr.is_loopback or addr.is_private or addr.is_link_local:
+    if is_private_client():
         return True, ""
     return False, "metrics endpoint restricted to internal networks"
 
