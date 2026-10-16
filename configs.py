@@ -1,22 +1,65 @@
 # -*- coding: utf-8 -*-
-"""配置加载（支持 .json / .yaml(.yml) / .toml，不再使用 .env）。
+"""配置加载（支持 .json / .yaml(.yml) / .toml，并可选用同目录 .env）。
 
 查找顺序（同目录下，先命中先用）：
     config.toml > config.yaml > config.yml > config.json
 也可用环境变量 APIPROXY_CONFIG 指定配置文件绝对路径。
+若无任何配置文件，则全部走环境变量 / 内置默认值（纯环境变量部署）。
 
 兼容性：
 - 仍导出历史扁平变量名（SMTP_SERVER、WAF_ENABLED、BASEURL、APIKEY ...），
   其余模块无需改动 import。
 - 新增 UPSTREAMS（多上游 API Key 列表）与 PRICING（按模型 / 时段的计费表）。
-- 顶层标量键可用环境变量 APIPROXY_<大写键名> 覆盖（便于在容器里注入密钥）。
+- 顶层标量键可用环境变量 APIPROXY_<大写键名> 覆盖（便于在容器里注入密钥）；
+  环境变量同样可以【引入】配置文件中不存在的键，因此没有 config.yaml 也能启动。
 """
 from pathlib import Path
 import os
+import re
 import json
 import logging
 
 BASE_DIR = Path(__file__).resolve().parent
+
+
+def _load_dotenv():
+    """可选加载同目录 .env（stdlib 实现，不引入新依赖）。
+
+    规则：
+      - 仅在对应环境变量【未设置】时注入（真实环境变量优先于 .env）；
+      - 支持 KEY=VALUE、可选 export 前缀、单/双引号包裹、未加引号时的 " #" 行内注释；
+      - 文件缺失或解析异常一律静默跳过，绝不影响启动。
+    """
+    path = BASE_DIR / ".env"
+    if not path.exists():
+        return
+    try:
+        text = path.read_text(encoding="utf-8")
+    except Exception:
+        return
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export "):].lstrip()
+        if "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        key = key.strip()
+        if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", key):
+            continue
+        val = val.strip()
+        if len(val) >= 2 and val[0] == val[-1] and val[0] in ("'", '"'):
+            val = val[1:-1]
+        else:
+            pos = val.find(" #")
+            if pos != -1:
+                val = val[:pos].rstrip()
+        os.environ.setdefault(key, val)
+
+
+_load_dotenv()
 
 
 def _load_raw():
@@ -52,13 +95,29 @@ _RAW, _CFG_PATH = _load_raw()
 CONFIG_PATH = _CFG_PATH
 
 
-def _get(key, default=None):
+def _raw_lookup(key):
+    """在配置字典里按键取值（先精确、后大小写不敏感）。
+
+    配置文件里键名大小写并不统一（`baseurl` / `SESSION_SECRET` 混用），
+    而环境变量注入的键名一律大写，故这里做一次大小写不敏感兜底。
+    """
     v = _RAW.get(key, None)
+    if v is not None:
+        return v
+    lk = str(key).lower()
+    for k, val in _RAW.items():
+        if str(k).lower() == lk:
+            return val
+    return None
+
+
+def _get(key, default=None):
+    v = _raw_lookup(key)
     return v if v is not None else default
 
 
 def _get_bool(key, default=False):
-    v = _RAW.get(key, None)
+    v = _raw_lookup(key)
     if v is None:
         return default
     if isinstance(v, bool):
@@ -68,7 +127,7 @@ def _get_bool(key, default=False):
 
 def _get_int(key, default=0):
     try:
-        v = _RAW.get(key, None)
+        v = _raw_lookup(key)
         return int(v) if v is not None else default
     except (TypeError, ValueError):
         return default
@@ -76,7 +135,7 @@ def _get_int(key, default=0):
 
 def _get_float(key, default=0.0):
     try:
-        v = _RAW.get(key, None)
+        v = _raw_lookup(key)
         return float(v) if v is not None else default
     except (TypeError, ValueError):
         return default
@@ -107,13 +166,30 @@ def _env_int(name, key, default=0):
     return _get_int(key, default)
 
 
-# 顶层标量键允许用环境变量覆盖（仅字符串/数字/布尔；不覆盖嵌套 upstreams/pricing）
+# 顶层标量键可用环境变量 APIPROXY_<键名> 覆盖（便于在容器里注入密钥）。
+# 两个方向都要覆盖：
+#   1) 配置文件中【已存在】的键 → 环境变量覆盖它；
+#   2) 配置文件中【不存在】的键 → 环境变量把它引入。
+# 第 2 条是"纯环境变量部署"（无 config.yaml，例如全新 clone 只放了 .env）能启动的关键：
+# 旧实现只遍历 _RAW 里已有的键，导致没有 config.yaml 时 APIPROXY_OAUTH_JWT_SECRET
+# 等密钥被完全忽略，预检 fail-closed 直接拒启。
+# 不处理嵌套结构 upstreams / pricing（上游 Key 单独走 APIPROXY_UPSTREAM_<NAME>_API_KEY）。
 for _k in list(_RAW.keys()):
-    if _k in ("upstreams", "pricing"):
+    if str(_k).lower() in ("upstreams", "pricing"):
         continue
     _env = os.getenv("APIPROXY_" + str(_k).upper())
     if _env is not None:
         _RAW[_k] = _env
+
+for _env_name, _env_val in list(os.environ.items()):
+    if not _env_name.startswith("APIPROXY_"):
+        continue
+    _cfg_key = _env_name[len("APIPROXY_"):]
+    if not _cfg_key or _cfg_key.upper() == "CONFIG":
+        continue  # APIPROXY_CONFIG 是指定配置文件路径的指引，不是配置键
+    if _cfg_key.lower() in ("upstreams", "pricing"):
+        continue
+    _RAW.setdefault(_cfg_key, _env_val)
 
 
 # ---------- 基础 ----------

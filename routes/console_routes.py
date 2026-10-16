@@ -10,7 +10,7 @@
 from quart import Blueprint, request, jsonify
 
 from ..core_console import (
-    dispatch_async, run_locally_async, console_help_text, _internal_secret,
+    dispatch_async, run_locally_async, console_help_text, internal_secret_ok,
     console_tier_for_key, check_command_permission, TIER_NAMES,
 )
 from ..core_debug_console import _verify_debug_console_key
@@ -18,18 +18,12 @@ from ..core_debug_console import _verify_debug_console_key
 console_bp = Blueprint("console", __name__)
 
 
-def _client_ip():
-    return request.headers.get("X-Forwarded-For", request.remote_addr or "")
-
-
 async def _check_internal_secret() -> bool:
-    secret = request.headers.get("X-Internal-Secret", "")
-    expected = _internal_secret()
-    if expected:
-        return secret == expected
-    # 无共享密钥：仅允许回环（内网可信回退）
-    ip = _client_ip()
-    return ip.startswith("127.") or ip == "::1" or ip == "localhost"
+    """节点间共享密钥；未配置时回退【真实对端回环】。
+
+    注意：不使用客户端可控的 X-Forwarded-For 判定回环（可被伪造冒充内部节点）。
+    """
+    return internal_secret_ok(request.headers.get("X-Internal-Secret", ""))
 
 
 @console_bp.route("/internal/console", methods=["POST"])

@@ -8,23 +8,18 @@
 from quart import Blueprint, request, jsonify, Response
 
 from .. import audit_server
-from ..core_console import _internal_secret
+from ..core_console import internal_secret_ok
 from ..core_debug_console import _verify_debug_console_key
 
 audit_bp = Blueprint("audit", __name__)
 
 
-def _client_ip():
-    return request.headers.get("X-Forwarded-For", request.remote_addr or "")
-
-
 async def _check_internal_secret() -> bool:
-    secret = request.headers.get("X-Internal-Secret", "")
-    expected = _internal_secret()
-    if expected:
-        return secret == expected
-    ip = _client_ip()
-    return ip.startswith("127.") or ip == "::1" or ip == "localhost"
+    """节点间共享密钥；未配置时回退【真实对端回环】。
+
+    注意：不使用客户端可控的 X-Forwarded-For 判定回环（可被伪造冒充内部节点）。
+    """
+    return internal_secret_ok(request.headers.get("X-Internal-Secret", ""))
 
 
 @audit_bp.route("/api/audit/query", methods=["GET"])
@@ -61,7 +56,10 @@ async def audit_export():
                 return int(request.args.get(name, d))
             except Exception:
                 return d
-        fmt = (request.args.get("fmt", "json") or "json").lower()
+        fmt = (request.args.get("fmt", "json") or "json").strip().lower()
+        if fmt not in ("json", "csv"):
+            # 格式名会进入 Content-Disposition 文件名，白名单化避免头注入 / 异常文件名
+            return jsonify({"success": False, "error": "unsupported fmt"}), 400
         rows = await audit_server.query(
             limit=_i("limit", 5000),
             category=request.args.get("category", ""),

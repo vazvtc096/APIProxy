@@ -2,9 +2,13 @@
 
 未配置 REDIS_URL 时 `get_redis()` 返回 None，调用方回退到 SQLite 实现；
 配置了但连接失败同样返回 None 并告警，保证限流/缓存降级不中断服务。
+
+测试隔离：pytest 环境下默认拒绝连接真实 Redis（避免测试读写真实实例、
+并因连接超时拖慢用例）；确需测试 Redis 时设 APIPROXY_TEST_ALLOW_REDIS=1。
 """
 
 import logging
+import os
 import threading
 
 from .configs import REDIS_URL
@@ -24,6 +28,10 @@ def get_redis():
     """
     global _redis, _tried
     if not REDIS_URL:
+        return None
+    # 测试隔离安全网：pytest 运行期默认不连真实 Redis（含 --noconftest 直接跑的用例），
+    # 可用 APIPROXY_TEST_ALLOW_REDIS=1 显式放行。
+    if os.environ.get("PYTEST_CURRENT_TEST") and os.environ.get("APIPROXY_TEST_ALLOW_REDIS") != "1":
         return None
     if _redis is not None:
         return _redis

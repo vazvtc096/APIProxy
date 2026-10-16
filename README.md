@@ -65,10 +65,11 @@ pip install -r requirements.txt
 
 ### 2. 配置
 
-复制配置并填写上游 Key：
+两种方式任选其一，**都可以在没有 `config.yaml` 的情况下启动**：
 
 ```bash
-cp config.yaml config.local.yaml   # 或直接编辑 config.yaml
+cp .env.example .env                  # 方式 A：环境变量（容器 / 生产推荐）
+cp config.yaml.example config.yaml    # 方式 B：配置文件（本地开发方便）
 ```
 
 最小配置示例（`config.yaml`）：
@@ -77,15 +78,18 @@ cp config.yaml config.local.yaml   # 或直接编辑 config.yaml
 upstreams:
   - name: "deepseek-main"
     base_url: "https://api.deepseek.com/v1"
-    api_key: ""              # 或环境变量 APIPROXY_DEEPSEEK_MAIN_API_KEY
+    api_key: ""              # 或环境变量 APIPROXY_UPSTREAM_DEEPSEEK_MAIN_API_KEY
     priority: 1
     enabled: true
     disabled_models: []
 
-OAUTH_JWT_SECRET: ""         # 生产必须设置，否则 OAuth fail-closed 拒绝签发
+OAUTH_JWT_SECRET: ""         # 生产必须设置，否则 OAuth fail-closed 拒绝启动
 ```
 
-> 所有顶层标量键均可通过环境变量 `APIPROXY_<大写键名>` 覆盖。敏感密钥建议从环境变量注入，不要写入配置文件。
+> - 所有顶层标量键都可用环境变量 `APIPROXY_<大写键名>` 覆盖（如 `APIPROXY_OAUTH_JWT_SECRET`）。
+>   环境变量**可以引入配置文件中不存在的键**，所以纯环境变量部署（不放 `config.yaml`）同样可启动。
+> - 同目录下的 `.env` 会被自动加载（真实环境变量优先于 `.env`）。
+> - 敏感密钥建议从环境变量注入，不要写进配置文件。
 
 ### 3. 启动
 
@@ -124,7 +128,7 @@ curl http://localhost:5000/metrics
 | `pricing` | — | 模型定价（default / models / schedules / `model@upstream`） |
 | `OAUTH_JWT_SECRET` | 空 | OAuth JWT 签名密钥（**生产必填，fail-closed**） |
 
-完整配置项与注释见 [`config.yaml`](config.yaml)。
+完整配置项与注释见 [`config.yaml.example`](config.yaml.example)（`config.yaml` 含密钥不入库）。
 
 ---
 
@@ -179,13 +183,14 @@ APIProxy/
 │   ├── metrics.py         # Prometheus 指标
 │   ├── errors.py / endpoints.py / logging_setup.py
 │
-├── tests/                 # 77 个测试用例
+├── tests/                 # 148 个测试用例
 ├── docs/                  # api.md、OAUTH_GUIDE.md
 ├── migrations/            # Alembic 迁移
 ├── certs/                 # TLS 证书
 ├── Dockerfile / docker-compose.yml / nginx_example.conf
 ├── prometheus_alerts.yml  # Prometheus 告警规则
-└── config.yaml            # 配置
+├── .env.example           # 环境变量模板（cp 为 .env 即自动加载）
+└── config.yaml.example    # 配置模板（config.yaml 含密钥不入库）
 ```
 
 > **架构说明**：`core.py` 原为 2489 行的 God module，已拆分为 13 个职责单一模块，`core.py` 仅保留 `__all__` 重导出（134 个符号）与少量未下沉功能，`from APIProxy import core; core.xxx` 及 `from ..core import *` 完全向后兼容。

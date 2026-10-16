@@ -10,14 +10,26 @@
 - 仅 LB 角色下 nodes 才有数据；Worker 角色下 nodes 为空。
 """
 
+import hmac
+
 from quart import Blueprint, jsonify, request, session, redirect
 
 from .. import configs
 from ..cluster import cluster, get_cluster_token
+from ..core_rate_limit import _check_rate_limit, _get_rate_limit_retry_after
 
 cluster_bp = Blueprint("cluster", __name__)
 
 _SESSION_KEY = "cluster_auth"
+
+
+def _token_ok(token: str) -> bool:
+    """恒定时间比较集群管理令牌，避免时序侧信道。"""
+    expected = str(get_cluster_token() or "")
+    if not expected:
+        # 无令牌配置时一律拒绝（fail-closed），杜绝空令牌绕过
+        return False
+    return hmac.compare_digest(str(token or ""), expected)
 
 _LOGIN_PAGE = (
     "<!doctype html>"
@@ -66,7 +78,7 @@ async def _request_token() -> str:
 
 async def _authed() -> bool:
     """已通过 URL token 或登录会话鉴权。"""
-    if await _request_token() == get_cluster_token():
+    if _token_ok(await _request_token()):
         return True
     return bool(session.get(_SESSION_KEY))
 
@@ -86,8 +98,15 @@ async def _deny_async():
 @cluster_bp.route("/cluster/login", methods=["GET", "POST"])
 async def cluster_login():
     token = await _request_token()
+    # 防爆破：只要提交了令牌就走限流（GET 仅渲染页面、不计数）
+    if token:
+        allowed, _ = _check_rate_limit("cluster")
+        if not allowed:
+            retry = _get_rate_limit_retry_after("cluster")
+            page = _LOGIN_PAGE.replace("__ERR__", f"尝试过于频繁，请 {retry} 秒后重试")
+            return page, 429, {"Retry-After": str(retry)}
     # 令牌正确（URL 或表单）：写入会话并跳转管理页（首次登录会下发会话 Cookie）
-    if token == get_cluster_token():
+    if _token_ok(token):
         session[_SESSION_KEY] = True
         return redirect("/cluster/nodes")
     # 已登录（会话态）直接跳转

@@ -148,6 +148,15 @@ def preflight_checks() -> None:
     except AttributeError:
         pass
 
+    # 非致命：启用集群却未设共享密钥 → 内部端点退化为"仅回环"信任 + 明文 HTTP，
+    # 同主机其它进程可冒充节点，节点间消息也不带 HMAC 鉴权。安全部署应设置 CLUSTER_SECRET。
+    if getattr(configs, "CLUSTER_ENABLED", False) and not getattr(configs, "CLUSTER_SECRET", ""):
+        logger.warning(
+            "CLUSTER_ENABLED=true 但 CLUSTER_SECRET 为空：节点间内部端点（/internal/*）"
+            "将退化为『仅回环』信任，集群消息无 HMAC 鉴权且为明文 HTTP。"
+            "同一主机上的其它进程可冒充集群节点，建议设置 CLUSTER_SECRET。"
+        )
+
 
 def harden_file_permissions() -> None:
     """收紧敏感文件权限至仅所有者可读写（Windows 下尽力而为）。"""

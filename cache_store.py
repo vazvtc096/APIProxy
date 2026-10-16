@@ -403,22 +403,18 @@ def _cache_bp():
 
     @bp.route("/internal/cache", methods=["POST"])
     async def _cache_handler():
-        # 仅 LB / 单机节点对外提供缓存服务；Worker 不应被当作缓存源
-        if getattr(configs, "CLUSTER_ENABLED", False):
-            try:
-                from .cluster import cluster
-                if getattr(cluster, "role", None) == "worker":
-                    return jsonify({"error": "workers do not serve cache"}), 403
-            except Exception:
-                pass
-        secret = request.headers.get("X-Internal-Secret", "")
-        expected = _internal_secret()
-        client_ip = request.headers.get("X-Forwarded-For", request.remote_addr or "")
-        is_local = client_ip.startswith("127.") or client_ip == "::1" or client_ip == "localhost"
-        if expected and secret != expected:
-            return jsonify({"error": "invalid internal secret"}), 403
-        if not expected and not is_local:
-            return jsonify({"error": "cache endpoint requires loopback when no shared secret"}), 403
+        # 仅 LB / 单机节点对外提供缓存服务；Worker 不应被当作缓存源。
+        # 用 is_worker_node() 统一判定：不可判定时记日志，而不是静默放过请求。
+        from .cluster import is_worker_node
+        if is_worker_node() is True:
+            return jsonify({"error": "workers do not serve cache"}), 403
+        # 鉴权：节点间共享密钥（恒定时间比较）；未配置时回退到【真实对端回环】。
+        # 关键：判定回环必须用真实对端 IP（cloudflare.is_loopback_client），
+        # 绝不能用客户端可控的 X-Forwarded-For —— 否则公网请求带一个
+        # `X-Forwarded-For: 127.0.0.1` 就能读走整个缓存（历史实现即此缺陷）。
+        from .core_console import internal_secret_ok
+        if not internal_secret_ok(request.headers.get("X-Internal-Secret", "")):
+            return jsonify({"error": "cache endpoint requires internal secret or loopback"}), 403
         try:
             payload = await request.get_json(force=True, silent=True) or {}
             op = payload.get("op")

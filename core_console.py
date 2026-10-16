@@ -670,13 +670,28 @@ def _cmd_audit_stats(args) -> dict:
     return {"success": True, "output": str(stats), "data": stats}
 
 
+# audit_export 仅允许这两种格式：格式名会参与输出文件名，旧实现直接把用户输入
+# 拼进 `audit_export.{fmt}` 交给 open()，`fmt=../../x` 即可任意路径写文件。
+_ALLOWED_EXPORT_FORMATS = ("json", "csv")
+
+
 def _cmd_audit_export(args) -> dict:
-    fmt = (args[0] if args else "json").lower()
+    import os
+    import time
+    fmt = (args[0] if args else "json").strip().lower()
+    if fmt not in _ALLOWED_EXPORT_FORMATS:
+        return {"success": False,
+                "output": f"不支持的导出格式：{fmt}（仅支持 {'/'.join(_ALLOWED_EXPORT_FORMATS)}）",
+                "data": {}}
     from . import audit_server
     rows = _run_coro(audit_server.query(limit=5000))
     text = audit_server.export_rows(rows, fmt)
-    path = f"audit_export.{fmt}"
+    # 固定导出目录 + 固定文件名骨架（格式已过白名单），彻底消除路径穿越。
+    export_dir = os.path.join(str(getattr(configs, "BASE_DIR", ".")), "audit_exports")
     try:
+        os.makedirs(export_dir, exist_ok=True)
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        path = os.path.join(export_dir, f"audit_export-{stamp}.{fmt}")
         with open(path, "w", encoding="utf-8") as f:
             f.write(text)
         return {"success": True, "output": f"已导出 {len(rows)} 条审计到 {path}",
@@ -1233,6 +1248,45 @@ def _run_locally(command: str, args: list) -> dict:
 
 def _internal_secret() -> str:
     return getattr(configs, "CLUSTER_SECRET", "") or getattr(configs, "DEBUG_CONSOLE_SECRET", "")
+
+
+def _log_internal_reject(reason: str) -> None:
+    """记录一次内部端点拒绝（含解析后的真实对端 IP，便于识别伪造/越权尝试）。"""
+    try:
+        from .cloudflare import get_client_ip
+        peer = get_client_ip()
+    except Exception:
+        peer = "?"
+    logger.warning("[internal] 拒绝内部请求 peer=%s reason=%s", peer, reason)
+
+
+def internal_secret_ok(presented: str) -> bool:
+    """校验节点间内部密钥；未配置共享密钥时回退到【真实对端回环】判定。
+
+    安全要点（各 /internal/* 端点共用）：
+      - 共享密钥比较使用 hmac.compare_digest（恒定时间），避免时序侧信道；
+      - 回环回退基于真实对端 IP（cloudflare.is_loopback_client），
+        绝不采信客户端可控的 X-Forwarded-For，否则可被 `X-Forwarded-For: 127.0.0.1`
+        伪造冒充内部节点（历史实现即存在此缺陷）；
+      - 判定链路不可用时 fail-closed（拒绝），而不是放行；
+      - 拒绝时记录一条带真实对端 IP 的告警，供安全审计追踪。
+    """
+    expected = _internal_secret()
+    if expected:
+        import hmac
+        ok = hmac.compare_digest(str(presented or ""), str(expected))
+        if not ok:
+            _log_internal_reject("shared-secret mismatch")
+        return ok
+    try:
+        from .cloudflare import is_loopback_client
+        ok = bool(is_loopback_client())
+        if not ok:
+            _log_internal_reject("non-loopback peer without shared secret")
+        return ok
+    except Exception as e:  # pragma: no cover - 仅在极端导入/上下文异常时触发
+        logger.warning("internal_secret_ok: 回环判定不可用，拒绝内部请求：%s", e)
+        return False
 
 
 def _resolve_target_url(target: str):

@@ -47,22 +47,10 @@ def _init_debug_console_table():
                 "ON debug_console_keys(key_hash, is_active)")
             conn.commit()
             
-            # 检查是否已有密钥，没有则生成
-            cur.execute("SELECT debug_console_key FROM debug_console_config WHERE id = 1")
-            row = cur.fetchone()
-            if not row:
-                # 第一次启动，生成密钥
-                import base64
-                key_bytes = os.urandom(DEBUG_CONSOLE_KEY_LENGTH)
-                debug_console_key = base64.b64encode(key_bytes).decode('ascii')
-                cur.execute(
-                    "INSERT INTO debug_console_config (id, debug_console_key, last_refreshed_at) VALUES (1, ?, CURRENT_TIMESTAMP)",
-                    (debug_console_key,)
-                )
-                conn.commit()
-                print(f"[Debug Console] 首次启动，已生成 Debug Console 密钥")
-                print(f"[Debug Console] 密钥前8位: {debug_console_key[:8]}...（完整密钥仅存于数据库 debug_console_config 表，未打印到日志）")
-                print(f"[Debug Console] 请妥善保管，丢失后无法找回！")
+            # 密钥不再写入此表（历史实现曾在此落【明文】密钥的重复副本）。
+            # 唯一数据源为 system_config['debug_console_key']，由 debug_console 模块
+            # 统一生成/读取；此处仅保证表结构存在，供一次性迁移读取遗留行。
+            pass
     _init()
 
 
@@ -109,14 +97,13 @@ def _refresh_debug_console_key_sync() -> str:
     """
     from . import debug_console as _debug_console
     new_key = _debug_console.generate_debug_console_key()
-    # 同步清理遗留表，防止后续再从旧位置读到过期密钥
+    # 不再把【明文】密钥镜像进 debug_console_config（历史遗留的重复明文副本，
+    # 属不必要的凭据落库面）。唯一数据源是 system_config['debug_console_key']。
+    # 顺手删掉遗留行，避免老部署里长期残留明文副本。
     try:
         conn = _get_conn()
         with conn:
-            conn.execute(
-                "UPDATE debug_console_config SET debug_console_key = ?, "
-                "last_refreshed_at = CURRENT_TIMESTAMP WHERE id = 1",
-                (new_key,))
+            conn.execute("DELETE FROM debug_console_config WHERE id = 1")
             conn.commit()
     except Exception:
         pass

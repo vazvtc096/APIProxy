@@ -22,6 +22,10 @@ RATE_LIMITS = {
     'post': {'window': 60, 'max': 10},
     'friend': {'window': 60, 'max': 20},
     'transfer': {'window': 60, 'max': 10},
+    # 集群管理令牌：启动日志随机生成，登录入口按 IP 限流防爆破
+    'cluster': {'window': 60, 'max': 5},
+    # Debug Console 登录：最高权限入口（管理员账号 + 控制台密钥），严格限流
+    'console': {'window': 60, 'max': 5},
 }
 
 

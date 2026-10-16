@@ -136,7 +136,8 @@ def verify_password(password: str, password_hash: str) -> bool:
             salt = base64.b64decode(parts[2])
             stored_key = base64.b64decode(parts[3])
             derived_key = _scrypt_hash(password, salt)
-            return derived_key == stored_key
+            # 恒定时间比较，避免时序侧信道泄露派生密钥
+            return secrets.compare_digest(derived_key, stored_key)
         except Exception:
             return False
     

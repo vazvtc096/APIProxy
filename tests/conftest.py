@@ -20,6 +20,11 @@ os.environ["DB_PATH"] = _TEST_DB
 os.environ.setdefault("DB_TYPE", "sqlite")
 os.environ.setdefault("DATABASE_URL", "")
 
+# 1.2 测试禁用真实 Redis —— config.yaml 里的 REDIS_URL 会让测试进程连上
+#     本机/共享 Redis 实例（读写真实键、连接超时还会拖慢整套用例到数分钟）。
+#     需要接入真实 Redis 自测时，在调用 pytest 前显式 export REDIS_URL。
+os.environ["REDIS_URL"] = ""
+
 # 2. 提供 JWT 密钥，避免 fail-closed 预检拒绝启动
 os.environ["APIPROXY_OAUTH_JWT_SECRET"] = "test-oauth-jwt-secret-0123456789abcdef"
 

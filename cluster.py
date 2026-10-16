@@ -1057,3 +1057,22 @@ class ClusterManager:
 
 
 cluster = ClusterManager()
+
+
+def is_worker_node():
+    """本节点当前是否为 Worker 角色。
+
+    返回 True / False / None（None = 不可判定）。
+
+    内部端点的"Worker 不得提供 X"类守卫统一用它，替代此前那种
+    `try: ... except Exception: pass` 写法 —— 后者在导入/判定失败时会静默
+    放过请求，让角色限制形同虚设（限制"未落实"却不留任何日志线索）。
+    """
+    try:
+        from . import configs as _cfg
+        if not getattr(_cfg, "CLUSTER_ENABLED", False):
+            return False
+        return getattr(cluster, "role", None) == "worker"
+    except Exception as e:  # pragma: no cover - 仅在极端导入/运行时异常下触发
+        logger.warning("is_worker_node 判定失败：%s", e)
+        return None

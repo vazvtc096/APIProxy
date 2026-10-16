@@ -1,0 +1,524 @@
+# ============================================================================
+# APIProxy 配置模板
+# 使用：cp config.yaml.example config.yaml  然后按需填写
+#
+# 所有密钥/口令类字段已清空。也可以完全不用本文件，改用环境变量注入：
+#   - APIPROXY_<键名>，例如 APIPROXY_OAUTH_JWT_SECRET / APIPROXY_SESSION_SECRET
+#   - 或 cp .env.example .env（框架会自动加载同目录 .env）
+# 二者可让服务在没有 config.yaml 的情况下正常启动。
+# ============================================================================
+# ============================================================================
+# APIProxy 配置文件（YAML 格式）— 按本机环境优化版
+# 环境：Windows 11 / i3-3240（2 核 4 线程）/ 8GB 内存（常态仅 ~2.7GB 空闲，
+#       需与 PostgreSQL + Redis + Ollama 同机共存）/ 本机 PostgreSQL + Redis
+# 部署形态：单机单进程（无集群），上游为本机 Ollama
+# 顶层标量键可用环境变量 APIPROXY_<大写键名> 覆盖（优先级高于本文件）。
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# 多上游 API Key：自定义名称、优先级（数字越小越优先）、禁用模型
+# 密钥留空则从环境变量 APIPROXY_UPSTREAM_<NAME>_API_KEY 读取
+# ----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
+# 上游定时健康探测（routing.py 负载均衡的数据源；可关闭）
+# enabled: false 时完全关闭；探测为 max_tokens 上限内的 "ping" 请求，成本极低
+# ----------------------------------------------------------------------------
+upstream_health:
+  enabled: true
+  interval_seconds: 300      # 每个上游每 5 分钟探测一次
+  max_tokens: 1              # ≤100
+  probe_model: ""            # 空 = 自动取该上游模型目录里字典序第一个；也可指定
+
+# ----------------------------------------------------------------------------
+# 上游（多上游 API Key；优先级 priority 越小越优先；vision: true 声明支持图片/音频输入）
+# ----------------------------------------------------------------------------
+upstreams:
+  - name: "local-ollama"
+    base_url: "http://127.0.0.1:8080/v1"
+    api_key: "dummy"               # Ollama 不校验 key，占位即可
+    priority: 1
+    enabled: true
+    disabled_models: []            # 例如 ["deepseek-reasoner"] 表示此 Key 不服务该模型
+    models:
+      - "qwen2.5-coder-1.5b"
+
+  # 示例：第二个上游（取消注释并填上密钥即可启用；LB 自动切到优先级最高的可用上游）
+  # - name: "deepseek-backup"
+  #   base_url: "https://api.deepseek.com/v1"
+  #   api_key: ""               # 从环境变量 APIPROXY_UPSTREAM_DEEPSEEK_BACKUP_API_KEY 注入
+  #   priority: 2
+  #   enabled: true
+  #   disabled_models: []
+
+# ----------------------------------------------------------------------------
+# 数据库后端：本机 PostgreSQL（相比 SQLite 支持 FOR UPDATE SKIP LOCKED 真
+# 跨进程互斥，多实例/多线程并发写不再互相阻塞）
+# 首次启动会自动跑 Alembic 迁移建表，只需：
+#   1. 数据库 apiproxy 已自动创建（不存在时会自动 CREATE DATABASE）
+#   2. 密码已填入连接串；生产环境建议改用环境变量 APIPROXY_DATABASE_URL 注入
+# 想临时回退 SQLite：DB_TYPE 改回 "sqlite" 即可
+# ----------------------------------------------------------------------------
+DB_TYPE: "postgres"
+DATABASE_URL: "postgresql://postgres:<PASSWORD>@127.0.0.1:5432/apiproxy"
+
+# ----------------------------------------------------------------------------
+# Redis（本机已启动）：限流/缓存加速，减少 SQLite/PG 的限流表读写
+# 本机 Redis 为 3.0.504（Windows 旧版），够用于限流与缓存场景
+# ----------------------------------------------------------------------------
+REDIS_URL: "redis://127.0.0.1:6379/0"
+
+# ----------------------------------------------------------------------------
+# 服务绑定（也可用 CLI --host / --port / --debug 覆盖）
+# ----------------------------------------------------------------------------
+BIND_HOST: "127.0.0.1"           # 由 tls_front.py 前置接管入口；直连 :5000 拿不到真实 JA3 且外网不可达
+PORT: 5000
+DEBUG: false                     # 生产必须 false：debug 模式有远程代码执行风险
+
+# ----------------------------------------------------------------------------
+# 集群：单机部署明确关闭（避免后台选举/心跳线程白白消耗本就紧张的 CPU）
+# ----------------------------------------------------------------------------
+CLUSTER_ENABLED: false
+
+# ----------------------------------------------------------------------------
+# 生产 ASGI 服务器：HTTP 模式也用 Hypercorn 启动（配合下方 hypercorn 段）
+# workers 必须保持 1：本机 8GB 内存需与 PG/Redis/Ollama 共存，多 worker 会让
+# 整个应用（含全部路由/中间件）在内存中翻倍；且后台调度线程不随 fork 进入
+# worker，多进程会导致定时任务丢失或重复。
+# ----------------------------------------------------------------------------
+HYPERCORN_ENABLED: true
+
+hypercorn:
+  workers: 1                    # 单机单进程：内存受限 + 后台线程不随 fork（勿改）
+  backlog: 512                  # Windows 内核 listen backlog 实际上限 200，此值足够
+  keep_alive_timeout: 65        # 默认 5s：API 客户端长连接复用，减少频繁重握手
+  graceful_timeout: 30          # 此版本默认仅 3s：给在途 LLM 流式响应留足收尾时间
+  shutdown_timeout: 60          # 优雅停机后强杀残留任务的兜底
+  include_server_header: false  # 不回显 Server: hypercorn-h11
+  # max_requests: 100000        # worker 回收阈值（需 workers > 1 才生效）
+  # alpn_protocols: ["h2", "http/1.1"]
+
+# ----------------------------------------------------------------------------
+# HTTPS / SSL
+# certs/ 目录已有自签证书，如需 TLS 把 SSL_ENABLED 改 true（端口换 5443，
+# 客户端要跟着改成 https 并接受自签证书，会打断现有 http://:5000 的调用方）
+# ----------------------------------------------------------------------------
+SSL_ENABLED: false
+SSL_CERT: ""
+SSL_KEY: ""
+HTTPS_PORT: 5443
+
+# ----------------------------------------------------------------------------
+# IP 直接访问策略
+# 裸 IP 访问时 TLS 证书无法匹配（证书签给域名），session cookie 可能经明文 HTTP 泄漏。
+#   allow  = 不限制（旧行为）
+#   secure = 允许访问，但 session cookie 强制带 Secure 属性（明文 HTTP 不再收发 cookie）
+#   deny   = 直接拒绝服务（403）；IP_ACCESS_LOCAL_EXEMPT: true 时豁免回环（127.0.0.1/::1）
+#   audit  = 下发与 IP 强绑定的 Access ID，管理员经控制台 ip_audit_approve <ID> 批准后，
+#            访客经 SSE 收到加密 Token 换取 HttpOnly Cookie 放行；申请 1 小时过期
+# ----------------------------------------------------------------------------
+IP_ACCESS_MODE: "audit"
+IP_ACCESS_LOCAL_EXEMPT: true
+IP_AUDIT_PENDING_TTL_HOURS: 1     # audit：申请有效期（小时）
+IP_AUDIT_TOKEN_TTL_HOURS: 24      # audit：批准后 Token 有效期（小时）
+IP_AUDIT_MAX_PENDING: 200         # audit：pending 总量上限（防内存 DoS）
+
+# ----------------------------------------------------------------------------
+# HSTS（HTTP Strict Transport Security）
+# 本项目部署在 Cloudflare 边缘 HTTPS 之后（源站可能仍 HTTP），浏览器侧始终是 HTTPS，
+# 故显式开启 HSTS_ENABLED 让源站在可达 HTTPS 时下发 Strict-Transport-Security 头。
+# 注意：浏览器对纯 HTTP 响应会忽略 HSTS 头（RFC 6797），故源站纯 HTTP 时下发无害。
+# 开启 preload 前需先满足 hstspreload.org 要求（max-age >= 1 年 + includeSubDomains）
+# 并在 Cloudflare/浏览器侧均开启；此处默认不提交 preload 列表。
+# ----------------------------------------------------------------------------
+HSTS_ENABLED: true
+HSTS_MAX_AGE: 31536000          # 1 年（RFC 建议值）
+HSTS_INCLUDE_SUBDOMAINS: true   # 覆盖所有子域名
+HSTS_PRELOAD: false             # 提交 hstspreload.org 前再改 true（强约束，谨慎）
+# 也可用环境变量开关（注释掉配置项时仍生效）：
+#   APIPROXY_HSTS_ENABLED / APIPROXY_HSTS_MAX_AGE /
+#   APIPROXY_HSTS_INCLUDE_SUBDOMAINS / APIPROXY_HSTS_PRELOAD
+
+# ----------------------------------------------------------------------------
+# 静态资源缓存（/static/ 响应的 Cache-Control max-age 秒数；0 = 不设置）
+# ----------------------------------------------------------------------------
+STATIC_CACHE_MAX_AGE: 600
+
+# ----------------------------------------------------------------------------
+# SMTP 邮件服务（用于验证码 / 找回密码；留空则不发送）
+# 生产务必用环境变量注入：APIPROXY_SMTP_USER / APIPROXY_SMTP_PASS
+# 注意：163 邮箱此处填的是「授权码」而非登录密码
+# ----------------------------------------------------------------------------
+SMTP_SERVER: "smtp.163.com"
+SMTP_PORT: 465
+SMTP_USER: ""                        # 你的邮箱，如 "you@163.com"
+SMTP_PASS: ""                        # 邮箱授权码，切勿提交到版本库
+SMTP_FROM: "APIProxy <you@163.com>"
+
+# ----------------------------------------------------------------------------
+# 密钥与令牌（保留现状；生产建议改环境变量注入）
+# SESSION_SECRET 留空 = 自动生成并持久化到 .session_secret 文件
+# TOKEN_SECRET 留空 = 每次重启随机生成（邮件验证码重启后失效）
+# ----------------------------------------------------------------------------
+SESSION_SECRET: ""
+TOKEN_SECRET: ""
+OAUTH_JWT_SECRET: ""
+OAUTH_REGISTRATION_OPEN: true
+
+# ----------------------------------------------------------------------------
+# Debug Console / Console 运维控制台
+# ----------------------------------------------------------------------------
+DEBUG_CONSOLE_ENABLED: true
+DEBUG_CONSOLE_SECRET: ""
+DEBUG_CONSOLE_RSA_KEY_SIZE: 2048
+CONSOLE_MAX_TIER: 2              # 主密钥最高权限 admin（0=info 1=op 2=admin）
+
+# ----------------------------------------------------------------------------
+# Cloudflare 真实客户端 IP（未套 CF 时 auto 自动探测，无副作用）
+# ----------------------------------------------------------------------------
+CLOUDFLARE_TRUSTED: "auto"
+CLOUDFLARE_IP_REFRESH_ENABLED: true
+CLOUDFLARE_IP_REFRESH_HOURS: 24
+
+# ----------------------------------------------------------------------------
+# WAF（Web 应用防火墙）——按 API 网关场景调优
+#   WAF_MAX_BODY_BYTES 提到 4MB：默认 1MB 会拦下超长上下文的 prompt 请求
+#   WAF_GLOBAL_RPM 提到 600：默认 180 对 LLM 调用型网关偏紧（每次调用都算一击）
+# ----------------------------------------------------------------------------
+WAF_ENABLED: true
+WAF_DISABLE_IF_CLOUDFLARE: true
+WAF_MAX_BODY_BYTES: 4194304
+WAF_ALLOWED_HOSTS: ""            # 逗号分隔，留空 = 不校验 Host（本机/内网用）
+WAF_GLOBAL_RPM: 600
+WAF_VIOLATIONS_RPM: 10
+WAF_BAN_MINUTES: 60
+
+# ----------------------------------------------------------------------------
+# IDS / IPS 入侵检测与防御（默认即最优：prevent 拦截 + 严重签名立即封禁）
+# ----------------------------------------------------------------------------
+IDS_IPS_ENABLED: true
+IDS_IPS_MODE: "prevent"
+IDS_IPS_BAN_ON_CRITICAL: true
+IDS_IPS_BAN_MINUTES: 60
+IDS_IPS_SCAN_PATHS: 15
+IDS_IPS_SCAN_WINDOW: 60
+IDS_IPS_AUTHFAIL_THRESHOLD: 20
+IDS_IPS_AUTHFAIL_WINDOW: 300
+IDS_IPS_BLOCK_SCORE: 100
+IDS_IPS_DETECT_SCORE: 40
+IDS_IPS_PARAM_FLOOD: 200
+
+# ----------------------------------------------------------------------------
+# 上网行为管理 / 堡垒机 / 审计（保持开启：本机磁盘够用，审计留痕有价值）
+# ----------------------------------------------------------------------------
+WEB_FILTER_ENABLED: true
+WEB_FILTER_MODE: "block"
+WEB_FILTER_LOG_ALL: true
+WEB_FILTER_BYPASS_ADMIN: true
+BASTION_ENABLED: true
+BASTION_RECORD_ADMIN_ROUTES: true
+BASTION_APPROVAL_ENABLED: false  # 高危命令审批默认关，避免阻断运维
+AUDIT_ENABLED: true
+AUDIT_RETENTION_DAYS: 90         # 4 核 8GB 单机留 90 天足够，0=永久
+AUTH_SERVER_ENABLED: true
+AUTH_SERVER_INTROSPECTION: true
+
+# ----------------------------------------------------------------------------
+# 启动自检（默认开启，结果缓存 10 分钟）
+# ----------------------------------------------------------------------------
+SELFTEST_ENABLED: true
+SELFTEST_CACHE_TTL: 600
+
+# ----------------------------------------------------------------------------
+# 计费（按模型；可按时段；可选绑定上游 Key 用 model@upstream 写法）
+# ----------------------------------------------------------------------------
+pricing:
+  default:
+    input: 2
+    output: 4
+
+  # 多媒体端点计价（¥；images / audio 路由专用，不走按字符计价）
+  media:
+    image_per_unit: 0.1     # 每生成一张图
+    audio_per_kb: 0.002     # 每 KB 音频（转写按上传体积、语音合成按输入文本体积）
+
+  # 中国法定节假日（YYYY-MM-DD 一次性；命中当天所有峰时段自动失效，全天谷价）。
+  # 春节/国庆等长假的具体调休日期每年以国务院办公厅通知为准，需人工更新。
+  holidays:
+    - "2026-10-01"
+    - "2026-10-02"
+    - "2026-10-03"
+    - "2026-10-04"
+    - "2026-10-05"
+    - "2026-10-06"
+    - "2026-10-07"
+    - "2027-01-01"
+    - "2027-01-02"
+    - "2027-01-03"
+    - "2027-02-05"     # 2027 除夕
+    - "2027-02-06"     # 2027 春节（初一）
+    - "2027-02-07"
+    - "2027-02-08"
+
+  models:
+    # ---- DeepSeek 官方价（2026-09 提取自 api-docs.deepseek.com/zh-cn/quick_start/pricing）----
+    # 峰时：北京时间周一至周五（不含法定节假日）09:00-12:00、14:00-18:00
+    # 谷价：其余全部时段（含周末、节假日全天）= 峰价 5 折
+    # 计费引擎按字符估算、无法区分缓存命中/未命中，input 统一取「缓存未命中」价（保守）
+    deepseek-flash:
+      # 谷价（base：峰时段之外全部时段）
+      input: 1
+      output: 4
+      schedules:
+        - start: "09:00:00"
+          end: "12:00:00"
+          days: [0, 1, 2, 3, 4]   # 仅周一~周五；周末/节假日不命中即落谷价
+          input: 2                 # 峰价
+          output: 8
+        - start: "14:00:00"
+          end: "18:00:00"
+          days: [0, 1, 2, 3, 4]
+          input: 2
+          output: 8
+
+    # 旧模型名仍可调用，官方按 Flash 价计费（文档脚注 1）
+    deepseek-v4-flash:
+      input: 1
+      output: 4
+      schedules:
+        - start: "09:00:00"
+          end: "12:00:00"
+          days: [0, 1, 2, 3, 4]
+          input: 2
+          output: 8
+        - start: "14:00:00"
+          end: "18:00:00"
+          days: [0, 1, 2, 3, 4]
+          input: 2
+          output: 8
+
+    deepseek-v4-pro:
+      # 谷价（base）
+      input: 4.5
+      output: 13.5
+      schedules:
+        - start: "09:00:00"
+          end: "12:00:00"
+          days: [0, 1, 2, 3, 4]
+          input: 9                 # 峰价
+          output: 27
+        - start: "14:00:00"
+          end: "18:00:00"
+          days: [0, 1, 2, 3, 4]
+          input: 9
+          output: 27
+
+# ----------------------------------------------------------------------------
+# 余额预警：扣费后余额低于阈值 -> 站内通知 + 邮件（同一用户冷却期内只提醒一次）
+# ----------------------------------------------------------------------------
+balance_alert:
+  enabled: true
+  threshold: 5.0        # 余额低于该值（¥）触发
+  cooldown_hours: 24    # 同一用户两次提醒最小间隔
+  email: true           # 是否同时发邮件（需配置 SMTP）
+
+# ----------------------------------------------------------------------------
+# PostgreSQL 定时备份（仅 DB_TYPE=postgres 生效）：pg_dump -> backups/ 目录
+# 恢复：psql "postgresql://user:pass@host:5432/dbname" -f backups/db_backup_XXX.sql
+# ----------------------------------------------------------------------------
+db_backup:
+  enabled: true
+  hour: 3               # 每天几点备份（服务器本地时间）
+  keep_days: 14         # 备份保留天数
+  dir: backups          # 输出目录（相对项目根）
+
+# ----------------------------------------------------------------------------
+# NapCat（OneBot 11）QQ 消息推送：余额预警 / 上游故障与恢复 实时进 QQ
+# 前提：本机或内网跑着 NapCat，且在其「网络配置」开启 HTTP 服务器
+# 默认地址 http://127.0.0.1:3000；access token 与 NapCat 侧保持一致
+# ----------------------------------------------------------------------------
+napcat:
+  enabled: false
+  base_url: "http://127.0.0.1:3000"
+  token: ""
+  user_ids: ""          # 私聊接收的 QQ 号，逗号分隔，如 "10001,10002"
+  group_ids: ""         # 群聊接收的群号，逗号分隔
+
+# 真实 token 计费（默认关 = 字符口径）。开启后按上游 usage 多退少补，
+# 缓存命中输入按 cache_hit_ratio 折扣计价（DeepSeek 约 0.1）
+token_billing:
+  enabled: false
+  cache_hit_ratio: 0.1
+
+# ----------------------------------------------------------------------------
+# 在线支付（可配置多支付方式）：余额在线充值
+# 用户在 dashboard 充值页选择支付方式 -> 网关收银台付款 -> 网关异步回调入账
+#
+# callback_base 是本服务对外的公网地址，用于拼装各渠道的异步回调 notify_url
+# 与支付完成跳转 return_url（必须公网可达，经 Cloudflare 隧道域名即可）。
+# 每个渠道用 enabled 独立开关；必填项缺失时该渠道自动视为不可用（不报错）。
+# 每个渠道也可用 notify_url / return_url 显式覆盖自动拼装值。
+# ----------------------------------------------------------------------------
+payments:
+  enabled: true
+  callback_base: "https://api.example.com"
+  methods:
+    # 易支付（彩虹易支付及兼容网关），MD5 签名
+    epay:
+      enabled: false
+      api_url: "https://pay.example.com"
+      pid: ""
+      key: ""
+      channel: "alipay"     # alipay | wxpay | qqpay
+      api_type: "submit"    # submit（页面跳转）| mapi（接口下单取 payurl）
+    # 微信支付 v2（NATIVE 扫码返回 code_url / MWEB H5 返回 mweb_url）
+    wechatpay:
+      enabled: false
+      appid: ""
+      mch_id: ""
+      api_key: ""           # APIv2 密钥（32 位）
+      trade_type: "NATIVE"  # NATIVE | MWEB
+    # 支付宝电脑网站支付（RSA2）
+    alipay:
+      enabled: false
+      app_id: ""
+      private_key: ""       # 应用私钥（PEM 或裸 base64 正文）
+      alipay_public_key: "" # 支付宝公钥（校验异步通知签名）
+      mode: "production"    # production | sandbox
+    # Stripe Checkout（Webhook 签名校验）
+    stripe:
+      enabled: false
+      secret_key: ""
+      webhook_secret: ""
+      currency: "cny"
+    # PayPal Orders v2（Webhook 验签）
+    paypal:
+      enabled: false
+      client_id: ""
+      client_secret: ""
+      mode: "live"          # live | sandbox
+      currency: "USD"
+      webhook_id: ""        # 校验 webhook 签名用
+
+# ----------------------------------------------------------------------------
+# 序列异常检测（Tiny GRU / Tiny Transformer）—— 识别异常的接口访问顺序
+# 用轻量序列模型对设备/账号的 API 调用顺序做 next-token 预测，把预测不到的
+# 下一步量化为 surprise 分数，持续高于该设备自身基线即判异常。默认 detect-only，
+# 仅记录告警，不拦截正常流量（SEQ_ANOMALY_BLOCK_ON_ANOMALY 谨慎开启）。
+# 详见 seq_anomaly.py
+# ----------------------------------------------------------------------------
+SEQ_ANOMALY_ENABLED: true
+SEQ_ANOMALY_BACKEND: "auto"       # auto | torch | numpy | python —— auto 按依赖+硬件自动选最优
+SEQ_ANOMALY_MODEL: "gru"          # gru | transformer | both
+SEQ_ANOMALY_TRACK_BY: "account"   # account | ip | session
+SEQ_ANOMALY_WINDOW: 8             # 近期 token 窗口长度
+SEQ_ANOMALY_HIDDEN: 16            # 隐藏维度（tiny，纯 Python 够快）
+SEQ_ANOMALY_ANOMALY_FACTOR: 2.5   # surprise 超过 基线*factor 且 >1.0 判异常
+SEQ_ANOMALY_MIN_SAMPLES: 5        # 至少多少样本后开始判定
+SEQ_ANOMALY_BLOCK_ON_ANOMALY: false
+SEQ_ANOMALY_PERSIST: true
+SEQ_ANOMALY_PERSIST_PATH: "<data>/seq_anomaly.json"
+
+# ----------------------------------------------------------------------------
+# TLS 前置代理（tls_front.py）—— 自建边缘：终结 TLS + 真实 JA3 指纹注入
+# 拓扑：浏览器 --TLS--> tls_front(:5443) --HTTP/1.1--> Hypercorn(127.0.0.1:5000)
+# 前置 MSG_PEEK 抓 ClientHello 按标准 JA3 算法计算指纹，注入 X-JA3-String / X-JA3-Hash
+# 后转发；ja3.py 的 header 优先级层直接采用（source=header，synthetic=False）。
+# 指纹类头（x-ja3*/cf-ja3*等）在前置被无条件剥离重写，外部无法伪造。
+# 启动：python tls_front.py（独立进程，与主服务分开重启/守护）
+# ----------------------------------------------------------------------------
+TLS_FRONT_BIND_HOST: "::"        # 双栈：同时接受 IPv4 与 IPv6（0.0.0.0 = 仅 IPv4，::1 = 仅 v6 回环）
+TLS_FRONT_PORT: 5443
+TLS_FRONT_BACKEND_HOST: "127.0.0.1"
+TLS_FRONT_BACKEND_PORT: 5000
+TLS_FRONT_CERT: "certs/server.crt"
+TLS_FRONT_KEY: "certs/server.key"
+TLS_FRONT_PLAIN_REDIRECT: true   # 纯 HTTP 打到 5443 时 301 跳 https
+TLS_FRONT_IDLE_TIMEOUT: 75       # keep-alive 空闲超时（秒）
+TLS_FRONT_HANDSHAKE_TIMEOUT: 15
+TLS_FRONT_BACKEND_TIMEOUT: 15
+
+# ----------------------------------------------------------------------------
+# JA3 / JA4 客户端指纹（追溯类）—— 跨 IP/账号关联同一攻击者
+# 优先级：Cloudflare 边缘透传的真实指纹(cf-ja3-hash/cf-ja4) > 自定义反代透传 > 合成近似。
+# 当前自建边缘：tls_front.py 注入 X-JA3-String（source=header），真实指纹已可用。
+# 将来恢复 Cloudflare 且直连源站时，cf-ja3-hash 优先级更高，自动覆盖。
+# 拿不到真实指纹时退化为合成近似指纹（明确标记 synthetic，不与真实 JA3 混用）。
+# 陌生指纹默认告警。详见 ja3.py 与 tls_front.py
+# ----------------------------------------------------------------------------
+JA3_ENABLED: true
+JA3_FLAG_NOVEL: true
+JA3_SYNTHETIC_FALLBACK: true
+JA3_TRUST_CLOUDFLARE: true
+
+# JA3 维度限流 + 凭证填充检测（攻击识别层，详见 ja3_threat.py）
+# 复用 JA3 指纹识别「换 IP 但 TLS 栈不变」的脚本流量 / 批量试账号的 stuffing 扫描器
+# 默认 detect-only（仅判定+告警），拦截需显式开启 *_BLOCK 开关避免误伤正常流量
+JA3_RL_ENABLED: true
+JA3_RL_WINDOW: 60
+JA3_RL_MAX_REQ: 120
+JA3_RL_MAX_IPS: 8
+JA3_RL_BLOCK: false
+CRED_STUFFING_ENABLED: true
+CRED_STUFFING_WINDOW: 300
+CRED_STUFFING_MAX_USERS: 10
+CRED_STUFFING_DEPLOY_HONEYPOT: true
+CRED_STUFFING_BLOCK: false
+# 合成指纹（syn-，无 CF/反代透传时的兜底）跨用户聚合，默认不参与以下判定，
+# 避免 NAT/校园网下同浏览器多人共用一个指纹造成误报（登记追溯不受影响）：
+JA3_RL_APPLY_SYNTHETIC: false
+CRED_STUFFING_APPLY_SYNTHETIC: false
+
+# 自动化/bot 评分 + 同 Token 多 JA3/IP 并发检测（攻击识别层·综合，详见 bot_score.py）
+# 聚合 JA3(合成/陌生) + 序列异常 surprise + Cloudflare cf-bot-score + 会话指纹绑定，给 0~100 分；
+# 并直接识别「同一会话 token 跨多 JA3/多 IP」= 会话被盗用强特征。默认 detect-only。
+BOT_SCORE_ENABLED: true
+BOT_SCORE_THRESHOLD: 60          # >= 此分判为 bot（与 JA3/序列异常共用）
+BOT_SCORE_BLOCK: false           # 判 bot 后是否直接 429（默认关，仅评分+告警）
+BOT_SCORE_MAX_SESSIONS: 20000    # 会话绑定表 LRU 上限（防海量会话吃内存）
+
+# ----------------------------------------------------------------------------
+# 蜜罐账号（诱捕自动化登录 / 凭据填充）
+# 自动化程序尝试登录（尤其不存在的用户）时，动态创建临时诱饵账号将其诱入并全程留痕，
+# 真实用户不受影响。自动化登录「已存在」真实账号默认不布设（避免误伤），按需开启
+# HONEYPOT_ON_AUTOMATION_LOGIN。详见 honeypot.py
+# ----------------------------------------------------------------------------
+HONEYPOT_ENABLED: true
+HONEYPOT_ON_UNKNOWN_USER: true
+HONEYPOT_ON_AUTOMATION_LOGIN: false
+HONEYPOT_FAKE_BALANCE: 0.0        # 诱饵假余额（不会消耗真实资金）
+HONEYPOT_TTL_MIN: 60              # 蜜罐生存时长（分钟），到期自动清理
+HONEYPOT_MAX_PER_IP: 3           # 每 IP 活跃蜜罐上限（防刷库）
+HONEYPOT_TRAP_ACTIONS: true       # 蜜罐会话限制敏感操作并全程留痕
+
+# ----------------------------------------------------------------------------
+# 全局熔断开关（Kill Switch）—— 应急止血
+# 与 sec_set 逐项开关互补的「最后一道闸」：kill_on 激活后全站对外请求立即 503。
+# 纯内存状态：重启自动解除（误操作自愈），支持 TTL 到期自动解除；
+# 本机回环/内网默认豁免（保证还能登进后台），/api/console/exec 永远放行
+# （Debug Console 密钥鉴权），公网管理员也能远程 kill_off。详见 kill_switch.py
+# CLI：kill_on [ttl_min] [reason...] / kill_off / kill_status
+# ----------------------------------------------------------------------------
+KILL_SWITCH_ALLOW_PRIVATE: true   # 回环 + 内网网段豁免（false = 严格模式，全部拦）
+
+# ----------------------------------------------------------------------------
+# 响应侧泄露防护（Leak Guard）—— LLM 出口扫描
+# 上游模型回复内容不受网关控制，可能在回复中回吐系统提示词、密钥、用户 PII。
+# 出站前正则扫描：OpenAI/AWS/Google/DeepSeek/Anthropic/GitHub/Slack 密钥形态、
+# JWT、PEM 私钥块、通用 secret 赋值长串（critical）；手机号/身份证号（warn）。
+#   monitor = 仅告警留痕（默认，零误伤）；redact = critical 命中替换为
+#   [REDACTED:<type>] 后返回。流式按 delta 扫描 + 跨块拼接缓冲（历史块不可
+#   撤回，跨 delta 拆分的命中只能告警，这是流式固有限制）。详见 leak_guard.py
+# CLI：leak_status / leak_list
+# ----------------------------------------------------------------------------
+LEAK_GUARD_ENABLED: true
+LEAK_GUARD_MODE: "monitor"        # monitor | redact
+LEAK_GUARD_TAIL_CHARS: 64         # 流式跨块拼接缓冲长度
+LEAK_GUARD_MAX_FINDINGS: 200      # 内存留痕上限（LRU，防内存膨胀）
+
+# ----------------------------------------------------------------------------
+# WAF 命中联动（喂给行为/追溯层）
+# WAF 拦截的请求序列进 seq_anomaly 独立 attack: 命名空间（攻击路径画像，
+# 不污染正常用户基线）；同 JA3 反复被 WAF 拦截计入指纹风险分。
+# ----------------------------------------------------------------------------
+WAF_FEED_SEQ_ANOMALY: true
+WAF_FEED_JA3_THREAT: true

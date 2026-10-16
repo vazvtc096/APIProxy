@@ -318,6 +318,25 @@ def _resolve_client_ip() -> str:
     return remote or "unknown"
 
 
+def is_loopback_client() -> bool:
+    """本次请求的【真实客户端】是否来自回环地址。
+
+    用于集群内部端点（/internal/*）在【未配置共享密钥】时的信任回退判定。
+
+    必须基于 get_client_ip() 这一"可信解析"结果，绝不能直接读 X-Forwarded-For ——
+    该头客户端完全可控，否则任意公网请求只要带上 `X-Forwarded-For: 127.0.0.1`
+    就能冒充集群内部节点。非可信链路（公网直连 / 局域网直连 + 经隧道）下
+    客户端可控头一律被忽略，故伪造头不会让本函数返回 True。
+    """
+    ip = (get_client_ip() or "").strip()
+    if ip == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(ip).is_loopback
+    except ValueError:
+        return False
+
+
 def get_client_country() -> str:
     """返回 Cloudflare 提供的客户端国家代码（ISO 3166-1 alpha-2）。"""
     return (request.headers.get("CF-IPCountry") or "").strip()

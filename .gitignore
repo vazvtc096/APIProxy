@@ -41,12 +41,13 @@ ENV/
 .env.*
 !.env.example
 
-# --- 配置文件（含密钥，不提交） ---
+# --- 配置文件（含密钥，不提交；仅模板入库） ---
 config.yaml
 config.yml
 config.json
 config.toml
-!.env.example
+!config.yaml.example
+!config.example.yaml
 
 # --- 日志 ---
 *.log
@@ -99,6 +100,7 @@ java/.maven/
 /tests/_*.py
 /templates/_*.py
 seq_anomaly.json
+/audit_exports/
 login_screenshot.png
 *.png
 *.jpg

@@ -500,7 +500,13 @@ def eval_duration(expr: str, n: int):
                 raise ValueError(f"不支持的表达式元素: {type(node).__name__}")
         env = {"n": float(n), "min": min, "max": max, "abs": abs, "__builtins__": {}}
         val = float(eval(compile(tree, "<duration>", "eval"), env))
-        if val != val or val < 0:  # NaN / 负数
+        # NaN / ±inf / 负数 一律按"不封禁"处理。
+        # 历史上 `inf`（含 `1e999`、`n**9999` 之类溢出成 inf 的表达式）会被当成正常时长
+        # 一路写进 ban_expire_at=inf，而 inf > time.time() 恒为真 —— 表现为一次误触就
+        # 【永久封禁】该 IP，不随规则 max 收敛，也无法通过正常流程自动解封。
+        if val != val or val in (float("inf"), float("-inf")) or val < 0:
+            logging.warning(
+                "eval_duration 结果非有限或为负 expr=%r n=%s -> %r，按 never 处理", expr, n, val)
             return ("never", None)
         return ("minutes", val)
     except Exception as e:
@@ -541,11 +547,23 @@ def _expire_str(minutes: float) -> str:
     return (_dt.datetime.now() + _dt.timedelta(minutes=float(minutes))).isoformat(timespec="seconds")
 
 
+def _is_finite_minutes(minutes) -> bool:
+    """时长是否为有限的非负分钟数（挡掉 NaN / ±inf / 负数等异常值）。"""
+    try:
+        v = float(minutes)
+    except (TypeError, ValueError):
+        return False
+    return v == v and v not in (float("inf"), float("-inf")) and v >= 0
+
+
 async def ban_ip_auto(db, ip: str, kind, val, reason: str):
     # ip_blacklist.ban_expire_at 必须存 epoch 秒级浮点，与 admin 手动封禁、hooks._act_block_ip
     # 以及登录校验/中间件的 `ban_expire_at > time.time()` 比对保持一致。
     # 注意：绝不能存 ISO 字符串——SQLite 中 TEXT > REAL 恒为真，会导致该 IP 永远无法自动解封，
     # 且管理员列表页 float() 解析会抛 ValueError。val 单位为分钟（来自 _parse_ban_duration）。
+    if kind != "always" and not _is_finite_minutes(val):
+        logging.error("ban_ip_auto 收到异常时长 ip=%s val=%r，跳过封禁", ip, val)
+        return
     expire = None if kind == "always" else (time.time() + float(val) * 60)
     await db(
         "INSERT INTO ip_blacklist (ip, reason, ban_expire_at) VALUES (?,?,?) "
@@ -555,6 +573,10 @@ async def ban_ip_auto(db, ip: str, kind, val, reason: str):
 
 
 async def ban_account_with_duration(db, user_name: str, minutes: float, reason: str):
+    if not _is_finite_minutes(minutes):
+        logging.error("ban_account_with_duration 收到异常时长 user=%s minutes=%r，跳过封禁",
+                      user_name, minutes)
+        return
     expire = _expire_str(minutes)
     await db(
         "UPDATE users SET is_banned=1, ban_reason=?, ban_expire_at=? WHERE user_name=?",
@@ -563,6 +585,9 @@ async def ban_account_with_duration(db, user_name: str, minutes: float, reason: 
 
 
 async def ban_device(db, fingerprint: str, kind, val, reason: str):
+    if kind != "always" and not _is_finite_minutes(val):
+        logging.error("ban_device 收到异常时长 fp=%s val=%r，跳过封禁", fingerprint, val)
+        return
     expire = None if kind == "always" else _expire_str(val)
     await db(
         "INSERT INTO device_ban (fingerprint, reason, ban_expire_at) VALUES (?,?,?) "

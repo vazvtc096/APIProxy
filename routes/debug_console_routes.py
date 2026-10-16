@@ -620,6 +620,13 @@ async def debug_console_login_page():
 @debug_console_bp.route('/debug-console/login', methods=['POST'])
 async def debug_console_login_submit():
     """Debug Console 登录提交 - 双重认证（管理员账号 + Debug Console 密钥）"""
+    # 防爆破：这是最高权限入口，按 IP 严格限流
+    allowed, _ = _check_rate_limit('console')
+    if not allowed:
+        retry = _get_rate_limit_retry_after('console')
+        resp = jsonify({'error': '尝试过于频繁，请稍后重试'})
+        resp.headers['Retry-After'] = str(retry)
+        return resp, 429
     data = await request.get_json() or {}
     if not data:
         return jsonify({'error': 'Invalid request'}), 400

@@ -8,23 +8,18 @@
 from quart import Blueprint, request, jsonify
 
 from .. import auth_server
-from ..core_console import _internal_secret
+from ..core_console import internal_secret_ok
 from ..core_debug_console import _verify_debug_console_key
 
 auth_bp = Blueprint("auth_server", __name__)
 
 
-def _client_ip():
-    return request.headers.get("X-Forwarded-For", request.remote_addr or "")
-
-
 async def _check_internal_secret() -> bool:
-    secret = request.headers.get("X-Internal-Secret", "")
-    expected = _internal_secret()
-    if expected:
-        return secret == expected
-    ip = _client_ip()
-    return ip.startswith("127.") or ip == "::1" or ip == "localhost"
+    """节点间共享密钥；未配置时回退【真实对端回环】。
+
+    注意：不使用客户端可控的 X-Forwarded-For 判定回环（可被伪造冒充内部节点）。
+    """
+    return internal_secret_ok(request.headers.get("X-Internal-Secret", ""))
 
 
 @auth_bp.route("/api/auth/status", methods=["GET"])
