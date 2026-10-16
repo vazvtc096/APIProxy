@@ -62,6 +62,149 @@ def _db_transaction(operations):
     finally:
         conn.close()
 
+# ---------- Cron 表达式解析（纯 Python，无第三方依赖）----------
+class CronError(ValueError):
+    """cron 表达式非法。"""
+
+
+_CRON_MONTH_NAMES = {
+    'JAN': 1, 'FEB': 2, 'MAR': 3, 'APR': 4, 'MAY': 5, 'JUN': 6,
+    'JUL': 7, 'AUG': 8, 'SEP': 9, 'OCT': 10, 'NOV': 11, 'DEC': 12,
+}
+_CRON_WEEKDAY_NAMES = {
+    'SUN': 0, 'MON': 1, 'TUE': 2, 'WED': 3, 'THU': 4, 'FRI': 5, 'SAT': 6,
+}
+
+
+def _cron_int(token: str, names: dict = None) -> int:
+    """解析单个 cron 取值（支持英文名，如 MON / JAN）。"""
+    t = token.strip().upper()
+    if names and t in names:
+        return names[t]
+    try:
+        return int(t)
+    except ValueError:
+        raise CronError(f"无法解析的值: {token!r}")
+
+
+def _cron_expand(field: str, lo: int, hi: int, names: dict = None) -> set:
+    """把一个 cron 字段展开成取值集合。
+
+    支持 `*` `?` `a` `a-b` `*/n` `a-b/n` `a/n` 以及逗号列表；
+    `names` 用于月(JAN..DEC)与周(SUN..SAT)的英文名。
+    范围一律含端点（`a-b` 含 a 与 b），步长从起点开始计。
+    """
+    values = set()
+    raw = (field or '').strip()
+    if not raw:
+        raise CronError("cron 字段为空")
+    for part in raw.split(','):
+        part = part.strip()
+        if not part:
+            raise CronError(f"cron 字段含空项: {field!r}")
+        step = 1
+        base = part
+        if '/' in part:
+            base, _, step_txt = part.partition('/')
+            base = base.strip()
+            try:
+                step = int(step_txt.strip())
+            except ValueError:
+                raise CronError(f"步长非法: {part!r}")
+            if step <= 0:
+                raise CronError(f"步长必须为正数: {part!r}")
+        if base in ('*', '?'):
+            start, end = lo, hi
+        elif '-' in base:
+            a, _, b = base.partition('-')
+            start, end = _cron_int(a, names), _cron_int(b, names)
+        else:
+            start = end = _cron_int(base, names)
+            if step > 1:
+                end = hi  # `5/10` 语义：从 5 起按步长展开至上界
+        if start > end:
+            raise CronError(f"范围起点大于终点: {part!r}")
+        if start < lo or end > hi:
+            raise CronError(f"取值超出范围 [{lo},{hi}]: {part!r}")
+        values.update(range(start, end + 1, step))
+    return values
+
+
+def parse_cron(expression: str) -> dict:
+    """解析 cron 表达式，返回各字段取值集合与受限标记。
+
+    接受 5 字段（分 时 日 月 周，Unix 惯例）或 6 字段
+    （秒 分 时 日 月 周，Spring/Quartz 惯例）。本调度器轮询粒度为分钟，
+    因此 6 字段的秒段只做校验、不参与计算。周字段 0 与 7 均表示周日，
+    对齐 Java 侧 `CronExpression` 的语义。
+    """
+    if not expression or not str(expression).strip():
+        raise CronError("cron 表达式为空")
+    parts = str(expression).split()
+    if len(parts) == 5:
+        minute, hour, day, month, weekday = parts
+    elif len(parts) == 6:
+        second, minute, hour, day, month, weekday = parts
+        _cron_expand(second, 0, 59)  # 秒段仅校验（调度粒度为分钟）
+    else:
+        raise CronError(f"cron 表达式需要 5 或 6 个字段，实际 {len(parts)} 个")
+    weekday_set = {
+        0 if v == 7 else v
+        for v in _cron_expand(weekday, 0, 7, _CRON_WEEKDAY_NAMES)
+    }
+    return {
+        'minute': _cron_expand(minute, 0, 59),
+        'hour': _cron_expand(hour, 0, 23),
+        'day': _cron_expand(day, 1, 31),
+        'month': _cron_expand(month, 1, 12, _CRON_MONTH_NAMES),
+        'weekday': weekday_set,
+        'day_restricted': day.strip() not in ('*', '?'),
+        'weekday_restricted': weekday.strip() not in ('*', '?'),
+    }
+
+
+def _cron_day_matches(d: datetime.date, spec: dict) -> bool:
+    """日/周字段匹配。两者都受限时取「或」（Unix cron 经典语义）。"""
+    dom_ok = d.day in spec['day']
+    unix_dow = (d.weekday() + 1) % 7  # Python 周一=0 → Unix 周日=0
+    dow_ok = unix_dow in spec['weekday']
+    if spec['day_restricted'] and spec['weekday_restricted']:
+        return dom_ok or dow_ok
+    if spec['day_restricted']:
+        return dom_ok
+    if spec['weekday_restricted']:
+        return dow_ok
+    return True
+
+
+def cron_next_run(expression: str, after: datetime.datetime) -> Optional[datetime.datetime]:
+    """返回严格晚于 after 的下一个匹配时刻（分钟精度，秒/微秒归零）。
+
+    按天推进 + 当天内枚举 (时,分) 组合，避免逐分钟扫描。
+    """
+    spec = parse_cron(expression)
+    hours = sorted(spec['hour'])
+    minutes = sorted(spec['minute'])
+    cand = after.replace(second=0, microsecond=0) + datetime.timedelta(minutes=1)
+    for _ in range(366 * 8):  # 上限约 8 年，防止永不匹配时死循环
+        if cand.month not in spec['month']:
+            cand = (cand.replace(day=1, hour=0, minute=0)
+                    + datetime.timedelta(days=32)).replace(day=1)
+            continue
+        if not _cron_day_matches(cand.date(), spec):
+            cand = (cand + datetime.timedelta(days=1)).replace(hour=0, minute=0)
+            continue
+        for h in hours:
+            if h < cand.hour:
+                continue
+            for m in minutes:
+                t = cand.replace(hour=h, minute=m)
+                if t >= cand:
+                    return t
+        cand = (cand + datetime.timedelta(days=1)).replace(hour=0, minute=0)
+    return None
+
+
 # ---------- 频率计算函数 ----------
 def calculate_next_run(frequency: str, current_time: datetime.datetime, cron_expression: str = None) -> Optional[datetime.datetime]:
     """计算下次执行时间"""
@@ -84,10 +227,16 @@ def calculate_next_run(frequency: str, current_time: datetime.datetime, cron_exp
         # 简单处理：加30天
         return current_time + datetime.timedelta(days=30)
     
-    # cron 表达式（简化处理，只支持部分格式）
-    if frequency == 'cron' and cron_expression:
-        # 这里简化处理，实际应该用 cron 解析库
-        return current_time + datetime.timedelta(minutes=1)
+    # cron 表达式：真解析（对齐 Java 侧 Spring CronExpression 语义）
+    if frequency == 'cron':
+        if not cron_expression:
+            logger.warning("cron 任务缺少表达式，无法计算下次执行时间")
+            return None
+        try:
+            return cron_next_run(cron_expression, current_time)
+        except CronError as e:
+            logger.warning(f"cron 表达式非法 {cron_expression!r}: {e}")
+            return None
     
     return None
 
